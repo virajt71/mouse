@@ -18,7 +18,8 @@ pub enum ActiveView {
 }
 
 pub struct MouserApp {
-    _tray_icon: Option<tray_icon::TrayIcon>,
+    tray_icon: Option<tray_icon::TrayIcon>,
+    current_tray_icon_type: String,
     active_view: ActiveView,
     unifying_receiver_connected: Option<bool>,
     bolt_receiver_connected: Option<bool>,
@@ -80,7 +81,8 @@ impl MouserApp {
         let (tx, rx) = mouser_engine::worker::spawn_background_worker(ctx);
 
         Self {
-            _tray_icon: tray_icon,
+            tray_icon,
+            current_tray_icon_type: "mouse".to_string(),
             active_view: ActiveView::EmptyState,
             unifying_receiver_connected: None,
             bolt_receiver_connected: None,
@@ -185,6 +187,35 @@ impl eframe::App for MouserApp {
             self.paired_devices = update.paired_devices;
             self.battery_pct = update.battery_pct;
             self.has_active_hidpp_battery = Some(update.has_active_hidpp_battery);
+        }
+
+        // Update system tray icon based on connection type transition
+        let active_conn = {
+            let any_bt_connected = self.paired_devices.iter().any(|(_, _, is_conn)| *is_conn);
+            if any_bt_connected {
+                "bluetooth"
+            } else if self.has_active_hidpp_battery.unwrap_or(false) {
+                if self.bolt_receiver_connected.unwrap_or(false) {
+                    "mouse"
+                } else if self.unifying_receiver_connected.unwrap_or(false) {
+                    "mouse"
+                } else {
+                    "bluetooth"
+                }
+            } else {
+                "mouse"
+            }
+        };
+
+        if active_conn != self.current_tray_icon_type {
+            if let Some(ref tray) = self.tray_icon {
+                let new_icon = match active_conn {
+                    "bluetooth" => crate::theme::create_bluetooth_tray_icon(),
+                    _ => crate::theme::create_mouse_tray_icon(),
+                };
+                let _ = tray.set_icon(Some(new_icon));
+            }
+            self.current_tray_icon_type = active_conn.to_string();
         }
 
         // ── Theme ────────────────────────────────────────────────────────────

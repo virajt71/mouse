@@ -1,30 +1,104 @@
 # Mouser-RS
 
-> A native Linux daemon and GUI for Logitech HID++ mice — button remapping, gesture control, DPI tuning, SmartShift, and more. Written in Rust.
+> A native Linux daemon and GUI for Logitech HID++ mice: button remapping, gesture control, DPI tuning, SmartShift, and more. Written in Rust.
 
 ---
 
 ## Features
 
-- **Button Remapping** — Map any mouse button to keyboard shortcuts, media keys, browser actions, or custom key sequences.
-- **Gesture Control** — Hold a button and swipe in a direction (up / down / left / right) to trigger configurable actions.
-- **DPI Control** — Set and persist DPI directly via the HID++ protocol.
-- **SmartShift** — Toggle and tune Logitech's SmartShift (free-spin ↔ ratchet scroll wheel) threshold.
-- **Horizontal Scroll** — Map horizontal scroll tilt to browser Back / Forward or any key combo. Configurable threshold and inversion.
-- **Vertical Scroll Inversion** — Optionally invert the scroll wheel direction.
-- **Battery Monitor** — Real-time battery level display in the GUI for wireless mice.
-- **Bluetooth & USB Receiver** — Supports devices connected via a Logitech Unifying / Bolt receiver or directly over Bluetooth.
-- **Persistent Device Cache** — Paired devices are remembered across Bluetooth disconnections. Connection state updates live; devices never disappear from the GUI just because BT is off.
-- **Profiles** — Multiple named profiles with per-app automatic switching and a configurable active profile.
-- **System Tray** — Minimize to system tray; restore or quit from the tray menu.
-- **Single Instance** — Launching a second instance brings the existing window to front instead of starting a duplicate process.
-- **Auto-updater** — Built-in update checker with optional automatic install.
-- **Multi-language UI** — Translation system with per-locale string files.
-- **WSL2 Compatible** — Automatically falls back to software rendering when running under WSL2.
+- **Button Remapping** - Map any mouse button to keyboard shortcuts, media keys, browser actions, or custom key sequences.
+- **Gesture Control** - Hold a button and swipe in a direction (up / down / left / right) to trigger configurable actions.
+- **DPI Control** - Set and persist DPI directly via the HID++ protocol.
+- **SmartShift** - Toggle and tune Logitech's SmartShift (free-spin ↔ ratchet scroll wheel) threshold.
+- **Horizontal Scroll** - Map horizontal scroll tilt to browser Back / Forward or any key combo. Configurable threshold and inversion.
+- **Vertical Scroll Inversion** - Optionally invert the scroll wheel direction.
+- **Battery Monitor** - Real-time battery level display in the GUI for wireless mice.
+- **Bluetooth & USB Receiver** - Supports devices connected via a Logitech Unifying / Bolt receiver or directly over Bluetooth.
+- **Persistent Device Cache** - Paired devices are remembered across Bluetooth disconnections. Connection state updates live; devices never disappear from the GUI just because BT is off.
+- **Profiles** - Multiple named profiles with per-app automatic switching and a configurable active profile.
+- **System Tray** - Minimize to system tray; restore or quit from the tray menu.
+- **Single Instance** - Launching a second instance brings the existing window to front instead of starting a duplicate process.
+- **Auto-updater** - Built-in update checker with optional automatic install.
+- **Multi-language UI** - Translation system with per-locale string files.
+- **WSL2 Compatible** - Automatically falls back to software rendering when running under WSL2.
 
 ---
 
 ## Architecture
+
+```mermaid
+graph TD
+    %% Styling
+    classDef bin fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#0d47a1;
+    classDef gui fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b5e20;
+    classDef engine fill:#fff3e0,stroke:#ef6c00,stroke-width:2px,color:#e65100;
+    classDef os fill:#fafafa,stroke:#9e9e9e,stroke-dasharray: 5 5,color:#424242;
+
+    %% Nodes
+    subgraph App ["mouser-rs (Binary)"]
+        Main["main.rs (CLI / Socket Guard / Tray)"]
+    end
+    class Main bin;
+
+    subgraph GUI ["mouser_gui (egui frontend)"]
+        MouserApp["MouserApp (Root View)"]
+        Theme["Theme / Styles"]
+        MouseUI["Mouse UI (DPI/SmartShift)"]
+        SettingsUI["Settings & Profiles UI"]
+        Trans["Translation / i18n"]
+        
+        MouserApp --> Theme
+        MouserApp --> MouseUI
+        MouserApp --> SettingsUI
+        MouserApp --> Trans
+    end
+    class MouserApp,Theme,MouseUI,SettingsUI,Trans gui;
+
+    subgraph Engine ["mouser_engine (HID++ backend)"]
+        Core["Engine Core (Event Loop / State)"]
+        Config["Config (JSON Persistence)"]
+        HIDPP["HID++ Client (DPI / Battery)"]
+        BT["BlueZ Bluetooth Helper"]
+        Receiver["Unifying/Bolt USB Receiver"]
+        MouseHook["Mouse Hook (evdev interception)"]
+        KeyHook["Keyboard Hook (modifier tracking)"]
+        Simulator["Key Simulator (uinput output)"]
+        AppDetect["AppDetector (X11 / XWayland / KDE / GNOME)"]
+
+        Core --> Config
+        Core --> HIDPP
+        Core --> BT
+        Core --> Receiver
+        Core --> MouseHook
+        Core --> KeyHook
+        Core --> Simulator
+        Core --> AppDetect
+    end
+    class Core,Config,HIDPP,BT,Receiver,MouseHook,KeyHook,Simulator,AppDetect engine;
+
+    subgraph OS ["Linux OS / Hardware Interfaces"]
+        DevHID["/dev/hidraw* (Logitech Mice)"]
+        DevInput["/dev/input/event* (evdev inputs)"]
+        UInput["/dev/uinput (virtual inputs)"]
+        BlueZ["BlueZ D-Bus Daemon"]
+        WindowSys["Windowing System (X11/XWayland)"]
+    end
+    class DevHID,DevInput,UInput,BlueZ,WindowSys os;
+
+    %% Connections
+    Main -->|Initializes & Starts| Core
+    Main -->|Launches egui| MouserApp
+    MouserApp -->|Reads state & commands| Core
+    
+    %% Core/Engine to OS/HW Connections
+    HIDPP <-->|Read/Write HID++| DevHID
+    Receiver <-->|Register Devices| DevHID
+    BT <-->|D-Bus API| BlueZ
+    MouseHook <-->|Intercept evdev| DevInput
+    KeyHook <-->|Monitor modifiers| DevInput
+    Simulator -->|Inject keystrokes| UInput
+    AppDetect -->|Active Window API| WindowSys
+```
 
 The project is a Cargo workspace with three crates:
 
@@ -32,7 +106,7 @@ The project is a Cargo workspace with three crates:
 mouse/
 ├── src/               # Binary entry point (main.rs)
 │   └── main.rs        # CLI args, single-instance guard, engine init, GUI launch, tray
-├── engine/            # mouser_engine — HID++ backend library
+├── engine/            # mouser_engine - HID++ backend library
 │   └── src/
 │       ├── lib.rs          # Engine struct, background threads, event loop
 │       ├── config.rs       # Config / Profile / Settings data structures + JSON persistence
@@ -47,7 +121,7 @@ mouse/
 │       ├── cache.rs        # Persistent paired-device cache (survives BT off)
 │       ├── updater.rs      # HTTP update check & installer
 │       └── worker.rs       # Thread-pool helpers
-└── gui/               # mouser_gui — egui frontend library
+└── gui/               # mouser_gui - egui frontend library
     └── src/
         ├── lib.rs           # MouserApp root, view routing, close behaviour
         ├── theme.rs         # Design tokens (colors, typography, spacing, window size)

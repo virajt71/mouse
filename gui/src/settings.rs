@@ -7,52 +7,65 @@ use eframe::egui;
 use egui::{pos2, vec2, Color32, Rect, RichText, Stroke};
 
 pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, config: &mut Config, engine: &Engine, updater: &Updater) {
-    // Center content with max width
-    let avail = ui.available_width();
-    let max_w = 640.0_f32.min(avail - 48.0);
-    let side_pad = ((avail - max_w) / 2.0).max(24.0);
+    let avail_w = ui.available_width();
+    let avail_h = ui.available_height();
+    let h_pad = (avail_w * 0.04).max(24.0);
+    let v_pad = 20.0;
 
-    ui.add_space(28.0);
+    // ── Page title ──
+    ui.add_space(v_pad);
+    ui.horizontal(|ui| {
+        ui.add_space(h_pad);
+        render_spaced_header(
+            ui,
+            tr("settings_title", &config.settings.language),
+            20.0,
+            theme::primary_text(ui.ctx()),
+        );
+    });
+    ui.add_space(16.0);
 
-    egui::ScrollArea::vertical()
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.add_space(side_pad);
-                ui.vertical(|ui| {
-                    ui.set_max_width(max_w);
+    // ── 2-column grid layout (no scroll) ──
+    // Left col: Updates + Language   |   Right col: Theme + Profiles
+    let gap = 16.0;
+    let col_w = ((avail_w - h_pad * 2.0 - gap) / 2.0).max(280.0);
+    let content_h = avail_h - v_pad - 40.0; // remaining height below title
 
-                    // ── Page title ──
-                    render_spaced_header(
-                        ui,
-                        tr("settings_title", &config.settings.language),
-                        20.0,
-                        theme::primary_text(ui.ctx()),
-                    );
-                    ui.add_space(24.0);
+    ui.horizontal(|ui| {
+        ui.add_space(h_pad);
 
-                    // ── SECTION 1: SOFTWARE UPDATES ──
-                    render_section_updates(ui, config, engine, updater);
+        // ── Left column ──
+        ui.vertical(|ui| {
+            ui.set_width(col_w);
+            ui.set_height(content_h);
 
-                    ui.add_space(16.0);
+            // SECTION 1: SOFTWARE UPDATES
+            render_section_updates(ui, config, engine, updater);
+            ui.add_space(gap);
 
-                    // ── SECTION 2: LANGUAGE ──
-                    render_section_language(ui, config, engine);
+            // SECTION 2: LANGUAGE
+            render_section_language(ui, config, engine);
+            ui.add_space(gap);
 
-                    ui.add_space(16.0);
-
-                    // ── SECTION 3: COLOR THEME ──
-                    render_section_theme(ui, ctx, config, engine);
-
-
-                    ui.add_space(16.0);
-
-                    // ── SECTION 5: PROFILES ──
-                    render_section_profiles(ui, config, engine);
-
-                    ui.add_space(28.0);
-                });
-            });
+            // SECTION 3: THEME
+            render_section_theme(ui, ctx, config, engine);
         });
+
+        ui.add_space(gap);
+
+        // ── Right column ──
+        ui.vertical(|ui| {
+            ui.set_width(col_w);
+            ui.set_height(content_h);
+
+            // // SECTION 3: THEME
+            // render_section_theme(ui, ctx, config, engine);
+            // ui.add_space(gap);
+
+            // SECTION 4: PROFILES
+            render_section_profiles(ui, config, engine);
+        });
+    });
 }
 
 /// Draws a section card background: surface-colored rounded rect with a thin border.
@@ -1202,8 +1215,6 @@ fn draw_profiles_icon_settings(ui: &egui::Ui, rect: egui::Rect, color: Color32) 
     );
 }
 
-
-
 fn render_section_profiles(ui: &mut egui::Ui, config: &mut Config, engine: &Engine) {
     section_card(ui, |ui| {
         // ── Section header ──
@@ -1213,7 +1224,7 @@ fn render_section_profiles(ui: &mut egui::Ui, config: &mut Config, engine: &Engi
             ui.add_space(6.0);
             render_spaced_header(
                 ui,
-                "PROFILES MANAGEMENT",
+                "PROFILES",
                 14.0,
                 theme::primary_text(ui.ctx()),
             );
@@ -1265,7 +1276,7 @@ fn render_section_profiles(ui: &mut egui::Ui, config: &mut Config, engine: &Engi
                     engine.select_profile(&editing_profile);
                 }
             } else {
-                ui.label(RichText::new("(Active)").size(11.0).color(theme::accent_color(ui.ctx())));
+                ui.label(RichText::new("Active").size(11.0).color(theme::accent_color(ui.ctx())));
             }
         });
 
