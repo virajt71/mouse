@@ -12,7 +12,7 @@ pub mod updater;
 pub mod cache;
 pub mod worker;
 
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
+use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering, AtomicU64}};
 use std::thread;
 use std::time::{Duration, Instant};
 use evdev::Key;
@@ -26,6 +26,7 @@ use self::keyboard_hook::KeyboardHook;
 
 struct EngineInner {
     config: Mutex<Config>,
+    config_generation: AtomicU64,
     key_simulator: KeySimulator,
     app_detector: Mutex<Option<AppDetector>>,
     mouse_hook: Mutex<Option<MouseHook>>,
@@ -82,6 +83,7 @@ impl Engine {
 
         let inner = EngineInner {
             config: Mutex::new(config),
+            config_generation: AtomicU64::new(1),
             key_simulator,
             app_detector: Mutex::new(None),
             mouse_hook: Mutex::new(None),
@@ -823,6 +825,7 @@ impl Engine {
             let next_enabled = !cfg.settings.smart_shift_enabled;
             cfg.settings.smart_shift_enabled = next_enabled;
             let _ = cfg.save();
+            self.increment_config_generation();
             (cfg.settings.smart_shift_mode.clone(), next_enabled, cfg.settings.smart_shift_threshold as u8)
         };
         log::info!("[Engine] Toggling SmartShift: enabled={}", enabled);
@@ -847,6 +850,7 @@ impl Engine {
             cfg.settings.smart_shift_mode = next_mode.to_string();
             cfg.settings.smart_shift_enabled = false;
             let _ = cfg.save();
+            self.increment_config_generation();
             (next_mode.to_string(), cfg.settings.smart_shift_threshold as u8)
         };
         log::info!("[Engine] Switching scroll mode to ratchet/freespin fixed: mode={}", mode);
@@ -879,6 +883,7 @@ impl Engine {
             let val = presets[next_idx];
             cfg.settings.dpi = val;
             let _ = cfg.save();
+            self.increment_config_generation();
             val
         };
         log::info!("[Engine] Cycling DPI to {}", new_dpi);
@@ -898,6 +903,14 @@ impl Engine {
 
     pub fn get_config(&self) -> Config {
         self.inner.config.lock().unwrap().clone()
+    }
+
+    pub fn config_generation(&self) -> u64 {
+        self.inner.config_generation.load(Ordering::Relaxed)
+    }
+
+    pub fn increment_config_generation(&self) {
+        self.inner.config_generation.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn device_connected(&self) -> bool {
@@ -942,6 +955,7 @@ impl Engine {
             let mut cfg = self.inner.config.lock().unwrap();
             cfg.active_profile = name.to_string();
             let _ = cfg.save();
+            self.increment_config_generation();
         }
         self.refresh_active_profile();
     }
@@ -963,6 +977,7 @@ impl Engine {
                 new_profile.apps = Vec::new();
                 cfg.profiles.insert(name.to_string(), new_profile);
                 let _ = cfg.save();
+                self.increment_config_generation();
             }
         }
     }
@@ -979,6 +994,7 @@ impl Engine {
                 cfg.active_profile = "default".to_string();
             }
             let _ = cfg.save();
+            self.increment_config_generation();
         }
         self.refresh_active_profile();
     }
@@ -995,6 +1011,7 @@ impl Engine {
             if let Some(profile) = cfg.profiles.get_mut(profile_name) {
                 profile.apps = apps;
                 let _ = cfg.save();
+                self.increment_config_generation();
             }
         }
     }
@@ -1008,6 +1025,7 @@ impl Engine {
                     profile.mappings.insert(k, v);
                 }
                 let _ = cfg.save();
+                self.increment_config_generation();
             }
         }
         self.refresh_active_profile();
@@ -1068,6 +1086,7 @@ impl Engine {
             cfg.settings.gesture_deadzone = gesture_deadzone;
             cfg.settings.accent_color = accent_color;
             let _ = cfg.save();
+            self.increment_config_generation();
         }
 
         self.inner.invert_vscroll_arc.store(invert_vscroll, Ordering::SeqCst);
@@ -1091,6 +1110,7 @@ impl Engine {
         let (dpi, ss_mode, ss_enabled, ss_threshold, invert_hscroll, invert_vscroll) = {
             let mut cfg = self.inner.config.lock().unwrap();
             *cfg = Config::load();
+            self.increment_config_generation();
             (
                 cfg.settings.dpi as u32,
                 cfg.settings.smart_shift_mode.clone(),

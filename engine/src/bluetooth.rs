@@ -28,6 +28,7 @@ pub fn get_paired_logitech_devices() -> (Vec<(String, String, bool)>, bool) {
                 {
                     (devices, false)
                 } else {
+                    let connected_macs = get_connected_bluetooth_macs();
                     for line in stdout.lines() {
                         // Output format: Device XX:XX:XX:XX:XX:XX Device Name
                         let parts: Vec<&str> = line.splitn(3, ' ').collect();
@@ -40,7 +41,7 @@ pub fn get_paired_logitech_devices() -> (Vec<(String, String, bool)>, bool) {
                                 || name_lower.contains("logi")
                                 || name_lower.contains("mx ")
                             {
-                                let connected = is_device_connected(&mac);
+                                let connected = connected_macs.contains(&mac.to_uppercase());
                                 devices.push((mac, name, connected));
                             }
                         }
@@ -64,25 +65,29 @@ pub fn get_paired_logitech_devices() -> (Vec<(String, String, bool)>, bool) {
     }
 }
 
-pub fn is_device_connected(mac: &str) -> bool {
+fn get_connected_bluetooth_macs() -> std::collections::HashSet<String> {
+    let mut connected = std::collections::HashSet::new();
     #[cfg(target_os = "linux")]
     {
         if let Ok(output) = std::process::Command::new("bluetoothctl")
-            .arg("info")
-            .arg(mac)
+            .args(["devices", "Connected"])
             .output()
         {
             let stdout = String::from_utf8_lossy(&output.stdout);
             for line in stdout.lines() {
-                let trimmed = line.trim();
-                if trimmed.starts_with("Connected:") {
-                    return trimmed.contains("yes");
+                let parts: Vec<&str> = line.splitn(3, ' ').collect();
+                if parts.len() >= 2 && parts[0] == "Device" {
+                    connected.insert(parts[1].to_uppercase());
                 }
             }
         }
     }
-    let _ = mac;
-    false
+    connected
+}
+
+pub fn is_device_connected(mac: &str) -> bool {
+    let connected = get_connected_bluetooth_macs();
+    connected.contains(&mac.to_uppercase())
 }
 
 pub fn unpair_device(mac: &str) {

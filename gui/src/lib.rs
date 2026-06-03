@@ -33,6 +33,7 @@ pub struct MouserApp {
     pub updater: Updater,
     pub customizing_button: Option<self::mouse_ui::CustomizingButton>,
     pub customization_tab: self::mouse_ui::SidebarTab,
+    last_config_generation: u64,
 
     // Hardware polling channel
     rx: std::sync::mpsc::Receiver<mouser_engine::worker::DeviceStateUpdate>,
@@ -51,6 +52,7 @@ impl MouserApp {
     pub fn new(ctx: egui::Context, tray_icon: Option<tray_icon::TrayIcon>, engine: mouser_engine::Engine) -> Self {
         let cached = mouser_engine::cache::load_device_cache();
         let config = engine.get_config();
+        let config_gen = engine.config_generation();
         let updater = Updater::new();
 
         // Decode both PNG files in a background thread so the main thread is
@@ -96,6 +98,7 @@ impl MouserApp {
             updater,
             customizing_button: None,
             customization_tab: self::mouse_ui::SidebarTab::Buttons,
+            last_config_generation: config_gen,
             rx,
             tx,
             battery_pct: "0".to_string(),
@@ -140,7 +143,11 @@ impl MouserApp {
     }
 
     pub fn reload_config(&mut self) {
-        self.config = self.engine.get_config();
+        let current_gen = self.engine.config_generation();
+        if current_gen != self.last_config_generation {
+            self.config = self.engine.get_config();
+            self.last_config_generation = current_gen;
+        }
     }
 }
 
