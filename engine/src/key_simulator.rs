@@ -102,6 +102,10 @@ lazy_static::lazy_static! {
         m.insert("f10", Key::KEY_F10);
         m.insert("f11", Key::KEY_F11);
         m.insert("f12", Key::KEY_F12);
+        m.insert("equal", Key::KEY_EQUAL);
+        m.insert("minus", Key::KEY_MINUS);
+        m.insert("brightnessup", Key::KEY_BRIGHTNESSUP);
+        m.insert("brightnessdown", Key::KEY_BRIGHTNESSDOWN);
 
         m
     };
@@ -113,6 +117,7 @@ lazy_static::lazy_static! {
         m.insert("mouse_middle_click", Key::BTN_MIDDLE);
         m.insert("mouse_back_click", Key::BTN_SIDE);
         m.insert("mouse_forward_click", Key::BTN_EXTRA);
+        m.insert("advanced_click", Key::BTN_LEFT);
         m
     };
 }
@@ -284,6 +289,19 @@ impl KeySimulator {
         });
     }
 
+    pub fn inject_relative_move(&self, dx: i32, dy: i32) {
+        self.get_device(|dev_opt| {
+            if let Some(dev) = dev_opt {
+                let events = [
+                    InputEvent::new(EventType::RELATIVE, RelativeAxisType::REL_X.0, dx),
+                    InputEvent::new(EventType::RELATIVE, RelativeAxisType::REL_Y.0, dy),
+                    InputEvent::new(EventType::SYNCHRONIZATION, 0, 0),
+                ];
+                let _ = dev.emit(&events);
+            }
+        });
+    }
+
     pub fn execute_action(&self, action_id: &str) {
         log::debug!("[KeySimulator] Executing action: {}", action_id);
         if action_id == "none" {
@@ -342,11 +360,48 @@ impl KeySimulator {
             // Desktops/Workspaces switching
             "space_left" => {
                 // KDE/Plasma standard fallback
-                Some(vec![Key::KEY_LEFTCTRL, Key::KEY_LEFTMETA, Key::KEY_LEFT])
+                Some(vec![Key::KEY_LEFTCTRL, Key::KEY_LEFTALT, Key::KEY_LEFT])
             }
             "space_right" => {
-                Some(vec![Key::KEY_LEFTCTRL, Key::KEY_LEFTMETA, Key::KEY_RIGHT])
+                Some(vec![Key::KEY_LEFTCTRL, Key::KEY_LEFTALT, Key::KEY_RIGHT])
             }
+            "zoom_in" => Some(vec![Key::KEY_LEFTCTRL, Key::KEY_EQUAL]),
+            "zoom_out" => Some(vec![Key::KEY_LEFTCTRL, Key::KEY_MINUS]),
+            "tab_prev" => Some(vec![Key::KEY_LEFTCTRL, Key::KEY_PAGEUP]),
+            "tab_next" => Some(vec![Key::KEY_LEFTCTRL, Key::KEY_PAGEDOWN]),
+            "brightness_up" => Some(vec![Key::KEY_BRIGHTNESSUP]),
+            "brightness_down" => Some(vec![Key::KEY_BRIGHTNESSDOWN]),
+            "app_prev" => Some(vec![Key::KEY_LEFTALT, Key::KEY_LEFTSHIFT, Key::KEY_TAB]),
+            "app_next" => Some(vec![Key::KEY_LEFTALT, Key::KEY_TAB]),
+            "screen_capture" => Some(vec![Key::KEY_SYSRQ]),
+            "print_screen" => Some(vec![Key::KEY_SYSRQ]),
+            "action_center" => Some(vec![Key::KEY_LEFTMETA, Key::KEY_A]),
+            "calculator" => Some(vec![Key::KEY_CALC]),
+            "close_window" => Some(vec![Key::KEY_LEFTALT, Key::KEY_F4]),
+            "dictation" => Some(vec![Key::KEY_LEFTMETA, Key::KEY_H]),
+            "emoji" => Some(vec![Key::KEY_LEFTMETA, Key::KEY_DOT]),
+            "emojis_menu" => Some(vec![Key::KEY_LEFTMETA, Key::KEY_DOT]),
+            "input_language" => Some(vec![Key::KEY_LEFTMETA, Key::KEY_SPACE]),
+            "lock" => Some(vec![Key::KEY_LEFTMETA, Key::KEY_L]),
+            "maximize_window" => Some(vec![Key::KEY_LEFTMETA, Key::KEY_UP]),
+            "minimize_window" => Some(vec![Key::KEY_LEFTMETA, Key::KEY_DOWN]),
+            "open_application" => Some(vec![Key::KEY_LEFTMETA]),
+            "open_file" => Some(vec![Key::KEY_LEFTCTRL, Key::KEY_O]),
+            "open_folder" => Some(vec![Key::KEY_LEFTMETA, Key::KEY_E]),
+            "redo" => Some(vec![Key::KEY_LEFTCTRL, Key::KEY_Y]),
+            "right_ctrl" => Some(vec![Key::KEY_RIGHTCTRL]),
+            "screen_snip" => Some(vec![Key::KEY_LEFTMETA, Key::KEY_LEFTSHIFT, Key::KEY_S]),
+            "this_pc" => Some(vec![Key::KEY_LEFTMETA, Key::KEY_E]),
+            "snap_left" => Some(vec![Key::KEY_LEFTMETA, Key::KEY_LEFT]),
+            "snap_right" => Some(vec![Key::KEY_LEFTMETA, Key::KEY_RIGHT]),
+            "pan_left" => Some(vec![Key::KEY_LEFT]),
+            "pan_right" => Some(vec![Key::KEY_RIGHT]),
+            "pan_up" => Some(vec![Key::KEY_UP]),
+            "pan_down" => Some(vec![Key::KEY_DOWN]),
+            "rotate_left" => Some(vec![Key::KEY_LEFTCTRL, Key::KEY_LEFTSHIFT, Key::KEY_R]),
+            "rotate_right" => Some(vec![Key::KEY_LEFTCTRL, Key::KEY_R]),
+            "zoom_reset" => Some(vec![Key::KEY_LEFTCTRL, Key::KEY_0]),
+            "start_menu" => Some(vec![Key::KEY_LEFTMETA]),
             _ => None,
         };
 

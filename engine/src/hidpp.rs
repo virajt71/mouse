@@ -92,7 +92,7 @@ impl HidppClient {
         let product_id = info.product_id();
         let product_name = info.product_string().unwrap_or("Unknown").to_string();
 
-        log::info!(
+        log::debug!(
             "[HID++] Opening device: {} (PID: 0x{:04X})",
             product_name,
             product_id

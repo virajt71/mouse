@@ -228,6 +228,7 @@ impl Engine {
                 let mut last_mouse_check = Instant::now() - Duration::from_secs(5);
                 let mut last_mouse_attempt_path: Option<String> = None;
                 let mut last_mouse_attempt_time: Option<Instant> = Some(Instant::now());
+                let mut failed_paths: std::collections::HashMap<String, Instant> = std::collections::HashMap::new();
                 while inner.running.load(Ordering::SeqCst) {
                     // Check and restart mouse hook if it has stopped
                     if last_mouse_check.elapsed() >= Duration::from_millis(500) {
@@ -315,6 +316,11 @@ impl Engine {
                         let dummy_client = HidppClient::new();
                         let available = dummy_client.list_hidpp_devices(api);
 
+                        // Clean up failed_paths: remove paths that are no longer in `available`
+                        failed_paths.retain(|path, _| {
+                            available.iter().any(|info| info.path().to_string_lossy().to_string() == *path)
+                        });
+
                         let mut clients = inner.hid_clients.lock().unwrap();
 
                         // Remove disconnected clients
@@ -325,6 +331,13 @@ impl Engine {
                             let path_str = info.path().to_string_lossy().to_string();
                             let already_opened = clients.iter().any(|c| c.device_path == path_str);
                             if !already_opened {
+                                // Apply cooldown (e.g. 10 seconds) on failed paths to avoid high-frequency retries/spams
+                                if let Some(last_fail) = failed_paths.get(&path_str) {
+                                    if last_fail.elapsed() < Duration::from_secs(10) {
+                                        continue;
+                                    }
+                                }
+
                                 let mut new_client = HidppClient::new();
                                 if new_client.open_path(api, info.path()).is_ok() {
                                     log::info!("[Engine] HID++ device connected: {}", new_client.device_name);
@@ -350,6 +363,9 @@ impl Engine {
                                         let _ = new_client.set_smart_shift(&ss_mode, ss_enabled, ss_threshold);
                                     }
                                     clients.push(new_client);
+                                    failed_paths.remove(&path_str);
+                                } else {
+                                    failed_paths.insert(path_str, Instant::now());
                                 }
                             }
                         }
@@ -530,9 +546,9 @@ impl Engine {
             MouseHookEvent::Scroll { horizontal, delta } => {
                 if horizontal {
                     let action_key = if delta < 0 {
-                        "hscroll_left"
-                    } else {
                         "hscroll_right"
+                    } else {
+                        "hscroll_left"
                     };
 
                     let mapping = {
@@ -558,19 +574,75 @@ impl Engine {
     fn handle_hid_event(&self, event: HidppEvent) {
         match event {
             HidppEvent::GestureDown => {
-                let enabled = {
+                let (enabled, mapping) = {
                     let cfg = self.inner.config.lock().unwrap();
-                    cfg.get_active_mappings().get("gesture_enabled").cloned().unwrap_or_else(|| "true".to_string()) == "true"
+                    let active = cfg.get_active_mappings();
+                    let enabled = active.get("gesture_enabled").cloned().unwrap_or_else(|| "true".to_string()) == "true";
+                    let mapping = active.get("gesture").cloned();
+                    (enabled, mapping)
                 };
                 if enabled {
                     self.handle_gesture_down();
+                } else if let Some(action_id) = mapping {
+                    if action_id != "none" {
+                        if is_mouse_button_action(&action_id) {
+                            if let Some(sim_key) = get_mouse_button_key(&action_id) {
+                                log::info!("[Engine] Pressing mouse button for gesture action: {:?}", sim_key);
+                                self.inner.key_simulator.inject_mouse_down(sim_key);
+                            }
+                        } else {
+                            log::info!("[Engine] Executing gesture simple click action: {}", action_id);
+                            self.execute_engine_action(&action_id);
+                        }
+                    }
                 }
             }
             HidppEvent::GestureUp => {
-                self.handle_gesture_up();
+                let (enabled, mapping) = {
+                    let cfg = self.inner.config.lock().unwrap();
+                    let active = cfg.get_active_mappings();
+                    let enabled = active.get("gesture_enabled").cloned().unwrap_or_else(|| "true".to_string()) == "true";
+                    let mapping = active.get("gesture").cloned();
+                    (enabled, mapping)
+                };
+                if enabled {
+                    self.handle_gesture_up();
+                } else if let Some(action_id) = mapping {
+                    if action_id != "none" && is_mouse_button_action(&action_id) {
+                        if let Some(sim_key) = get_mouse_button_key(&action_id) {
+                            log::info!("[Engine] Releasing mouse button for gesture action: {:?}", sim_key);
+                            self.inner.key_simulator.inject_mouse_up(sim_key);
+                        }
+                    }
+                }
             }
             HidppEvent::GestureMove { dx, dy } => {
-                self.handle_gesture_move(dx, dy, "hid_rawxy");
+                let enabled = {
+                    let cfg = self.inner.config.lock().unwrap();
+                    let btn_key = {
+                        let gb = self.inner.gesture_button.lock().unwrap();
+                        gb.clone()
+                    };
+                    if let Some(ref btn) = btn_key {
+                        let enabled_key = if btn == "middle" {
+                            "middle_gesture_enabled"
+                        } else if btn == "xbutton1" {
+                            "xbutton1_gesture_enabled"
+                        } else if btn == "xbutton2" {
+                            "xbutton2_gesture_enabled"
+                        } else {
+                            "gesture_enabled"
+                        };
+                        cfg.get_active_mappings().get(enabled_key).cloned().unwrap_or_else(|| "true".to_string()) == "true"
+                    } else {
+                        cfg.get_active_mappings().get("gesture_enabled").cloned().unwrap_or_else(|| "true".to_string()) == "true"
+                    }
+                };
+                if enabled {
+                    self.handle_gesture_move(dx, dy, "hid_rawxy");
+                } else {
+                    self.inner.key_simulator.inject_relative_move(dx as i32, dy as i32);
+                }
             }
             HidppEvent::ModeShiftDown => {
                 log::debug!("[Engine] HID ModeShift button down");
@@ -774,9 +846,9 @@ impl Engine {
         };
 
         let (accum_ref, last_fire_ref) = if delta < 0 {
-            (&self.inner.hscroll_accum_left, &self.inner.hscroll_last_fire_left)
-        } else {
             (&self.inner.hscroll_accum_right, &self.inner.hscroll_last_fire_right)
+        } else {
+            (&self.inner.hscroll_accum_left, &self.inner.hscroll_last_fire_left)
         };
 
         {

@@ -2405,6 +2405,7 @@ dependencies = [
  "egui",
  "gtk",
  "image",
+ "log",
  "mouser_engine",
  "tray-icon",
 ]
