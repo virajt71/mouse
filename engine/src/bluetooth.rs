@@ -6,48 +6,84 @@ pub fn get_paired_logitech_devices() -> (Vec<(String, String, bool)>, bool) {
 
     #[cfg(target_os = "linux")]
     {
-        let result = std::process::Command::new("bluetoothctl")
-            .arg("devices")
-            .arg("Paired")
-            .output();
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+
+        let result = Command::new("bluetoothctl")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn();
 
         match result {
             Err(_) => {
                 // bluetoothctl not found or couldn't spawn — treat BT as unavailable
                 (devices, false)
             }
-            Ok(output) => {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                let stdout = String::from_utf8_lossy(&output.stdout);
+            Ok(mut child) => {
+                // Write both commands to stdin and exit
+                if let Some(mut stdin) = child.stdin.take() {
+                    let _ = stdin.write_all(b"devices Paired\ndevices Connected\nexit\n");
+                }
 
-                // If stderr contains "not available" or "No default controller"
-                // the Bluetooth adapter is powered off.
-                if stderr.contains("not available")
-                    || stderr.contains("No default controller")
-                    || stdout.contains("not available")
-                {
-                    (devices, false)
-                } else {
-                    let connected_macs = get_connected_bluetooth_macs();
-                    for line in stdout.lines() {
-                        // Output format: Device XX:XX:XX:XX:XX:XX Device Name
-                        let parts: Vec<&str> = line.splitn(3, ' ').collect();
-                        if parts.len() == 3 && parts[0] == "Device" {
-                            let mac = parts[1].to_string();
-                            let name = parts[2].trim().to_string();
-                            let name_lower = name.to_lowercase();
-                            // Match Logitech or MX products
-                            if name_lower.contains("logitech")
-                                || name_lower.contains("logi")
-                                || name_lower.contains("mx ")
-                            {
+                match child.wait_with_output() {
+                    Err(_) => (devices, false),
+                    Ok(output) => {
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        let stdout = String::from_utf8_lossy(&output.stdout);
+
+                        if stderr.contains("not available")
+                            || stderr.contains("No default controller")
+                            || stdout.contains("not available")
+                        {
+                            (devices, false)
+                        } else {
+                            let mut paired_list = Vec::new();
+                            let mut connected_macs = std::collections::HashSet::new();
+                            let mut parsing_connected = false;
+
+                            for line in stdout.lines() {
+                                if line.contains("devices Connected") {
+                                    parsing_connected = true;
+                                    continue;
+                                } else if line.contains("devices Paired") {
+                                    parsing_connected = false;
+                                    continue;
+                                }
+
+                                // Output format: Device XX:XX:XX:XX:XX:XX Device Name
+                                let parts: Vec<&str> = line.splitn(3, ' ').collect();
+                                if parts.len() >= 3 && parts[0] == "Device" {
+                                    let mac = parts[1].to_string();
+                                    let name = parts[2].trim().to_string();
+                                    let name_lower = name.to_lowercase();
+                                    // Match Logitech or MX products
+                                    if name_lower.contains("logitech")
+                                        || name_lower.contains("logi")
+                                        || name_lower.contains("mx ")
+                                    {
+                                        if parsing_connected {
+                                            connected_macs.insert(mac.to_uppercase());
+                                        } else {
+                                            paired_list.push((mac, name));
+                                        }
+                                    }
+                                } else if parts.len() == 2 && parts[0] == "Device" {
+                                    let mac = parts[1].to_string();
+                                    if parsing_connected {
+                                        connected_macs.insert(mac.to_uppercase());
+                                    }
+                                }
+                            }
+
+                            for (mac, name) in paired_list {
                                 let connected = connected_macs.contains(&mac.to_uppercase());
                                 devices.push((mac, name, connected));
                             }
+
+                            (devices, true)
                         }
                     }
-
-                    (devices, true)
                 }
             }
         }

@@ -230,13 +230,36 @@ fn get_exe_for_pid(pid: u32) -> Option<String> {
     None
 }
 
+thread_local! {
+    static X11_CONN: std::cell::RefCell<Option<(x11rb::rust_connection::RustConnection, usize)>> = std::cell::RefCell::new(None);
+}
+
 pub fn get_foreground_exe() -> Option<String> {
     if let Ok(display) = std::env::var("DISPLAY") {
         if !display.is_empty() {
-            if let Ok((conn, screen_num)) = x11rb::connect(None) {
-                if let Ok(Some(pid)) = get_active_app_pid_x11_persistent(&conn, screen_num) {
-                    return get_exe_for_pid(pid);
+            let pid = X11_CONN.with(|cell| {
+                let mut opt = cell.borrow_mut();
+                if opt.is_none() {
+                    if let Ok(conn_pair) = x11rb::connect(None) {
+                        *opt = Some(conn_pair);
+                    }
                 }
+                if let Some((ref conn, screen_num)) = *opt {
+                    match get_active_app_pid_x11_persistent(conn, screen_num) {
+                        Ok(Some(pid)) => Some(pid),
+                        Ok(None) => None,
+                        Err(_) => {
+                            // Connection failed, clear from cache
+                            *opt = None;
+                            None
+                        }
+                    }
+                } else {
+                    None
+                }
+            });
+            if let Some(p) = pid {
+                return get_exe_for_pid(p);
             }
         }
     }

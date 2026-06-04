@@ -114,7 +114,17 @@ pub fn mapping_to_action(btn: CustomizingButton, mappings: &std::collections::Ha
     let val = mappings.get(base_key).cloned().unwrap_or_else(|| "none".to_string());
     let gesture_enabled = mappings.get(gesture_enabled_key).map(|s| s == "true").unwrap_or(false);
 
-    if gesture_enabled {
+    // Check gesture mode via explicit flag, legacy placeholder, or any configured direction.
+    let is_gesture = gesture_enabled
+        || val == "gestures"
+        || {
+            let (_, _, up_k, down_k, left_k, right_k) = get_button_keys(btn);
+            [up_k, down_k, left_k, right_k].iter().any(|k| {
+                mappings.get(*k).map(|v| v != "none").unwrap_or(false)
+            })
+        };
+
+    if is_gesture {
         ButtonAction::Gestures
     } else if val == "none" {
         ButtonAction::Disabled
@@ -592,9 +602,12 @@ pub fn show(
                                         let action_str = format!("custom:{}", recorded);
                                         match &target {
                                             RecordingTarget::Button(b) => {
-                                                let (base_key, gesture_enabled_key, _, _, _, _) = get_button_keys(*b);
+                                                let (base_key, gesture_enabled_key, up_k, down_k, left_k, right_k) = get_button_keys(*b);
                                                 mappings.insert(base_key.to_string(), action_str);
                                                 mappings.insert(gesture_enabled_key.to_string(), "false".to_string());
+                                                for dir_key in [up_k, down_k, left_k, right_k] {
+                                                    mappings.insert(dir_key.to_string(), "none".to_string());
+                                                }
                                             }
                                             RecordingTarget::Gesture(b, dir) => {
                                                 let (_, _, up_key, down_key, left_key, right_key) = get_button_keys(*b);
@@ -607,7 +620,11 @@ pub fn show(
                                                 mappings.insert(key_to_update.to_string(), action_str);
                                             }
                                         }
-                                        engine.update_profile_mappings(profile_name, mappings);
+                                        let engine_bg = engine.clone();
+                                        let profile_name_bg = profile_name.clone();
+                                        std::thread::spawn(move || {
+                                            engine_bg.update_profile_mappings(&profile_name_bg, mappings);
+                                        });
                                     }
                                 }
                                 RECORDING_TARGET.with(|r| *r.borrow_mut() = None);
@@ -797,69 +814,17 @@ fn show_buttons_tab(
             } else {
                 opt.display_name().to_string()
             }
-        } else if btn == CustomizingButton::Thumb {
-            let opt = get_thumb_button_option(&profile.mappings);
-            if opt == ThumbButtonOption::KeyboardShortcut {
-                if mapping_str.starts_with("custom:") {
-                    mapping_str.strip_prefix("custom:").unwrap().to_uppercase()
-                } else {
-                    "NONE".to_string()
-                }
-            } else {
-                opt.display_name().to_string()
-            }
-        } else if btn == CustomizingButton::Forward {
-            let opt = get_forward_button_option(&profile.mappings);
-            if opt == ForwardButtonOption::KeyboardShortcut {
-                if mapping_str.starts_with("custom:") {
-                    mapping_str.strip_prefix("custom:").unwrap().to_uppercase()
-                } else {
-                    "NONE".to_string()
-                }
-            } else {
-                opt.display_name().to_string()
-            }
-        } else if btn == CustomizingButton::Back {
-            let opt = get_back_button_option(&profile.mappings);
-            if opt == BackButtonOption::KeyboardShortcut {
-                if mapping_str.starts_with("custom:") {
-                    mapping_str.strip_prefix("custom:").unwrap().to_uppercase()
-                } else {
-                    "NONE".to_string()
-                }
-            } else {
-                opt.display_name().to_string()
-            }
-        } else if btn == CustomizingButton::Top {
-            let opt = get_top_button_option(&profile.mappings);
-            if opt == TopButtonOption::KeyboardShortcut {
-                if mapping_str.starts_with("custom:") {
-                    mapping_str.strip_prefix("custom:").unwrap().to_uppercase()
-                } else {
-                    "NONE".to_string()
-                }
-            } else {
-                opt.display_name().to_string()
-            }
-        } else if btn == CustomizingButton::Middle {
-            let opt = get_wheel_button_option(&profile.mappings);
-            if opt == WheelButtonOption::KeyboardShortcut {
-                if mapping_str.starts_with("custom:") {
-                    mapping_str.strip_prefix("custom:").unwrap().to_uppercase()
-                } else {
-                    "NONE".to_string()
-                }
-            } else {
-                opt.display_name().to_string()
-            }
-        } else if action == ButtonAction::Keystroke {
-            if mapping_str.starts_with("custom:") {
-                mapping_str.strip_prefix("custom:").unwrap().to_uppercase()
-            } else {
-                "Keystroke".to_string()
-            }
         } else {
-            action.display_name().to_string()
+            let opt = get_button_option(btn, &profile.mappings);
+            if opt == UniversalButtonOption::KeyboardShortcut {
+                if mapping_str.starts_with("custom:") {
+                    mapping_str.strip_prefix("custom:").unwrap().to_uppercase()
+                } else {
+                    "NONE".to_string()
+                }
+            } else {
+                opt.display_name(btn).to_string()
+            }
         };
 
         let card_res = draw_tooltip_card(
@@ -895,7 +860,7 @@ fn show_buttons_tab(
     }
 
     // Draw Selection Popup Card if active
-    if let Some((btn, card_pos, card_rect, current_action)) = popup_to_draw {
+    if let Some((btn, card_pos, card_rect, _)) = popup_to_draw {
         let show_thumbwheel = btn == CustomizingButton::Thumbwheel;
         let show_thumb = btn == CustomizingButton::Thumb;
         let show_forward = btn == CustomizingButton::Forward;
@@ -903,13 +868,10 @@ fn show_buttons_tab(
         let show_top = btn == CustomizingButton::Top;
         let show_wheel = btn == CustomizingButton::Middle;
 
-        let is_gesture_active = match btn {
-            CustomizingButton::Thumb => get_thumb_button_option(&profile.mappings) == ThumbButtonOption::Gestures,
-            CustomizingButton::Forward => get_forward_button_option(&profile.mappings) == ForwardButtonOption::Gesture,
-            CustomizingButton::Back => get_back_button_option(&profile.mappings) == BackButtonOption::Gesture,
-            CustomizingButton::Top => get_top_button_option(&profile.mappings) == TopButtonOption::Gestures,
-            CustomizingButton::Middle => get_wheel_button_option(&profile.mappings) == WheelButtonOption::Gestures,
-            _ => false,
+        let is_gesture_active = if btn == CustomizingButton::Thumbwheel {
+            false
+        } else {
+            get_button_option(btn, &profile.mappings) == UniversalButtonOption::Gesture
         };
 
         let view_state_id = ui.id().with(format!("popup_view_for_{:?}", btn));
@@ -1012,6 +974,7 @@ fn show_buttons_tab(
                         card_rect,
                         customizing_button,
                         &mut selected_opt,
+                        view_state_id,
                     );
 
                     if let Some(opt) = selected_opt {
@@ -1019,215 +982,64 @@ fn show_buttons_tab(
                         if opt == ThumbwheelOption::KeyboardShortcut {
                             // Leave it in ActionList view; inline buttons handle transitions.
                             save_thumbwheel_option(opt, &mut mappings);
-                            engine.update_profile_mappings(&config.active_profile, mappings);
+                            let engine_bg = engine.clone();
+                            let profile_bg = config.active_profile.clone();
+                            std::thread::spawn(move || { engine_bg.update_profile_mappings(&profile_bg, mappings); });
                         } else {
                             save_thumbwheel_option(opt, &mut mappings);
-                            engine.update_profile_mappings(&config.active_profile, mappings);
-                            *customizing_button = None;
-                        }
-                    }
-                    res
-                } else if show_thumb {
-                    let mut selected_opt = None;
-                    let res = draw_thumb_button_action_popup(
-                        ui,
-                        engine,
-                        config,
-                        popup_rect,
-                        card_rect,
-                        customizing_button,
-                        &mut selected_opt,
-                    );
-
-                    if let Some(opt) = selected_opt {
-                        let mut mappings = profile.mappings.clone();
-                        if opt == ThumbButtonOption::Gestures {
-                            ui.ctx().data_mut(|d| d.insert_temp(view_state_id, PopupView::GesturesConfig));
-                        } else if opt == ThumbButtonOption::KeyboardShortcut {
-                            let (click_key, _, _, _, _, _) = get_button_keys(btn);
-                            ui.ctx().data_mut(|d| d.insert_temp(view_state_id, PopupView::RecordShortcut {
-                                target_key: click_key.to_string(),
-                                display_label: "Thumb Button".to_string(),
-                            }));
-                        } else {
-                            save_thumb_button_option(opt, &mut mappings);
-                            engine.update_profile_mappings(&config.active_profile, mappings);
-                            *customizing_button = None;
-                        }
-                    }
-                    res
-                } else if show_forward {
-                    let mut selected_opt = None;
-                    let res = draw_forward_button_action_popup(
-                        ui,
-                        engine,
-                        config,
-                        popup_rect,
-                        card_rect,
-                        customizing_button,
-                        &mut selected_opt,
-                    );
-
-                    if let Some(opt) = selected_opt {
-                        let mut mappings = profile.mappings.clone();
-                        if opt == ForwardButtonOption::Gesture {
-                            ui.ctx().data_mut(|d| d.insert_temp(view_state_id, PopupView::GesturesConfig));
-                        } else if opt == ForwardButtonOption::KeyboardShortcut {
-                            let (click_key, _, _, _, _, _) = get_button_keys(btn);
-                            ui.ctx().data_mut(|d| d.insert_temp(view_state_id, PopupView::RecordShortcut {
-                                target_key: click_key.to_string(),
-                                display_label: "Forward Button".to_string(),
-                            }));
-                        } else {
-                            save_forward_button_option(opt, &mut mappings);
-                            engine.update_profile_mappings(&config.active_profile, mappings);
-                            *customizing_button = None;
-                        }
-                    }
-                    res
-                } else if show_back {
-                    let mut selected_opt = None;
-                    let res = draw_back_button_action_popup(
-                        ui,
-                        engine,
-                        config,
-                        popup_rect,
-                        card_rect,
-                        customizing_button,
-                        &mut selected_opt,
-                    );
-
-                    if let Some(opt) = selected_opt {
-                        let mut mappings = profile.mappings.clone();
-                        if opt == BackButtonOption::Gesture {
-                            ui.ctx().data_mut(|d| d.insert_temp(view_state_id, PopupView::GesturesConfig));
-                        } else if opt == BackButtonOption::KeyboardShortcut {
-                            let (click_key, _, _, _, _, _) = get_button_keys(btn);
-                            ui.ctx().data_mut(|d| d.insert_temp(view_state_id, PopupView::RecordShortcut {
-                                target_key: click_key.to_string(),
-                                display_label: "Back Button".to_string(),
-                            }));
-                        } else {
-                            save_back_button_option(opt, &mut mappings);
-                            engine.update_profile_mappings(&config.active_profile, mappings);
-                            *customizing_button = None;
-                        }
-                    }
-                    res
-                } else if show_top {
-                    let mut selected_opt = None;
-                    let res = draw_top_button_action_popup(
-                        ui,
-                        engine,
-                        config,
-                        popup_rect,
-                        card_rect,
-                        customizing_button,
-                        &mut selected_opt,
-                    );
-
-                    if let Some(opt) = selected_opt {
-                        let mut mappings = profile.mappings.clone();
-                        if opt == TopButtonOption::Gestures {
-                            ui.ctx().data_mut(|d| d.insert_temp(view_state_id, PopupView::GesturesConfig));
-                        } else if opt == TopButtonOption::KeyboardShortcut {
-                            let (click_key, _, _, _, _, _) = get_button_keys(btn);
-                            ui.ctx().data_mut(|d| d.insert_temp(view_state_id, PopupView::RecordShortcut {
-                                target_key: click_key.to_string(),
-                                display_label: "Top Button".to_string(),
-                            }));
-                        } else {
-                            save_top_button_option(opt, &mut mappings);
-                            engine.update_profile_mappings(&config.active_profile, mappings);
-                            *customizing_button = None;
-                        }
-                    }
-                    res
-                } else if show_wheel {
-                    let mut selected_opt = None;
-                    let res = draw_wheel_button_action_popup(
-                        ui,
-                        engine,
-                        config,
-                        popup_rect,
-                        card_rect,
-                        customizing_button,
-                        &mut selected_opt,
-                    );
-
-                    if let Some(opt) = selected_opt {
-                        let mut mappings = profile.mappings.clone();
-                        if opt == WheelButtonOption::Gestures {
-                            ui.ctx().data_mut(|d| d.insert_temp(view_state_id, PopupView::GesturesConfig));
-                        } else if opt == WheelButtonOption::KeyboardShortcut {
-                            let (click_key, _, _, _, _, _) = get_button_keys(btn);
-                            ui.ctx().data_mut(|d| d.insert_temp(view_state_id, PopupView::RecordShortcut {
-                                target_key: click_key.to_string(),
-                                display_label: "Wheel Button".to_string(),
-                            }));
-                        } else {
-                            save_wheel_button_option(opt, &mut mappings);
-                            engine.update_profile_mappings(&config.active_profile, mappings);
+                            let engine_bg = engine.clone();
+                            let profile_bg = config.active_profile.clone();
+                            std::thread::spawn(move || { engine_bg.update_profile_mappings(&profile_bg, mappings); });
                             *customizing_button = None;
                         }
                     }
                     res
                 } else {
-                    let mut selected_action = None;
-                    let res = draw_action_popup(
+                    let mut selected_opt = None;
+                    let res = draw_button_action_popup(
                         ui,
+                        btn,
                         engine,
                         config,
-                        btn,
                         popup_rect,
                         card_rect,
-                        current_action,
-                        &mut selected_action,
+                        customizing_button,
+                        &mut selected_opt,
+                        view_state_id,
                     );
 
-                    if let Some(action) = selected_action {
+                    if let Some(opt) = selected_opt {
                         let mut mappings = profile.mappings.clone();
-                        let (base_key, gesture_enabled_key, _, _, _, _) = get_button_keys(btn);
-
-                        match action {
-                            ButtonAction::Disabled => {
-                                mappings.insert(base_key.to_string(), "none".to_string());
-                                mappings.insert(gesture_enabled_key.to_string(), "false".to_string());
-                            }
-                            ButtonAction::MiddleClick => {
-                                mappings.insert(base_key.to_string(), "mouse_middle_click".to_string());
-                                mappings.insert(gesture_enabled_key.to_string(), "false".to_string());
-                            }
-                            ButtonAction::ModeShift => {
-                                mappings.insert(base_key.to_string(), "switch_scroll_mode".to_string());
-                                mappings.insert(gesture_enabled_key.to_string(), "false".to_string());
-                            }
-                            ButtonAction::Forward => {
-                                mappings.insert(base_key.to_string(), "mouse_forward_click".to_string());
-                                mappings.insert(gesture_enabled_key.to_string(), "false".to_string());
-                            }
-                            ButtonAction::Back => {
-                                mappings.insert(base_key.to_string(), "mouse_back_click".to_string());
-                                mappings.insert(gesture_enabled_key.to_string(), "false".to_string());
-                            }
-                            ButtonAction::HorizontalScroll => {
-                                mappings.insert(base_key.to_string(), "hscroll".to_string());
-                                mappings.insert(gesture_enabled_key.to_string(), "false".to_string());
-                            }
-                            ButtonAction::Gestures => {
-                                mappings.insert(gesture_enabled_key.to_string(), "true".to_string());
-                            }
-                            ButtonAction::Keystroke => {
-                                let (click_key, _, _, _, _, _) = get_button_keys(btn);
-                                ui.ctx().data_mut(|d| d.insert_temp(view_state_id, PopupView::RecordShortcut {
-                                    target_key: click_key.to_string(),
-                                    display_label: format!("{:?} Button", btn),
-                                }));
-                            }
+                        if opt == UniversalButtonOption::Gesture {
+                            // Immediately persist gesture_enabled = "true" so the button
+                            // card and engine both recognise gestures as active.
+                            save_button_option(btn, opt, &mut mappings);
+                            let engine_bg = engine.clone();
+                            let profile_bg = config.active_profile.clone();
+                            std::thread::spawn(move || { engine_bg.update_profile_mappings(&profile_bg, mappings); });
+                            // Then show the gesture configuration panel.
+                            ui.ctx().data_mut(|d| d.insert_temp(view_state_id, PopupView::GesturesConfig));
+                        } else if opt == UniversalButtonOption::KeyboardShortcut {
+                            let (click_key, _, _, _, _, _) = get_button_keys(btn);
+                            let display_label = match btn {
+                                CustomizingButton::Thumb => "Thumb Button",
+                                CustomizingButton::Forward => "Forward Button",
+                                CustomizingButton::Back => "Back Button",
+                                CustomizingButton::Top => "Top Button",
+                                CustomizingButton::Middle => "Wheel Button",
+                                _ => "",
+                            };
+                            ui.ctx().data_mut(|d| d.insert_temp(view_state_id, PopupView::RecordShortcut {
+                                target_key: click_key.to_string(),
+                                display_label: display_label.to_string(),
+                            }));
+                        } else {
+                            save_button_option(btn, opt, &mut mappings);
+                            let engine_bg = engine.clone();
+                            let profile_bg = config.active_profile.clone();
+                            std::thread::spawn(move || { engine_bg.update_profile_mappings(&profile_bg, mappings); });
+                            *customizing_button = None;
                         }
-
-                        engine.update_profile_mappings(&config.active_profile, mappings);
-                        *customizing_button = None;
                     }
                     res
                 }
@@ -1242,6 +1054,7 @@ fn show_buttons_tab(
 
 // ── POINT & SCROLL TAB ──────────────────────────────────────────────────────
 fn show_point_scroll_tab(ui: &mut egui::Ui, engine: &Engine, config: &mut Config) {
+    let mut settings_dirty = false;
     ui.horizontal(|ui| {
         ui.add_space(40.0);
         ui.vertical(|ui| {
@@ -1264,17 +1077,7 @@ fn show_point_scroll_tab(ui: &mut egui::Ui, engine: &Engine, config: &mut Config
             let mut dpi = config.settings.dpi;
             if ui.add(egui::Slider::new(&mut dpi, 200..=4000).step_by(50.0).show_value(false)).changed() {
                 config.settings.dpi = dpi;
-                engine.update_global_settings(
-                    config.settings.dpi as u32,
-                    config.settings.smart_shift_mode.clone(),
-                    config.settings.smart_shift_enabled,
-                    config.settings.smart_shift_threshold as u8,
-                    config.settings.invert_hscroll,
-                    config.settings.invert_vscroll,
-                    config.settings.gesture_threshold,
-                    config.settings.gesture_deadzone,
-                    config.settings.accent_color.clone(),
-                );
+                settings_dirty = true;
             }
             ui.add_space(20.0);
 
@@ -1283,17 +1086,7 @@ fn show_point_scroll_tab(ui: &mut egui::Ui, engine: &Engine, config: &mut Config
                 let mut smart_shift_enabled = config.settings.smart_shift_enabled;
                 if ui.checkbox(&mut smart_shift_enabled, "SmartShift (Auto-switching Wheel)").changed() {
                     config.settings.smart_shift_enabled = smart_shift_enabled;
-                    engine.update_global_settings(
-                        config.settings.dpi as u32,
-                        config.settings.smart_shift_mode.clone(),
-                        config.settings.smart_shift_enabled,
-                        config.settings.smart_shift_threshold as u8,
-                        config.settings.invert_hscroll,
-                        config.settings.invert_vscroll,
-                        config.settings.gesture_threshold,
-                        config.settings.gesture_deadzone,
-                        config.settings.accent_color.clone(),
-                    );
+                    settings_dirty = true;
                 }
             });
             ui.add_space(10.0);
@@ -1318,17 +1111,7 @@ fn show_point_scroll_tab(ui: &mut egui::Ui, engine: &Engine, config: &mut Config
 
                     if let Some(true) = res.inner {
                         config.settings.smart_shift_mode = mode;
-                        engine.update_global_settings(
-                            config.settings.dpi as u32,
-                            config.settings.smart_shift_mode.clone(),
-                            config.settings.smart_shift_enabled,
-                            config.settings.smart_shift_threshold as u8,
-                            config.settings.invert_hscroll,
-                            config.settings.invert_vscroll,
-                            config.settings.gesture_threshold,
-                            config.settings.gesture_deadzone,
-                            config.settings.accent_color.clone(),
-                        );
+                        settings_dirty = true;
                     }
                 });
                 ui.add_space(10.0);
@@ -1342,17 +1125,7 @@ fn show_point_scroll_tab(ui: &mut egui::Ui, engine: &Engine, config: &mut Config
                 let mut ss_thresh = config.settings.smart_shift_threshold;
                 if ui.add(egui::Slider::new(&mut ss_thresh, 1..=50).show_value(false)).changed() {
                     config.settings.smart_shift_threshold = ss_thresh;
-                    engine.update_global_settings(
-                        config.settings.dpi as u32,
-                        config.settings.smart_shift_mode.clone(),
-                        config.settings.smart_shift_enabled,
-                        config.settings.smart_shift_threshold as u8,
-                        config.settings.invert_hscroll,
-                        config.settings.invert_vscroll,
-                        config.settings.gesture_threshold,
-                        config.settings.gesture_deadzone,
-                        config.settings.accent_color.clone(),
-                    );
+                    settings_dirty = true;
                 }
                 ui.add_space(20.0);
             }
@@ -1366,36 +1139,30 @@ fn show_point_scroll_tab(ui: &mut egui::Ui, engine: &Engine, config: &mut Config
             let mut invert_v = config.settings.invert_vscroll;
             if ui.checkbox(&mut invert_v, "Invert Vertical Scroll").changed() {
                 config.settings.invert_vscroll = invert_v;
-                engine.update_global_settings(
-                    config.settings.dpi as u32,
-                    config.settings.smart_shift_mode.clone(),
-                    config.settings.smart_shift_enabled,
-                    config.settings.smart_shift_threshold as u8,
-                    config.settings.invert_hscroll,
-                    config.settings.invert_vscroll,
-                    config.settings.gesture_threshold,
-                    config.settings.gesture_deadzone,
-                    config.settings.accent_color.clone(),
-                );
+                settings_dirty = true;
             }
 
             let mut invert_h = config.settings.invert_hscroll;
             if ui.checkbox(&mut invert_h, "Invert Horizontal Scroll").changed() {
                 config.settings.invert_hscroll = invert_h;
-                engine.update_global_settings(
-                    config.settings.dpi as u32,
-                    config.settings.smart_shift_mode.clone(),
-                    config.settings.smart_shift_enabled,
-                    config.settings.smart_shift_threshold as u8,
-                    config.settings.invert_hscroll,
-                    config.settings.invert_vscroll,
-                    config.settings.gesture_threshold,
-                    config.settings.gesture_deadzone,
-                    config.settings.accent_color.clone(),
-                );
+                settings_dirty = true;
             }
         });
     });
+
+    if settings_dirty {
+        engine.update_global_settings(
+            config.settings.dpi as u32,
+            config.settings.smart_shift_mode.clone(),
+            config.settings.smart_shift_enabled,
+            config.settings.smart_shift_threshold as u8,
+            config.settings.invert_hscroll,
+            config.settings.invert_vscroll,
+            config.settings.gesture_threshold,
+            config.settings.gesture_deadzone,
+            config.settings.accent_color.clone(),
+        );
+    }
 }
 
 // ── FLOW TAB ─────────────────────────────────────────────────────────────────
@@ -1736,198 +1503,6 @@ fn draw_tooltip_card(
     response
 }
 
-fn draw_action_popup(
-    ui: &mut egui::Ui,
-    engine: &Engine,
-    config: &mut Config,
-    btn: CustomizingButton,
-    rect: Rect,
-    card_rect: Rect,
-    current_action: ButtonAction,
-    selected_action: &mut Option<ButtonAction>,
-) -> bool {
-    let _response = ui.allocate_rect(rect, egui::Sense::click());
-
-    let clicked_away = ui.input(|i| i.pointer.any_click())
-        && !ui.rect_contains_pointer(rect)
-        && !ui.rect_contains_pointer(card_rect);
-
-    let bg = theme::surface_color(ui.ctx());
-    let border = theme::border_color(ui.ctx());
-
-    // Draw drop shadow
-    let shadow_rect = rect.expand2(vec2(2.0, 3.0)).translate(vec2(0.0, 2.0));
-    ui.painter().rect_filled(
-        shadow_rect,
-        3.0,
-        Color32::from_rgba_unmultiplied(0, 0, 0, 80),
-    );
-
-    // Outer popup container
-    ui.painter().rect_filled(rect, 2.0, bg);
-    ui.painter()
-        .rect_stroke(rect, 2.0, Stroke::new(1.0, border));
-    theme::draw_tech_corners(ui.painter(), rect, theme::accent_color(ui.ctx()), 6.0);
-
-    let profile = config.profiles.get(&config.active_profile).cloned().unwrap();
-
-    let supports_gestures = matches!(btn, CustomizingButton::Middle | CustomizingButton::Forward | CustomizingButton::Back | CustomizingButton::Thumb);
-
-    if current_action == ButtonAction::Gestures && supports_gestures {
-        // Render 4-way gesture configuration grid directly in the popup
-        let mut child_ui = ui.new_child(
-            egui::UiBuilder::new()
-                .max_rect(rect.shrink(10.0))
-                .layout(egui::Layout::top_down(egui::Align::Min)),
-        );
-
-        child_ui.horizontal(|ui| {
-            if ui.button("← Actions").clicked() {
-                *selected_action = Some(ButtonAction::Disabled); // Go back to simple actions
-            }
-            ui.label(RichText::new("GESTURES GRID").strong().color(Color32::WHITE));
-        });
-        child_ui.add_space(10.0);
-
-        let directions = &["up", "down", "left", "right"];
-        let (_, _, up_key, down_key, left_key, right_key) = get_button_keys(btn);
-
-        for &dir in directions {
-            let key_str = match dir {
-                "up" => up_key,
-                "down" => down_key,
-                "left" => left_key,
-                _ => right_key,
-            };
-
-            let cur_val = profile.mappings.get(key_str).cloned().unwrap_or_else(|| "none".to_string());
-
-            child_ui.horizontal(|ui| {
-                ui.label(format!("Swipe {}:", dir.to_uppercase()));
-
-                let mut sel_val = cur_val.clone();
-                let combo_label = if sel_val.starts_with("custom:") {
-                    sel_val.strip_prefix("custom:").unwrap().to_uppercase()
-                } else {
-                    sel_val.replace('_', " ")
-                };
-
-                let combo = egui::ComboBox::from_id_salt(format!("{}_{}", btn as usize, dir))
-                    .selected_text(RichText::new(&combo_label).size(10.0));
-
-                let res = combo.show_ui(ui, |ui| {
-                    let mut changed = false;
-                    let actions_list = &[
-                        ("none", "Disabled"),
-                        ("alt_tab", "Alt Tab"),
-                        ("alt_shift_tab", "Alt Shift Tab"),
-                        ("copy", "Copy"),
-                        ("paste", "Paste"),
-                        ("volume_up", "Volume Up"),
-                        ("volume_down", "Volume Down"),
-                        ("volume_mute", "Volume Mute"),
-                        ("space_left", "Space Left"),
-                        ("space_right", "Space Right"),
-                        ("page_up", "Page Up"),
-                        ("page_down", "Page Down"),
-                        ("cycle_dpi", "Cycle DPI"),
-                        ("custom", "Keyboard Shortcut"),
-                    ];
-
-                    for &(act_id, act_disp) in actions_list {
-                        if ui.selectable_label(sel_val == act_id, act_disp).clicked() {
-                            if act_id == "custom" {
-                                RECORDING_TARGET.with(|r| *r.borrow_mut() = Some(RecordingTarget::Gesture(btn, dir.to_string())));
-                            } else {
-                                sel_val = act_id.to_string();
-                                changed = true;
-                            }
-                        }
-                    }
-                    changed
-                });
-
-                if let Some(true) = res.inner {
-                    let mut mps = profile.mappings.clone();
-                    mps.insert(key_str.to_string(), sel_val);
-                    engine.update_profile_mappings(&config.active_profile, mps);
-                }
-            });
-            child_ui.add_space(8.0);
-        }
-    } else {
-        // Render normal simple actions
-        let item_h = 22.0;
-        let margin = 6.0;
-
-        let mut actions = vec![
-            ButtonAction::MiddleClick,
-            ButtonAction::ModeShift,
-            ButtonAction::Forward,
-            ButtonAction::Back,
-            ButtonAction::HorizontalScroll,
-            ButtonAction::Keystroke,
-            ButtonAction::Disabled,
-        ];
-
-        if supports_gestures {
-            actions.insert(5, ButtonAction::Gestures);
-        }
-
-        let mut click_occurred = false;
-
-        for (i, &act) in actions.iter().enumerate() {
-            let item_rect = Rect::from_min_max(
-                pos2(rect.min.x + 1.0, rect.min.y + margin + i as f32 * item_h),
-                pos2(
-                    rect.max.x - 1.0,
-                    rect.min.y + margin + (i + 1) as f32 * item_h,
-                ),
-            );
-
-            let item_id = ui.id().with("pop_item").with(act);
-            let item_res = ui.interact(item_rect, item_id, egui::Sense::click());
-
-            let is_selected = act == current_action;
-            let is_hovered = item_res.hovered();
-
-            if is_hovered {
-                ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
-                let hover_bg = theme::hover_color(ui.ctx());
-                ui.painter().rect_filled(item_rect, 0.0, hover_bg);
-            }
-
-            let text_color = if is_selected {
-                theme::accent_color(ui.ctx())
-            } else if is_hovered {
-                theme::primary_text(ui.ctx())
-            } else {
-                theme::secondary_text(ui.ctx())
-            };
-
-            let label_text = act.display_name();
-            let galley = ui.fonts(|f| {
-                f.layout_job(egui::text::LayoutJob::simple_singleline(
-                    label_text.to_string(),
-                    egui::FontId::proportional(11.0),
-                    text_color,
-                ))
-            });
-            let text_y = item_rect.center().y - galley.size().y / 2.0;
-            ui.painter()
-                .galley(pos2(item_rect.min.x + 12.0, text_y), galley, text_color);
-
-            if item_res.clicked() {
-                *selected_action = Some(act);
-                click_occurred = true;
-            }
-        }
-
-        return clicked_away && !click_occurred;
-    }
-
-    clicked_away
-}
 
 // ── THUMBWHEEL OPTIONS ───────────────────────────────────────────────────────
 
@@ -2066,6 +1641,7 @@ fn draw_thumbwheel_action_popup(
     card_rect: Rect,
     customizing_button: &mut Option<CustomizingButton>,
     selected_option: &mut Option<ThumbwheelOption>,
+    view_state_id: egui::Id,
 ) -> bool {
     let _response = ui.allocate_rect(rect, egui::Sense::click());
 
@@ -2127,7 +1703,7 @@ fn draw_thumbwheel_action_popup(
             ];
 
             for &opt in recommended {
-                if draw_thumbwheel_item(ui, opt, current_opt, &profile, customizing_button, selected_option) {
+                if draw_thumbwheel_item(ui, opt, current_opt, &profile, customizing_button, selected_option, view_state_id) {
                     click_occurred = true;
                 }
             }
@@ -2156,7 +1732,7 @@ fn draw_thumbwheel_action_popup(
             ];
 
             for &opt in other {
-                if draw_thumbwheel_item(ui, opt, current_opt, &profile, customizing_button, selected_option) {
+                if draw_thumbwheel_item(ui, opt, current_opt, &profile, customizing_button, selected_option, view_state_id) {
                     click_occurred = true;
                 }
             }
@@ -2174,6 +1750,7 @@ fn draw_thumbwheel_item(
     profile: &mouser_engine::config::Profile,
     _customizing_button: &mut Option<CustomizingButton>,
     selected_option: &mut Option<ThumbwheelOption>,
+    view_state_id: egui::Id,
 ) -> bool {
     let is_selected = opt == current_opt;
     let item_h = 24.0;
@@ -2238,7 +1815,6 @@ fn draw_thumbwheel_item(
             ));
             if btn_left.clicked() {
                 ui.ctx().memory_mut(|mem| mem.stop_text_input());
-                let view_state_id = ui.id().with(format!("popup_view_for_{:?}", CustomizingButton::Thumbwheel));
                 ui.ctx().data_mut(|d| d.insert_temp(view_state_id, PopupView::RecordShortcut {
                     target_key: "hscroll_left".to_string(),
                     display_label: "Scroll Left".to_string(),
@@ -2258,7 +1834,6 @@ fn draw_thumbwheel_item(
             ));
             if btn_right.clicked() {
                 ui.ctx().memory_mut(|mem| mem.stop_text_input());
-                let view_state_id = ui.id().with(format!("popup_view_for_{:?}", CustomizingButton::Thumbwheel));
                 ui.ctx().data_mut(|d| d.insert_temp(view_state_id, PopupView::RecordShortcut {
                     target_key: "hscroll_right".to_string(),
                     display_label: "Scroll Right".to_string(),
@@ -2273,965 +1848,26 @@ fn draw_thumbwheel_item(
 }
 
 
-// ── THUMB BUTTON OPTIONS ─────────────────────────────────────────────────────
+// ── UNIFIED BUTTON OPTIONS ───────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ThumbButtonOption {
-    Gestures,
-    TaskView,
-    ShowHideDesktop,
-    ScreenCapture,
-    PrintScreen,
-    SwitchApplication,
-    KeyboardShortcut,
-
-    ActionCenter,
-    AdvancedClick,
-    Back,
-    BrightnessDown,
-    BrightnessUp,
-    Calculator,
-    ChangePointerSpeed,
-    CloseWindow,
-    Copy,
-    Cut,
-    DesktopLeft,
-    DesktopRight,
-    Dictation,
-    DoNothing,
-    Emoji,
-    EmojisMenu,
-    Forward,
-    InputLanguage,
-    Lock,
-    MaximizeWindow,
-    MiddleButton,
-    MinimizeWindow,
-    MuteUnmuteSpeaker,
-    NewBrowserTab,
-    Next,
-    OpenApplication,
-    OpenFile,
-    OpenFolder,
-    Paste,
-    PlayPause,
-    Previous,
-    Redo,
-    RightCtrl,
-    ScreenSnip,
-    ShiftWheelMode,
-    ThisPC,
-    Undo,
-    VolumeDown,
-    VolumeUp,
-    ZoomIn,
-    ZoomOut,
-}
-
-impl ThumbButtonOption {
-    pub fn display_name(self) -> &'static str {
-        match self {
-            Self::Gestures => "Gestures",
-            Self::TaskView => "Task view",
-            Self::ShowHideDesktop => "Show/hide desktop",
-            Self::ScreenCapture => "Screen capture",
-            Self::PrintScreen => "Print screen",
-            Self::SwitchApplication => "Switch application",
-            Self::KeyboardShortcut => "Keyboard shortcut",
-
-            Self::ActionCenter => "Action center",
-            Self::AdvancedClick => "Advanced click",
-            Self::Back => "Back",
-            Self::BrightnessDown => "Brightness down",
-            Self::BrightnessUp => "Brightness up",
-            Self::Calculator => "Calculator",
-            Self::ChangePointerSpeed => "Change pointer speed",
-            Self::CloseWindow => "Close window",
-            Self::Copy => "Copy",
-            Self::Cut => "Cut",
-            Self::DesktopLeft => "Desktop left",
-            Self::DesktopRight => "Desktop right",
-            Self::Dictation => "Dictation",
-            Self::DoNothing => "Do nothing",
-            Self::Emoji => "Emoji",
-            Self::EmojisMenu => "Emoji's menu",
-            Self::Forward => "Forward",
-            Self::InputLanguage => "Input Language",
-            Self::Lock => "Lock",
-            Self::MaximizeWindow => "Maximize window",
-            Self::MiddleButton => "Middle button",
-            Self::MinimizeWindow => "Minimize window",
-            Self::MuteUnmuteSpeaker => "Mute/Unmute speaker",
-            Self::NewBrowserTab => "New browser tab",
-            Self::Next => "Next",
-            Self::OpenApplication => "Open application",
-            Self::OpenFile => "Open file",
-            Self::OpenFolder => "Open folder",
-            Self::Paste => "Paste",
-            Self::PlayPause => "Play/Pause",
-            Self::Previous => "Previous",
-            Self::Redo => "Redo",
-            Self::RightCtrl => "Right Ctrl",
-            Self::ScreenSnip => "Screen snip",
-            Self::ShiftWheelMode => "Shift wheel mode",
-            Self::ThisPC => "This PC",
-            Self::Undo => "Undo",
-            Self::VolumeDown => "Volume down",
-            Self::VolumeUp => "Volume up",
-            Self::ZoomIn => "Zoom in",
-            Self::ZoomOut => "Zoom out",
-        }
-    }
-}
-
-pub fn get_thumb_button_option(mappings: &std::collections::HashMap<String, String>) -> ThumbButtonOption {
-    let gesture_enabled = mappings.get("gesture_enabled").map(|s| s == "true").unwrap_or(false);
-    if gesture_enabled {
-        return ThumbButtonOption::Gestures;
-    }
-
-    if let Some(val) = mappings.get("gesture") {
-        match val.as_str() {
-            "task_view" => return ThumbButtonOption::TaskView,
-            "win_d" => return ThumbButtonOption::ShowHideDesktop,
-            "screen_capture" => return ThumbButtonOption::ScreenCapture,
-            "print_screen" => return ThumbButtonOption::PrintScreen,
-            "alt_tab" => return ThumbButtonOption::SwitchApplication,
-            "action_center" => return ThumbButtonOption::ActionCenter,
-            "advanced_click" => return ThumbButtonOption::AdvancedClick,
-            "browser_back" => return ThumbButtonOption::Back,
-            "brightness_down" => return ThumbButtonOption::BrightnessDown,
-            "brightness_up" => return ThumbButtonOption::BrightnessUp,
-            "calculator" => return ThumbButtonOption::Calculator,
-            "cycle_dpi" => return ThumbButtonOption::ChangePointerSpeed,
-            "close_window" => return ThumbButtonOption::CloseWindow,
-            "copy" => return ThumbButtonOption::Copy,
-            "cut" => return ThumbButtonOption::Cut,
-            "space_left" => return ThumbButtonOption::DesktopLeft,
-            "space_right" => return ThumbButtonOption::DesktopRight,
-            "dictation" => return ThumbButtonOption::Dictation,
-            "none" => return ThumbButtonOption::DoNothing,
-            "emoji" => return ThumbButtonOption::Emoji,
-            "emojis_menu" => return ThumbButtonOption::EmojisMenu,
-            "browser_forward" => return ThumbButtonOption::Forward,
-            "input_language" => return ThumbButtonOption::InputLanguage,
-            "lock" => return ThumbButtonOption::Lock,
-            "maximize_window" => return ThumbButtonOption::MaximizeWindow,
-            "mouse_middle_click" => return ThumbButtonOption::MiddleButton,
-            "minimize_window" => return ThumbButtonOption::MinimizeWindow,
-            "volume_mute" => return ThumbButtonOption::MuteUnmuteSpeaker,
-            "new_tab" => return ThumbButtonOption::NewBrowserTab,
-            "next_track" => return ThumbButtonOption::Next,
-            "open_application" => return ThumbButtonOption::OpenApplication,
-            "open_file" => return ThumbButtonOption::OpenFile,
-            "open_folder" => return ThumbButtonOption::OpenFolder,
-            "paste" => return ThumbButtonOption::Paste,
-            "play_pause" => return ThumbButtonOption::PlayPause,
-            "prev_track" => return ThumbButtonOption::Previous,
-            "redo" => return ThumbButtonOption::Redo,
-            "right_ctrl" => return ThumbButtonOption::RightCtrl,
-            "screen_snip" => return ThumbButtonOption::ScreenSnip,
-            "switch_scroll_mode" => return ThumbButtonOption::ShiftWheelMode,
-            "this_pc" => return ThumbButtonOption::ThisPC,
-            "undo" => return ThumbButtonOption::Undo,
-            "volume_down" => return ThumbButtonOption::VolumeDown,
-            "volume_up" => return ThumbButtonOption::VolumeUp,
-            "zoom_in" => return ThumbButtonOption::ZoomIn,
-            "zoom_out" => return ThumbButtonOption::ZoomOut,
-            s if s.starts_with("custom:") => return ThumbButtonOption::KeyboardShortcut,
-            _ => {}
-        }
-    }
-    ThumbButtonOption::DoNothing
-}
-
-pub fn save_thumb_button_option(opt: ThumbButtonOption, mappings: &mut std::collections::HashMap<String, String>) {
-    if opt == ThumbButtonOption::Gestures {
-        mappings.insert("gesture_enabled".to_string(), "true".to_string());
-        mappings.insert("gesture".to_string(), "gestures".to_string());
-        return;
-    }
-
-    mappings.insert("gesture_enabled".to_string(), "false".to_string());
-
-    let val = match opt {
-        ThumbButtonOption::Gestures => "gestures",
-        ThumbButtonOption::TaskView => "task_view",
-        ThumbButtonOption::ShowHideDesktop => "win_d",
-        ThumbButtonOption::ScreenCapture => "screen_capture",
-        ThumbButtonOption::PrintScreen => "print_screen",
-        ThumbButtonOption::SwitchApplication => "alt_tab",
-        ThumbButtonOption::KeyboardShortcut => {
-            if !mappings.get("gesture").map(|s| s.starts_with("custom:")).unwrap_or(false) {
-                mappings.insert("gesture".to_string(), "none".to_string());
-            }
-            return;
-        }
-        ThumbButtonOption::ActionCenter => "action_center",
-        ThumbButtonOption::AdvancedClick => "advanced_click",
-        ThumbButtonOption::Back => "browser_back",
-        ThumbButtonOption::BrightnessDown => "brightness_down",
-        ThumbButtonOption::BrightnessUp => "brightness_up",
-        ThumbButtonOption::Calculator => "calculator",
-        ThumbButtonOption::ChangePointerSpeed => "cycle_dpi",
-        ThumbButtonOption::CloseWindow => "close_window",
-        ThumbButtonOption::Copy => "copy",
-        ThumbButtonOption::Cut => "cut",
-        ThumbButtonOption::DesktopLeft => "space_left",
-        ThumbButtonOption::DesktopRight => "space_right",
-        ThumbButtonOption::Dictation => "dictation",
-        ThumbButtonOption::DoNothing => "none",
-        ThumbButtonOption::Emoji => "emoji",
-        ThumbButtonOption::EmojisMenu => "emojis_menu",
-        ThumbButtonOption::Forward => "browser_forward",
-        ThumbButtonOption::InputLanguage => "input_language",
-        ThumbButtonOption::Lock => "lock",
-        ThumbButtonOption::MaximizeWindow => "maximize_window",
-        ThumbButtonOption::MiddleButton => "mouse_middle_click",
-        ThumbButtonOption::MinimizeWindow => "minimize_window",
-        ThumbButtonOption::MuteUnmuteSpeaker => "volume_mute",
-        ThumbButtonOption::NewBrowserTab => "new_tab",
-        ThumbButtonOption::Next => "next_track",
-        ThumbButtonOption::OpenApplication => "open_application",
-        ThumbButtonOption::OpenFile => "open_file",
-        ThumbButtonOption::OpenFolder => "open_folder",
-        ThumbButtonOption::Paste => "paste",
-        ThumbButtonOption::PlayPause => "play_pause",
-        ThumbButtonOption::Previous => "prev_track",
-        ThumbButtonOption::Redo => "redo",
-        ThumbButtonOption::RightCtrl => "right_ctrl",
-        ThumbButtonOption::ScreenSnip => "screen_snip",
-        ThumbButtonOption::ShiftWheelMode => "switch_scroll_mode",
-        ThumbButtonOption::ThisPC => "this_pc",
-        ThumbButtonOption::Undo => "undo",
-        ThumbButtonOption::VolumeDown => "volume_down",
-        ThumbButtonOption::VolumeUp => "volume_up",
-        ThumbButtonOption::ZoomIn => "zoom_in",
-        ThumbButtonOption::ZoomOut => "zoom_out",
-    };
-
-    mappings.insert("gesture".to_string(), val.to_string());
-}
-
-fn draw_thumb_button_action_popup(
-    ui: &mut egui::Ui,
-    _engine: &Engine,
-    config: &mut Config,
-    rect: Rect,
-    card_rect: Rect,
-    customizing_button: &mut Option<CustomizingButton>,
-    selected_option: &mut Option<ThumbButtonOption>,
-) -> bool {
-    let _response = ui.allocate_rect(rect, egui::Sense::click());
-
-    let clicked_away = ui.input(|i| i.pointer.any_click())
-        && !ui.rect_contains_pointer(rect)
-        && !ui.rect_contains_pointer(card_rect);
-
-    let bg = theme::surface_color(ui.ctx());
-    let border = theme::border_color(ui.ctx());
-
-    // Draw drop shadow
-    let shadow_rect = rect.expand2(vec2(2.0, 3.0)).translate(vec2(0.0, 2.0));
-    ui.painter().rect_filled(
-        shadow_rect,
-        3.0,
-        Color32::from_rgba_unmultiplied(0, 0, 0, 80),
-    );
-
-    // Outer popup container
-    ui.painter().rect_filled(rect, 2.0, bg);
-    ui.painter()
-        .rect_stroke(rect, 2.0, Stroke::new(1.0, border));
-    theme::draw_tech_corners(ui.painter(), rect, theme::accent_color(ui.ctx()), 6.0);
-
-    let profile = config.profiles.get(&config.active_profile).cloned().unwrap();
-    let current_opt = get_thumb_button_option(&profile.mappings);
-
-    let mut click_occurred = false;
-
-    let mut child_ui = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(rect.shrink(6.0))
-            .layout(egui::Layout::top_down(egui::Align::Min)),
-    );
-
-    egui::ScrollArea::vertical()
-        .id_salt("thumb_button_scroll")
-        .show(&mut child_ui, |ui| {
-            ui.add_space(4.0);
-
-            // RECOMMENDED header
-            ui.horizontal(|ui| {
-                ui.add_space(12.0);
-                ui.label(
-                    RichText::new("RECOMMENDED")
-                        .font(egui::FontId::proportional(9.0))
-                        .strong()
-                        .color(theme::secondary_text(ui.ctx())),
-                );
-            });
-            ui.add_space(4.0);
-
-            let recommended = &[
-                ThumbButtonOption::Gestures,
-                ThumbButtonOption::TaskView,
-                ThumbButtonOption::ShowHideDesktop,
-                ThumbButtonOption::ScreenCapture,
-                ThumbButtonOption::PrintScreen,
-                ThumbButtonOption::SwitchApplication,
-                ThumbButtonOption::KeyboardShortcut,
-            ];
-
-            for &opt in recommended {
-                if draw_thumb_item(ui, opt, current_opt, &profile, customizing_button, selected_option) {
-                    click_occurred = true;
-                }
-            }
-
-            ui.add_space(8.0);
-
-            // OTHER ACTIONS header
-            ui.horizontal(|ui| {
-                ui.add_space(12.0);
-                ui.label(
-                    RichText::new("OTHER ACTIONS")
-                        .font(egui::FontId::proportional(9.0))
-                        .strong()
-                        .color(theme::secondary_text(ui.ctx())),
-                );
-            });
-            ui.add_space(4.0);
-
-            let other = &[
-                ThumbButtonOption::ActionCenter,
-                ThumbButtonOption::AdvancedClick,
-                ThumbButtonOption::Back,
-                ThumbButtonOption::BrightnessDown,
-                ThumbButtonOption::BrightnessUp,
-                ThumbButtonOption::Calculator,
-                ThumbButtonOption::ChangePointerSpeed,
-                ThumbButtonOption::CloseWindow,
-                ThumbButtonOption::Copy,
-                ThumbButtonOption::Cut,
-                ThumbButtonOption::DesktopLeft,
-                ThumbButtonOption::DesktopRight,
-                ThumbButtonOption::Dictation,
-                ThumbButtonOption::DoNothing,
-                ThumbButtonOption::Emoji,
-                ThumbButtonOption::EmojisMenu,
-                ThumbButtonOption::Forward,
-                ThumbButtonOption::InputLanguage,
-                ThumbButtonOption::Lock,
-                ThumbButtonOption::MaximizeWindow,
-                ThumbButtonOption::MiddleButton,
-                ThumbButtonOption::MinimizeWindow,
-                ThumbButtonOption::MuteUnmuteSpeaker,
-                ThumbButtonOption::NewBrowserTab,
-                ThumbButtonOption::Next,
-                ThumbButtonOption::OpenApplication,
-                ThumbButtonOption::OpenFile,
-                ThumbButtonOption::OpenFolder,
-                ThumbButtonOption::Paste,
-                ThumbButtonOption::PlayPause,
-                ThumbButtonOption::Previous,
-                ThumbButtonOption::Redo,
-                ThumbButtonOption::RightCtrl,
-                ThumbButtonOption::ScreenSnip,
-                ThumbButtonOption::ShiftWheelMode,
-                ThumbButtonOption::ThisPC,
-                ThumbButtonOption::Undo,
-                ThumbButtonOption::VolumeDown,
-                ThumbButtonOption::VolumeUp,
-                ThumbButtonOption::ZoomIn,
-                ThumbButtonOption::ZoomOut,
-            ];
-
-            for &opt in other {
-                if draw_thumb_item(ui, opt, current_opt, &profile, customizing_button, selected_option) {
-                    click_occurred = true;
-                }
-            }
-
-            ui.add_space(4.0);
-        });
-
-    clicked_away && !click_occurred
-}
-
-fn draw_thumb_item(
-    ui: &mut egui::Ui,
-    opt: ThumbButtonOption,
-    current_opt: ThumbButtonOption,
-    profile: &mouser_engine::config::Profile,
-    _customizing_button: &mut Option<CustomizingButton>,
-    selected_option: &mut Option<ThumbButtonOption>,
-) -> bool {
-    let is_selected = opt == current_opt;
-    let item_h = 24.0;
-
-    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), item_h), egui::Sense::click());
-    let is_hovered = response.hovered();
-
-    if is_hovered {
-        ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
-        ui.painter().rect_filled(rect, 0.0, theme::hover_color(ui.ctx()));
-    }
-
-    let bullet_center = pos2(rect.min.x + 14.0, rect.center().y);
-    if is_selected {
-        let accent = theme::accent_color(ui.ctx());
-        ui.painter().circle_filled(bullet_center, 6.0, accent);
-        ui.painter().circle_filled(bullet_center, 2.0, theme::surface_color(ui.ctx()));
-    } else {
-        let bullet_color = Color32::from_gray(60);
-        ui.painter().circle_filled(bullet_center, 6.0, bullet_color);
-    }
-
-    let text_color = if is_selected {
-        theme::accent_color(ui.ctx())
-    } else if is_hovered {
-        theme::primary_text(ui.ctx())
-    } else {
-        theme::secondary_text(ui.ctx())
-    };
-
-    let label_text = opt.display_name();
-    let galley = ui.fonts(|f| {
-        f.layout_job(egui::text::LayoutJob::simple_singleline(
-            label_text.to_string(),
-            egui::FontId::proportional(11.0),
-            text_color,
-        ))
-    });
-    let text_y = rect.center().y - galley.size().y / 2.0;
-    ui.painter().galley(pos2(rect.min.x + 28.0, text_y), galley, text_color);
-
-    let mut clicked = false;
-    if response.clicked() {
-        *selected_option = Some(opt);
-        clicked = true;
-    }
-
-    if opt == ThumbButtonOption::KeyboardShortcut && is_selected {
-        ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            ui.add_space(28.0);
-
-            let val = profile.mappings.get("gesture").cloned().unwrap_or_else(|| "none".to_string());
-            let keys_text = if val.starts_with("custom:") {
-                val.strip_prefix("custom:").unwrap().to_uppercase()
-            } else {
-                "Record Keystroke".to_string()
-            };
-
-            let btn_rec = ui.add(egui::Button::new(
-                RichText::new(keys_text).size(10.0)
-            ));
-            if btn_rec.clicked() {
-                ui.ctx().memory_mut(|mem| mem.stop_text_input());
-                let view_state_id = ui.id().with(format!("popup_view_for_{:?}", CustomizingButton::Thumb));
-                ui.ctx().data_mut(|d| d.insert_temp(view_state_id, PopupView::RecordShortcut {
-                    target_key: "gesture".to_string(),
-                    display_label: "Thumb Button".to_string(),
-                }));
-                clicked = true;
-            }
-        });
-        ui.add_space(6.0);
-    }
-
-    clicked
-}
-
-// ── FORWARD BUTTON OPTIONS ───────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ForwardButtonOption {
-    Forward,
-    Paste,
-    VolumeUp,
-    Redo,
-    KeyboardShortcut,
-
+pub enum UniversalButtonOption {
     Gesture,
-    ActionCenter,
-    AdvancedClick,
-    Back,
-    BrightnessDown,
-    BrightnessUp,
-    Calculator,
-    ChangePointerSpeed,
-    CloseWindow,
-    Copy,
-    Cut,
-    DesktopLeft,
-    DesktopRight,
-    Dictation,
-    DoNothing,
-    Emoji,
-    EmojisMenu,
-    InputLanguage,
-    Lock,
-    MaximizeWindow,
-    MiddleButton,
-    MinimizeWindow,
-    MuteUnmuteSpeaker,
-    NewBrowserTab,
-    Next,
-    OpenApplication,
-    OpenFile,
-    OpenFolder,
-    PlayPause,
-    Previous,
-    PrintScreen,
-    RightCtrl,
-    ScreenCapture,
-    ScreenSnip,
-    ShiftWheelMode,
-    ShowHideDesktop,
-    SwitchApplication,
     TaskView,
-    ThisPC,
-    Undo,
-    VolumeDown,
-    ZoomIn,
-    ZoomOut,
-}
-
-impl ForwardButtonOption {
-    pub fn display_name(self) -> &'static str {
-        match self {
-            Self::Forward => "Forward",
-            Self::Paste => "Paste",
-            Self::VolumeUp => "Volume up",
-            Self::Redo => "Redo",
-            Self::KeyboardShortcut => "Keyboard shortcut",
-            Self::Gesture => "Gesture",
-            Self::ActionCenter => "Action center",
-            Self::AdvancedClick => "Advanced click",
-            Self::Back => "Back",
-            Self::BrightnessDown => "Brightness down",
-            Self::BrightnessUp => "Brightness up",
-            Self::Calculator => "Calculator",
-            Self::ChangePointerSpeed => "Change pointer speed",
-            Self::CloseWindow => "Close window",
-            Self::Copy => "Copy",
-            Self::Cut => "Cut",
-            Self::DesktopLeft => "Desktop left",
-            Self::DesktopRight => "Desktop right",
-            Self::Dictation => "Dictation",
-            Self::DoNothing => "Do nothing",
-            Self::Emoji => "Emoji",
-            Self::EmojisMenu => "Emoji's menu",
-            Self::InputLanguage => "Input Language",
-            Self::Lock => "Lock",
-            Self::MaximizeWindow => "Maximize window",
-            Self::MiddleButton => "Middle button",
-            Self::MinimizeWindow => "Minimize window",
-            Self::MuteUnmuteSpeaker => "Mute/Unmute speaker",
-            Self::NewBrowserTab => "New browser tab",
-            Self::Next => "Next",
-            Self::OpenApplication => "Open application",
-            Self::OpenFile => "Open file",
-            Self::OpenFolder => "Open folder",
-            Self::PlayPause => "Play/Pause",
-            Self::Previous => "Previous",
-            Self::PrintScreen => "Print screen",
-            Self::RightCtrl => "Right Ctrl",
-            Self::ScreenCapture => "Screen capture",
-            Self::ScreenSnip => "Screen snip",
-            Self::ShiftWheelMode => "Shift wheel mode",
-            Self::ShowHideDesktop => "Show/hide desktop",
-            Self::SwitchApplication => "Switch application",
-            Self::TaskView => "Task view",
-            Self::ThisPC => "This PC",
-            Self::Undo => "Undo",
-            Self::VolumeDown => "Volume down",
-            Self::ZoomIn => "Zoom in",
-            Self::ZoomOut => "Zoom out",
-        }
-    }
-}
-
-pub fn get_forward_button_option(mappings: &std::collections::HashMap<String, String>) -> ForwardButtonOption {
-    let gesture_enabled = mappings.get("xbutton2_gesture_enabled").map(|s| s == "true").unwrap_or(false);
-    if gesture_enabled {
-        return ForwardButtonOption::Gesture;
-    }
-
-    if let Some(val) = mappings.get("xbutton2") {
-        match val.as_str() {
-            "mouse_forward_click" => return ForwardButtonOption::Forward,
-            "paste" => return ForwardButtonOption::Paste,
-            "volume_up" => return ForwardButtonOption::VolumeUp,
-            "redo" => return ForwardButtonOption::Redo,
-            "action_center" => return ForwardButtonOption::ActionCenter,
-            "advanced_click" => return ForwardButtonOption::AdvancedClick,
-            "mouse_back_click" => return ForwardButtonOption::Back,
-            "brightness_down" => return ForwardButtonOption::BrightnessDown,
-            "brightness_up" => return ForwardButtonOption::BrightnessUp,
-            "calculator" => return ForwardButtonOption::Calculator,
-            "cycle_dpi" => return ForwardButtonOption::ChangePointerSpeed,
-            "close_window" => return ForwardButtonOption::CloseWindow,
-            "copy" => return ForwardButtonOption::Copy,
-            "cut" => return ForwardButtonOption::Cut,
-            "space_left" => return ForwardButtonOption::DesktopLeft,
-            "space_right" => return ForwardButtonOption::DesktopRight,
-            "dictation" => return ForwardButtonOption::Dictation,
-            "none" => return ForwardButtonOption::DoNothing,
-            "emoji" => return ForwardButtonOption::Emoji,
-            "emojis_menu" => return ForwardButtonOption::EmojisMenu,
-            "input_language" => return ForwardButtonOption::InputLanguage,
-            "lock" => return ForwardButtonOption::Lock,
-            "maximize_window" => return ForwardButtonOption::MaximizeWindow,
-            "mouse_middle_click" => return ForwardButtonOption::MiddleButton,
-            "minimize_window" => return ForwardButtonOption::MinimizeWindow,
-            "volume_mute" => return ForwardButtonOption::MuteUnmuteSpeaker,
-            "new_tab" => return ForwardButtonOption::NewBrowserTab,
-            "next_track" => return ForwardButtonOption::Next,
-            "open_application" => return ForwardButtonOption::OpenApplication,
-            "open_file" => return ForwardButtonOption::OpenFile,
-            "open_folder" => return ForwardButtonOption::OpenFolder,
-            "play_pause" => return ForwardButtonOption::PlayPause,
-            "prev_track" => return ForwardButtonOption::Previous,
-            "print_screen" => return ForwardButtonOption::PrintScreen,
-            "right_ctrl" => return ForwardButtonOption::RightCtrl,
-            "screen_capture" => return ForwardButtonOption::ScreenCapture,
-            "screen_snip" => return ForwardButtonOption::ScreenSnip,
-            "switch_scroll_mode" => return ForwardButtonOption::ShiftWheelMode,
-            "win_d" => return ForwardButtonOption::ShowHideDesktop,
-            "alt_tab" => return ForwardButtonOption::SwitchApplication,
-            "task_view" => return ForwardButtonOption::TaskView,
-            "this_pc" => return ForwardButtonOption::ThisPC,
-            "undo" => return ForwardButtonOption::Undo,
-            "volume_down" => return ForwardButtonOption::VolumeDown,
-            "zoom_in" => return ForwardButtonOption::ZoomIn,
-            "zoom_out" => return ForwardButtonOption::ZoomOut,
-            s if s.starts_with("custom:") => return ForwardButtonOption::KeyboardShortcut,
-            _ => {}
-        }
-    }
-    ForwardButtonOption::DoNothing
-}
-
-pub fn save_forward_button_option(opt: ForwardButtonOption, mappings: &mut std::collections::HashMap<String, String>) {
-    if opt == ForwardButtonOption::Gesture {
-        mappings.insert("xbutton2_gesture_enabled".to_string(), "true".to_string());
-        mappings.insert("xbutton2".to_string(), "gestures".to_string());
-        return;
-    }
-
-    mappings.insert("xbutton2_gesture_enabled".to_string(), "false".to_string());
-
-    let val = match opt {
-        ForwardButtonOption::Gesture => "gestures",
-        ForwardButtonOption::Forward => "mouse_forward_click",
-        ForwardButtonOption::Paste => "paste",
-        ForwardButtonOption::VolumeUp => "volume_up",
-        ForwardButtonOption::Redo => "redo",
-        ForwardButtonOption::KeyboardShortcut => {
-            if !mappings.get("xbutton2").map(|s| s.starts_with("custom:")).unwrap_or(false) {
-                mappings.insert("xbutton2".to_string(), "none".to_string());
-            }
-            return;
-        }
-        ForwardButtonOption::ActionCenter => "action_center",
-        ForwardButtonOption::AdvancedClick => "advanced_click",
-        ForwardButtonOption::Back => "mouse_back_click",
-        ForwardButtonOption::BrightnessDown => "brightness_down",
-        ForwardButtonOption::BrightnessUp => "brightness_up",
-        ForwardButtonOption::Calculator => "calculator",
-        ForwardButtonOption::ChangePointerSpeed => "cycle_dpi",
-        ForwardButtonOption::CloseWindow => "close_window",
-        ForwardButtonOption::Copy => "copy",
-        ForwardButtonOption::Cut => "cut",
-        ForwardButtonOption::DesktopLeft => "space_left",
-        ForwardButtonOption::DesktopRight => "space_right",
-        ForwardButtonOption::Dictation => "dictation",
-        ForwardButtonOption::DoNothing => "none",
-        ForwardButtonOption::Emoji => "emoji",
-        ForwardButtonOption::EmojisMenu => "emojis_menu",
-        ForwardButtonOption::InputLanguage => "input_language",
-        ForwardButtonOption::Lock => "lock",
-        ForwardButtonOption::MaximizeWindow => "maximize_window",
-        ForwardButtonOption::MiddleButton => "mouse_middle_click",
-        ForwardButtonOption::MinimizeWindow => "minimize_window",
-        ForwardButtonOption::MuteUnmuteSpeaker => "volume_mute",
-        ForwardButtonOption::NewBrowserTab => "new_tab",
-        ForwardButtonOption::Next => "next_track",
-        ForwardButtonOption::OpenApplication => "open_application",
-        ForwardButtonOption::OpenFile => "open_file",
-        ForwardButtonOption::OpenFolder => "open_folder",
-        ForwardButtonOption::PlayPause => "play_pause",
-        ForwardButtonOption::Previous => "prev_track",
-        ForwardButtonOption::PrintScreen => "print_screen",
-        ForwardButtonOption::RightCtrl => "right_ctrl",
-        ForwardButtonOption::ScreenCapture => "screen_capture",
-        ForwardButtonOption::ScreenSnip => "screen_snip",
-        ForwardButtonOption::ShiftWheelMode => "switch_scroll_mode",
-        ForwardButtonOption::ShowHideDesktop => "win_d",
-        ForwardButtonOption::SwitchApplication => "alt_tab",
-        ForwardButtonOption::TaskView => "task_view",
-        ForwardButtonOption::ThisPC => "this_pc",
-        ForwardButtonOption::Undo => "undo",
-        ForwardButtonOption::VolumeDown => "volume_down",
-        ForwardButtonOption::ZoomIn => "zoom_in",
-        ForwardButtonOption::ZoomOut => "zoom_out",
-    };
-
-    mappings.insert("xbutton2".to_string(), val.to_string());
-}
-
-fn draw_forward_button_action_popup(
-    ui: &mut egui::Ui,
-    _engine: &Engine,
-    config: &mut Config,
-    rect: Rect,
-    card_rect: Rect,
-    customizing_button: &mut Option<CustomizingButton>,
-    selected_option: &mut Option<ForwardButtonOption>,
-) -> bool {
-    let _response = ui.allocate_rect(rect, egui::Sense::click());
-
-    let clicked_away = ui.input(|i| i.pointer.any_click())
-        && !ui.rect_contains_pointer(rect)
-        && !ui.rect_contains_pointer(card_rect);
-
-    let bg = theme::surface_color(ui.ctx());
-    let border = theme::border_color(ui.ctx());
-
-    // Draw drop shadow
-    let shadow_rect = rect.expand2(vec2(2.0, 3.0)).translate(vec2(0.0, 2.0));
-    ui.painter().rect_filled(
-        shadow_rect,
-        3.0,
-        Color32::from_rgba_unmultiplied(0, 0, 0, 80),
-    );
-
-    // Outer popup container
-    ui.painter().rect_filled(rect, 2.0, bg);
-    ui.painter()
-        .rect_stroke(rect, 2.0, Stroke::new(1.0, border));
-    theme::draw_tech_corners(ui.painter(), rect, theme::accent_color(ui.ctx()), 6.0);
-
-    let profile = config.profiles.get(&config.active_profile).cloned().unwrap();
-    let current_opt = get_forward_button_option(&profile.mappings);
-
-    let mut click_occurred = false;
-
-    let mut child_ui = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(rect.shrink(6.0))
-            .layout(egui::Layout::top_down(egui::Align::Min)),
-    );
-
-    egui::ScrollArea::vertical()
-        .id_salt("forward_button_scroll")
-        .show(&mut child_ui, |ui| {
-            ui.add_space(4.0);
-
-            // RECOMMENDED header
-            ui.horizontal(|ui| {
-                ui.add_space(12.0);
-                ui.label(
-                    RichText::new("RECOMMENDED")
-                        .font(egui::FontId::proportional(9.0))
-                        .strong()
-                        .color(theme::secondary_text(ui.ctx())),
-                );
-            });
-            ui.add_space(4.0);
-
-            let recommended = &[
-                ForwardButtonOption::Forward,
-                ForwardButtonOption::Paste,
-                ForwardButtonOption::VolumeUp,
-                ForwardButtonOption::Redo,
-                ForwardButtonOption::KeyboardShortcut,
-            ];
-
-            for &opt in recommended {
-                if draw_forward_item(ui, opt, current_opt, &profile, customizing_button, selected_option) {
-                    click_occurred = true;
-                }
-            }
-
-            ui.add_space(8.0);
-
-            // OTHER ACTIONS header
-            ui.horizontal(|ui| {
-                ui.add_space(12.0);
-                ui.label(
-                    RichText::new("OTHER ACTIONS")
-                        .font(egui::FontId::proportional(9.0))
-                        .strong()
-                        .color(theme::secondary_text(ui.ctx())),
-                );
-            });
-            ui.add_space(4.0);
-
-            let other = &[
-                ForwardButtonOption::Gesture,
-                ForwardButtonOption::ActionCenter,
-                ForwardButtonOption::AdvancedClick,
-                ForwardButtonOption::Back,
-                ForwardButtonOption::BrightnessDown,
-                ForwardButtonOption::BrightnessUp,
-                ForwardButtonOption::Calculator,
-                ForwardButtonOption::ChangePointerSpeed,
-                ForwardButtonOption::CloseWindow,
-                ForwardButtonOption::Copy,
-                ForwardButtonOption::Cut,
-                ForwardButtonOption::DesktopLeft,
-                ForwardButtonOption::DesktopRight,
-                ForwardButtonOption::Dictation,
-                ForwardButtonOption::DoNothing,
-                ForwardButtonOption::Emoji,
-                ForwardButtonOption::EmojisMenu,
-                ForwardButtonOption::InputLanguage,
-                ForwardButtonOption::Lock,
-                ForwardButtonOption::MaximizeWindow,
-                ForwardButtonOption::MiddleButton,
-                ForwardButtonOption::MinimizeWindow,
-                ForwardButtonOption::MuteUnmuteSpeaker,
-                ForwardButtonOption::NewBrowserTab,
-                ForwardButtonOption::Next,
-                ForwardButtonOption::OpenApplication,
-                ForwardButtonOption::OpenFile,
-                ForwardButtonOption::OpenFolder,
-                ForwardButtonOption::PlayPause,
-                ForwardButtonOption::Previous,
-                ForwardButtonOption::PrintScreen,
-                ForwardButtonOption::RightCtrl,
-                ForwardButtonOption::ScreenCapture,
-                ForwardButtonOption::ScreenSnip,
-                ForwardButtonOption::ShiftWheelMode,
-                ForwardButtonOption::ShowHideDesktop,
-                ForwardButtonOption::SwitchApplication,
-                ForwardButtonOption::TaskView,
-                ForwardButtonOption::ThisPC,
-                ForwardButtonOption::Undo,
-                ForwardButtonOption::VolumeDown,
-                ForwardButtonOption::ZoomIn,
-                ForwardButtonOption::ZoomOut,
-            ];
-
-            for &opt in other {
-                if draw_forward_item(ui, opt, current_opt, &profile, customizing_button, selected_option) {
-                    click_occurred = true;
-                }
-            }
-
-            ui.add_space(4.0);
-        });
-
-    clicked_away && !click_occurred
-}
-
-fn draw_forward_item(
-    ui: &mut egui::Ui,
-    opt: ForwardButtonOption,
-    current_opt: ForwardButtonOption,
-    profile: &mouser_engine::config::Profile,
-    _customizing_button: &mut Option<CustomizingButton>,
-    selected_option: &mut Option<ForwardButtonOption>,
-) -> bool {
-    let is_selected = opt == current_opt;
-    let item_h = 24.0;
-
-    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), item_h), egui::Sense::click());
-    let is_hovered = response.hovered();
-
-    if is_hovered {
-        ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
-        ui.painter().rect_filled(rect, 0.0, theme::hover_color(ui.ctx()));
-    }
-
-    let bullet_center = pos2(rect.min.x + 14.0, rect.center().y);
-    if is_selected {
-        let accent = theme::accent_color(ui.ctx());
-        ui.painter().circle_filled(bullet_center, 6.0, accent);
-        ui.painter().circle_filled(bullet_center, 2.0, theme::surface_color(ui.ctx()));
-    } else {
-        let bullet_color = Color32::from_gray(60);
-        ui.painter().circle_filled(bullet_center, 6.0, bullet_color);
-    }
-
-    let text_color = if is_selected {
-        theme::accent_color(ui.ctx())
-    } else if is_hovered {
-        theme::primary_text(ui.ctx())
-    } else {
-        theme::secondary_text(ui.ctx())
-    };
-
-    let label_text = opt.display_name();
-    let galley = ui.fonts(|f| {
-        f.layout_job(egui::text::LayoutJob::simple_singleline(
-            label_text.to_string(),
-            egui::FontId::proportional(11.0),
-            text_color,
-        ))
-    });
-    let text_y = rect.center().y - galley.size().y / 2.0;
-    ui.painter().galley(pos2(rect.min.x + 28.0, text_y), galley, text_color);
-
-    let mut clicked = false;
-    if response.clicked() {
-        *selected_option = Some(opt);
-        clicked = true;
-    }
-
-    if opt == ForwardButtonOption::KeyboardShortcut && is_selected {
-        ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            ui.add_space(28.0);
-
-            let val = profile.mappings.get("xbutton2").cloned().unwrap_or_else(|| "none".to_string());
-            let keys_text = if val.starts_with("custom:") {
-                val.strip_prefix("custom:").unwrap().to_uppercase()
-            } else {
-                "Record Keystroke".to_string()
-            };
-
-            let btn_rec = ui.add(egui::Button::new(
-                RichText::new(keys_text).size(10.0)
-            ));
-            if btn_rec.clicked() {
-                ui.ctx().memory_mut(|mem| mem.stop_text_input());
-                let view_state_id = ui.id().with(format!("popup_view_for_{:?}", CustomizingButton::Forward));
-                ui.ctx().data_mut(|d| d.insert_temp(view_state_id, PopupView::RecordShortcut {
-                    target_key: "xbutton2".to_string(),
-                    display_label: "Forward Button".to_string(),
-                }));
-                clicked = true;
-            }
-        });
-        ui.add_space(6.0);
-    }
-
-    clicked
-}
-
-// ── BACK BUTTON OPTIONS ──────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum BackButtonOption {
-    Back,
-    Copy,
-    VolumeDown,
-    Undo,
+    ShowHideDesktop,
+    ScreenCapture,
+    PrintScreen,
+    SwitchApplication,
     KeyboardShortcut,
-
-    Gesture,
     ActionCenter,
     AdvancedClick,
+    Back,
     BrightnessDown,
     BrightnessUp,
     Calculator,
     ChangePointerSpeed,
     CloseWindow,
+    Copy,
     Cut,
     DesktopLeft,
     DesktopRight,
@@ -3254,481 +1890,10 @@ pub enum BackButtonOption {
     Paste,
     PlayPause,
     Previous,
-    PrintScreen,
-    Redo,
-    RightCtrl,
-    ScreenCapture,
-    ScreenSnip,
-    ShiftWheelMode,
-    ShowHideDesktop,
-    SwitchApplication,
-    TaskView,
-    ThisPC,
-    VolumeUp,
-    ZoomIn,
-    ZoomOut,
-}
-
-impl BackButtonOption {
-    pub fn display_name(self) -> &'static str {
-        match self {
-            Self::Back => "Back",
-            Self::Copy => "Copy",
-            Self::VolumeDown => "Volume down",
-            Self::Undo => "Undo",
-            Self::KeyboardShortcut => "Keyboard shortcut",
-            Self::Gesture => "Gesture",
-            Self::ActionCenter => "Action center",
-            Self::AdvancedClick => "Advanced click",
-            Self::BrightnessDown => "Brightness down",
-            Self::BrightnessUp => "Brightness up",
-            Self::Calculator => "Calculator",
-            Self::ChangePointerSpeed => "Change pointer speed",
-            Self::CloseWindow => "Close window",
-            Self::Cut => "Cut",
-            Self::DesktopLeft => "Desktop left",
-            Self::DesktopRight => "Desktop right",
-            Self::Dictation => "Dictation",
-            Self::DoNothing => "Do nothing",
-            Self::Emoji => "Emoji",
-            Self::EmojisMenu => "Emoji's menu",
-            Self::Forward => "Forward",
-            Self::InputLanguage => "Input Language",
-            Self::Lock => "Lock",
-            Self::MaximizeWindow => "Maximize window",
-            Self::MiddleButton => "Middle button",
-            Self::MinimizeWindow => "Minimize window",
-            Self::MuteUnmuteSpeaker => "Mute/Unmute speaker",
-            Self::NewBrowserTab => "New browser tab",
-            Self::Next => "Next",
-            Self::OpenApplication => "Open application",
-            Self::OpenFile => "Open file",
-            Self::OpenFolder => "Open folder",
-            Self::Paste => "Paste",
-            Self::PlayPause => "Play/Pause",
-            Self::Previous => "Previous",
-            Self::PrintScreen => "Print screen",
-            Self::Redo => "Redo",
-            Self::RightCtrl => "Right Ctrl",
-            Self::ScreenCapture => "Screen capture",
-            Self::ScreenSnip => "Screen snip",
-            Self::ShiftWheelMode => "Shift wheel mode",
-            Self::ShowHideDesktop => "Show/hide desktop",
-            Self::SwitchApplication => "Switch application",
-            Self::TaskView => "Task view",
-            Self::ThisPC => "This PC",
-            Self::VolumeUp => "Volume up",
-            Self::ZoomIn => "Zoom in",
-            Self::ZoomOut => "Zoom out",
-        }
-    }
-}
-
-pub fn get_back_button_option(mappings: &std::collections::HashMap<String, String>) -> BackButtonOption {
-    let gesture_enabled = mappings.get("xbutton1_gesture_enabled").map(|s| s == "true").unwrap_or(false);
-    if gesture_enabled {
-        return BackButtonOption::Gesture;
-    }
-
-    if let Some(val) = mappings.get("xbutton1") {
-        match val.as_str() {
-            "mouse_back_click" => return BackButtonOption::Back,
-            "copy" => return BackButtonOption::Copy,
-            "volume_down" => return BackButtonOption::VolumeDown,
-            "undo" => return BackButtonOption::Undo,
-            "action_center" => return BackButtonOption::ActionCenter,
-            "advanced_click" => return BackButtonOption::AdvancedClick,
-            "brightness_down" => return BackButtonOption::BrightnessDown,
-            "brightness_up" => return BackButtonOption::BrightnessUp,
-            "calculator" => return BackButtonOption::Calculator,
-            "cycle_dpi" => return BackButtonOption::ChangePointerSpeed,
-            "close_window" => return BackButtonOption::CloseWindow,
-            "cut" => return BackButtonOption::Cut,
-            "space_left" => return BackButtonOption::DesktopLeft,
-            "space_right" => return BackButtonOption::DesktopRight,
-            "dictation" => return BackButtonOption::Dictation,
-            "none" => return BackButtonOption::DoNothing,
-            "emoji" => return BackButtonOption::Emoji,
-            "emojis_menu" => return BackButtonOption::EmojisMenu,
-            "mouse_forward_click" => return BackButtonOption::Forward,
-            "input_language" => return BackButtonOption::InputLanguage,
-            "lock" => return BackButtonOption::Lock,
-            "maximize_window" => return BackButtonOption::MaximizeWindow,
-            "mouse_middle_click" => return BackButtonOption::MiddleButton,
-            "minimize_window" => return BackButtonOption::MinimizeWindow,
-            "volume_mute" => return BackButtonOption::MuteUnmuteSpeaker,
-            "new_tab" => return BackButtonOption::NewBrowserTab,
-            "next_track" => return BackButtonOption::Next,
-            "open_application" => return BackButtonOption::OpenApplication,
-            "open_file" => return BackButtonOption::OpenFile,
-            "open_folder" => return BackButtonOption::OpenFolder,
-            "paste" => return BackButtonOption::Paste,
-            "play_pause" => return BackButtonOption::PlayPause,
-            "prev_track" => return BackButtonOption::Previous,
-            "print_screen" => return BackButtonOption::PrintScreen,
-            "redo" => return BackButtonOption::Redo,
-            "right_ctrl" => return BackButtonOption::RightCtrl,
-            "screen_capture" => return BackButtonOption::ScreenCapture,
-            "screen_snip" => return BackButtonOption::ScreenSnip,
-            "switch_scroll_mode" => return BackButtonOption::ShiftWheelMode,
-            "win_d" => return BackButtonOption::ShowHideDesktop,
-            "alt_tab" => return BackButtonOption::SwitchApplication,
-            "task_view" => return BackButtonOption::TaskView,
-            "this_pc" => return BackButtonOption::ThisPC,
-            "volume_up" => return BackButtonOption::VolumeUp,
-            "zoom_in" => return BackButtonOption::ZoomIn,
-            "zoom_out" => return BackButtonOption::ZoomOut,
-            s if s.starts_with("custom:") => return BackButtonOption::KeyboardShortcut,
-            _ => {}
-        }
-    }
-    BackButtonOption::DoNothing
-}
-
-pub fn save_back_button_option(opt: BackButtonOption, mappings: &mut std::collections::HashMap<String, String>) {
-    if opt == BackButtonOption::Gesture {
-        mappings.insert("xbutton1_gesture_enabled".to_string(), "true".to_string());
-        mappings.insert("xbutton1".to_string(), "gestures".to_string());
-        return;
-    }
-
-    mappings.insert("xbutton1_gesture_enabled".to_string(), "false".to_string());
-
-    let val = match opt {
-        BackButtonOption::Gesture => "gestures",
-        BackButtonOption::Back => "mouse_back_click",
-        BackButtonOption::Copy => "copy",
-        BackButtonOption::VolumeDown => "volume_down",
-        BackButtonOption::Undo => "undo",
-        BackButtonOption::KeyboardShortcut => {
-            if !mappings.get("xbutton1").map(|s| s.starts_with("custom:")).unwrap_or(false) {
-                mappings.insert("xbutton1".to_string(), "none".to_string());
-            }
-            return;
-        }
-        BackButtonOption::ActionCenter => "action_center",
-        BackButtonOption::AdvancedClick => "advanced_click",
-        BackButtonOption::BrightnessDown => "brightness_down",
-        BackButtonOption::BrightnessUp => "brightness_up",
-        BackButtonOption::Calculator => "calculator",
-        BackButtonOption::ChangePointerSpeed => "cycle_dpi",
-        BackButtonOption::CloseWindow => "close_window",
-        BackButtonOption::Cut => "cut",
-        BackButtonOption::DesktopLeft => "space_left",
-        BackButtonOption::DesktopRight => "space_right",
-        BackButtonOption::Dictation => "dictation",
-        BackButtonOption::DoNothing => "none",
-        BackButtonOption::Emoji => "emoji",
-        BackButtonOption::EmojisMenu => "emojis_menu",
-        BackButtonOption::Forward => "mouse_forward_click",
-        BackButtonOption::InputLanguage => "input_language",
-        BackButtonOption::Lock => "lock",
-        BackButtonOption::MaximizeWindow => "maximize_window",
-        BackButtonOption::MiddleButton => "mouse_middle_click",
-        BackButtonOption::MinimizeWindow => "minimize_window",
-        BackButtonOption::MuteUnmuteSpeaker => "volume_mute",
-        BackButtonOption::NewBrowserTab => "new_tab",
-        BackButtonOption::Next => "next_track",
-        BackButtonOption::OpenApplication => "open_application",
-        BackButtonOption::OpenFile => "open_file",
-        BackButtonOption::OpenFolder => "open_folder",
-        BackButtonOption::Paste => "paste",
-        BackButtonOption::PlayPause => "play_pause",
-        BackButtonOption::Previous => "prev_track",
-        BackButtonOption::PrintScreen => "print_screen",
-        BackButtonOption::Redo => "redo",
-        BackButtonOption::RightCtrl => "right_ctrl",
-        BackButtonOption::ScreenCapture => "screen_capture",
-        BackButtonOption::ScreenSnip => "screen_snip",
-        BackButtonOption::ShiftWheelMode => "switch_scroll_mode",
-        BackButtonOption::ShowHideDesktop => "win_d",
-        BackButtonOption::SwitchApplication => "alt_tab",
-        BackButtonOption::TaskView => "task_view",
-        BackButtonOption::ThisPC => "this_pc",
-        BackButtonOption::VolumeUp => "volume_up",
-        BackButtonOption::ZoomIn => "zoom_in",
-        BackButtonOption::ZoomOut => "zoom_out",
-    };
-
-    mappings.insert("xbutton1".to_string(), val.to_string());
-}
-
-fn draw_back_button_action_popup(
-    ui: &mut egui::Ui,
-    _engine: &Engine,
-    config: &mut Config,
-    rect: Rect,
-    card_rect: Rect,
-    customizing_button: &mut Option<CustomizingButton>,
-    selected_option: &mut Option<BackButtonOption>,
-) -> bool {
-    let _response = ui.allocate_rect(rect, egui::Sense::click());
-
-    let clicked_away = ui.input(|i| i.pointer.any_click())
-        && !ui.rect_contains_pointer(rect)
-        && !ui.rect_contains_pointer(card_rect);
-
-    let bg = theme::surface_color(ui.ctx());
-    let border = theme::border_color(ui.ctx());
-
-    // Draw drop shadow
-    let shadow_rect = rect.expand2(vec2(2.0, 3.0)).translate(vec2(0.0, 2.0));
-    ui.painter().rect_filled(
-        shadow_rect,
-        3.0,
-        Color32::from_rgba_unmultiplied(0, 0, 0, 80),
-    );
-
-    // Outer popup container
-    ui.painter().rect_filled(rect, 2.0, bg);
-    ui.painter()
-        .rect_stroke(rect, 2.0, Stroke::new(1.0, border));
-    theme::draw_tech_corners(ui.painter(), rect, theme::accent_color(ui.ctx()), 6.0);
-
-    let profile = config.profiles.get(&config.active_profile).cloned().unwrap();
-    let current_opt = get_back_button_option(&profile.mappings);
-
-    let mut click_occurred = false;
-
-    let mut child_ui = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(rect.shrink(6.0))
-            .layout(egui::Layout::top_down(egui::Align::Min)),
-    );
-
-    egui::ScrollArea::vertical()
-        .id_salt("back_button_scroll")
-        .show(&mut child_ui, |ui| {
-            ui.add_space(4.0);
-
-            // RECOMMENDED header
-            ui.horizontal(|ui| {
-                ui.add_space(12.0);
-                ui.label(
-                    RichText::new("RECOMMENDED")
-                        .font(egui::FontId::proportional(9.0))
-                        .strong()
-                        .color(theme::secondary_text(ui.ctx())),
-                );
-            });
-            ui.add_space(4.0);
-
-            let recommended = &[
-                BackButtonOption::Back,
-                BackButtonOption::Copy,
-                BackButtonOption::VolumeDown,
-                BackButtonOption::Undo,
-                BackButtonOption::KeyboardShortcut,
-            ];
-
-            for &opt in recommended {
-                if draw_back_item(ui, opt, current_opt, &profile, customizing_button, selected_option) {
-                    click_occurred = true;
-                }
-            }
-
-            ui.add_space(8.0);
-
-            // OTHER ACTIONS header
-            ui.horizontal(|ui| {
-                ui.add_space(12.0);
-                ui.label(
-                    RichText::new("OTHER ACTIONS")
-                        .font(egui::FontId::proportional(9.0))
-                        .strong()
-                        .color(theme::secondary_text(ui.ctx())),
-                );
-            });
-            ui.add_space(4.0);
-
-            let other = &[
-                BackButtonOption::Gesture,
-                BackButtonOption::ActionCenter,
-                BackButtonOption::AdvancedClick,
-                BackButtonOption::BrightnessDown,
-                BackButtonOption::BrightnessUp,
-                BackButtonOption::Calculator,
-                BackButtonOption::ChangePointerSpeed,
-                BackButtonOption::CloseWindow,
-                BackButtonOption::Cut,
-                BackButtonOption::DesktopLeft,
-                BackButtonOption::DesktopRight,
-                BackButtonOption::Dictation,
-                BackButtonOption::DoNothing,
-                BackButtonOption::Emoji,
-                BackButtonOption::EmojisMenu,
-                BackButtonOption::Forward,
-                BackButtonOption::InputLanguage,
-                BackButtonOption::Lock,
-                BackButtonOption::MaximizeWindow,
-                BackButtonOption::MiddleButton,
-                BackButtonOption::MinimizeWindow,
-                BackButtonOption::MuteUnmuteSpeaker,
-                BackButtonOption::NewBrowserTab,
-                BackButtonOption::Next,
-                BackButtonOption::OpenApplication,
-                BackButtonOption::OpenFile,
-                BackButtonOption::OpenFolder,
-                BackButtonOption::Paste,
-                BackButtonOption::PlayPause,
-                BackButtonOption::Previous,
-                BackButtonOption::PrintScreen,
-                BackButtonOption::Redo,
-                BackButtonOption::RightCtrl,
-                BackButtonOption::ScreenCapture,
-                BackButtonOption::ScreenSnip,
-                BackButtonOption::ShiftWheelMode,
-                BackButtonOption::ShowHideDesktop,
-                BackButtonOption::SwitchApplication,
-                BackButtonOption::TaskView,
-                BackButtonOption::ThisPC,
-                BackButtonOption::VolumeUp,
-                BackButtonOption::ZoomIn,
-                BackButtonOption::ZoomOut,
-            ];
-
-            for &opt in other {
-                if draw_back_item(ui, opt, current_opt, &profile, customizing_button, selected_option) {
-                    click_occurred = true;
-                }
-            }
-
-            ui.add_space(4.0);
-        });
-
-    clicked_away && !click_occurred
-}
-fn draw_back_item(
-    ui: &mut egui::Ui,
-    opt: BackButtonOption,
-    current_opt: BackButtonOption,
-    profile: &mouser_engine::config::Profile,
-    _customizing_button: &mut Option<CustomizingButton>,
-    selected_option: &mut Option<BackButtonOption>,
-) -> bool {
-    let is_selected = opt == current_opt;
-    let item_h = 24.0;
-
-    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), item_h), egui::Sense::click());
-    let is_hovered = response.hovered();
-
-    if is_hovered {
-        ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
-        ui.painter().rect_filled(rect, 0.0, theme::hover_color(ui.ctx()));
-    }
-
-    let bullet_center = pos2(rect.min.x + 14.0, rect.center().y);
-    if is_selected {
-        let accent = theme::accent_color(ui.ctx());
-        ui.painter().circle_filled(bullet_center, 6.0, accent);
-        ui.painter().circle_filled(bullet_center, 2.0, theme::surface_color(ui.ctx()));
-    } else {
-        let bullet_color = Color32::from_gray(60);
-        ui.painter().circle_filled(bullet_center, 6.0, bullet_color);
-    }
-
-    let text_color = if is_selected {
-        theme::accent_color(ui.ctx())
-    } else if is_hovered {
-        theme::primary_text(ui.ctx())
-    } else {
-        theme::secondary_text(ui.ctx())
-    };
-
-    let label_text = opt.display_name();
-    let galley = ui.fonts(|f| {
-        f.layout_job(egui::text::LayoutJob::simple_singleline(
-            label_text.to_string(),
-            egui::FontId::proportional(11.0),
-            text_color,
-        ))
-    });
-    let text_y = rect.center().y - galley.size().y / 2.0;
-    ui.painter().galley(pos2(rect.min.x + 28.0, text_y), galley, text_color);
-
-    let mut clicked = false;
-    if response.clicked() {
-        *selected_option = Some(opt);
-        clicked = true;
-    }
-
-    if opt == BackButtonOption::KeyboardShortcut && is_selected {
-        ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            ui.add_space(28.0);
-
-            let val = profile.mappings.get("xbutton1").cloned().unwrap_or_else(|| "none".to_string());
-            let keys_text = if val.starts_with("custom:") {
-                val.strip_prefix("custom:").unwrap().to_uppercase()
-            } else {
-                "Record Keystroke".to_string()
-            };
-
-            let btn_rec = ui.add(egui::Button::new(
-                RichText::new(keys_text).size(10.0)
-            ));
-            if btn_rec.clicked() {
-                ui.ctx().memory_mut(|mem| mem.stop_text_input());
-                let view_state_id = ui.id().with(format!("popup_view_for_{:?}", CustomizingButton::Back));
-                ui.ctx().data_mut(|d| d.insert_temp(view_state_id, PopupView::RecordShortcut {
-                    target_key: "xbutton1".to_string(),
-                    display_label: "Back Button".to_string(),
-                }));
-                clicked = true;
-            }
-        });
-        ui.add_space(6.0);
-    }
-
-    clicked
-}
-
-// ── TOP BUTTON OPTIONS ───────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum TopButtonOption {
-    ShiftWheelMode,
-    TaskView,
-    Gestures,
-    ScreenCapture,
-    PrintScreen,
-    KeyboardShortcut,
-
-    ActionCenter,
-    AdvancedClick,
-    Back,
-    BrightnessDown,
-    BrightnessUp,
-    Calculator,
-    ChangePointerSpeed,
-    CloseWindow,
-    Copy,
-    Cut,
-    DesktopLeft,
-    DesktopRight,
-    Dictation,
-    DoNothing,
-    Emoji,
-    EmojisMenu,
-    Forward,
-    InputLanguage,
-    Lock,
-    MaximizeWindow,
-    MinimizeWindow,
-    MuteUnmuteSpeaker,
-    NewBrowserTab,
-    Next,
-    OpenApplication,
-    OpenFile,
-    OpenFolder,
-    Paste,
-    PlayPause,
-    Previous,
     Redo,
     RightCtrl,
     ScreenSnip,
-    ShowHideDesktop,
-    SwitchApplication,
+    ShiftWheelMode,
     ThisPC,
     Undo,
     VolumeDown,
@@ -3737,14 +1902,21 @@ pub enum TopButtonOption {
     ZoomOut,
 }
 
-impl TopButtonOption {
-    pub fn display_name(self) -> &'static str {
+impl UniversalButtonOption {
+    pub fn display_name(self, btn: CustomizingButton) -> &'static str {
         match self {
-            Self::ShiftWheelMode => "Shift wheel mode",
+            Self::Gesture => {
+                if btn == CustomizingButton::Thumb || btn == CustomizingButton::Top || btn == CustomizingButton::Middle {
+                    "Gestures"
+                } else {
+                    "Gesture"
+                }
+            }
             Self::TaskView => "Task view",
-            Self::Gestures => "Gestures",
+            Self::ShowHideDesktop => "Show/hide desktop",
             Self::ScreenCapture => "Screen capture",
             Self::PrintScreen => "Print screen",
+            Self::SwitchApplication => "Switch application",
             Self::KeyboardShortcut => "Keyboard shortcut",
             Self::ActionCenter => "Action center",
             Self::AdvancedClick => "Advanced click",
@@ -3766,6 +1938,7 @@ impl TopButtonOption {
             Self::InputLanguage => "Input Language",
             Self::Lock => "Lock",
             Self::MaximizeWindow => "Maximize window",
+            Self::MiddleButton => "Middle button",
             Self::MinimizeWindow => "Minimize window",
             Self::MuteUnmuteSpeaker => "Mute/Unmute speaker",
             Self::NewBrowserTab => "New browser tab",
@@ -3779,8 +1952,7 @@ impl TopButtonOption {
             Self::Redo => "Redo",
             Self::RightCtrl => "Right Ctrl",
             Self::ScreenSnip => "Screen snip",
-            Self::ShowHideDesktop => "Show/hide desktop",
-            Self::SwitchApplication => "Switch application",
+            Self::ShiftWheelMode => "Shift wheel mode",
             Self::ThisPC => "This PC",
             Self::Undo => "Undo",
             Self::VolumeDown => "Volume down",
@@ -3791,750 +1963,312 @@ impl TopButtonOption {
     }
 }
 
-pub fn get_top_button_option(mappings: &std::collections::HashMap<String, String>) -> TopButtonOption {
-    let gesture_enabled = mappings.get("top_gesture_enabled").map(|s| s == "true").unwrap_or(false);
-    if gesture_enabled {
-        return TopButtonOption::Gestures;
-    }
-
-    if let Some(val) = mappings.get("mode_shift") {
-        match val.as_str() {
-            "switch_scroll_mode" => return TopButtonOption::ShiftWheelMode,
-            "task_view" => return TopButtonOption::TaskView,
-            "screen_capture" => return TopButtonOption::ScreenCapture,
-            "print_screen" => return TopButtonOption::PrintScreen,
-            "action_center" => return TopButtonOption::ActionCenter,
-            "advanced_click" => return TopButtonOption::AdvancedClick,
-            "mouse_back_click" => return TopButtonOption::Back,
-            "brightness_down" => return TopButtonOption::BrightnessDown,
-            "brightness_up" => return TopButtonOption::BrightnessUp,
-            "calculator" => return TopButtonOption::Calculator,
-            "cycle_dpi" => return TopButtonOption::ChangePointerSpeed,
-            "close_window" => return TopButtonOption::CloseWindow,
-            "copy" => return TopButtonOption::Copy,
-            "cut" => return TopButtonOption::Cut,
-            "space_left" => return TopButtonOption::DesktopLeft,
-            "space_right" => return TopButtonOption::DesktopRight,
-            "dictation" => return TopButtonOption::Dictation,
-            "none" => return TopButtonOption::DoNothing,
-            "emoji" => return TopButtonOption::Emoji,
-            "emojis_menu" => return TopButtonOption::EmojisMenu,
-            "mouse_forward_click" => return TopButtonOption::Forward,
-            "input_language" => return TopButtonOption::InputLanguage,
-            "lock" => return TopButtonOption::Lock,
-            "maximize_window" => return TopButtonOption::MaximizeWindow,
-            "minimize_window" => return TopButtonOption::MinimizeWindow,
-            "volume_mute" => return TopButtonOption::MuteUnmuteSpeaker,
-            "new_tab" => return TopButtonOption::NewBrowserTab,
-            "next_track" => return TopButtonOption::Next,
-            "open_application" => return TopButtonOption::OpenApplication,
-            "open_file" => return TopButtonOption::OpenFile,
-            "open_folder" => return TopButtonOption::OpenFolder,
-            "paste" => return TopButtonOption::Paste,
-            "play_pause" => return TopButtonOption::PlayPause,
-            "prev_track" => return TopButtonOption::Previous,
-            "redo" => return TopButtonOption::Redo,
-            "right_ctrl" => return TopButtonOption::RightCtrl,
-            "screen_snip" => return TopButtonOption::ScreenSnip,
-            "win_d" => return TopButtonOption::ShowHideDesktop,
-            "alt_tab" => return TopButtonOption::SwitchApplication,
-            "this_pc" => return TopButtonOption::ThisPC,
-            "undo" => return TopButtonOption::Undo,
-            "volume_down" => return TopButtonOption::VolumeDown,
-            "volume_up" => return TopButtonOption::VolumeUp,
-            "zoom_in" => return TopButtonOption::ZoomIn,
-            "zoom_out" => return TopButtonOption::ZoomOut,
-            s if s.starts_with("custom:") => return TopButtonOption::KeyboardShortcut,
-            _ => {}
-        }
-    }
-    TopButtonOption::DoNothing
-}
-
-pub fn save_top_button_option(opt: TopButtonOption, mappings: &mut std::collections::HashMap<String, String>) {
-    if opt == TopButtonOption::Gestures {
-        mappings.insert("top_gesture_enabled".to_string(), "true".to_string());
-        mappings.insert("mode_shift".to_string(), "gestures".to_string());
-        return;
-    }
-
-    mappings.insert("top_gesture_enabled".to_string(), "false".to_string());
-
-    let val = match opt {
-        TopButtonOption::Gestures => "gestures",
-        TopButtonOption::ShiftWheelMode => "switch_scroll_mode",
-        TopButtonOption::TaskView => "task_view",
-        TopButtonOption::ScreenCapture => "screen_capture",
-        TopButtonOption::PrintScreen => "print_screen",
-        TopButtonOption::KeyboardShortcut => {
-            if !mappings.get("mode_shift").map(|s| s.starts_with("custom:")).unwrap_or(false) {
-                mappings.insert("mode_shift".to_string(), "none".to_string());
-            }
-            return;
-        }
-        TopButtonOption::ActionCenter => "action_center",
-        TopButtonOption::AdvancedClick => "advanced_click",
-        TopButtonOption::Back => "mouse_back_click",
-        TopButtonOption::BrightnessDown => "brightness_down",
-        TopButtonOption::BrightnessUp => "brightness_up",
-        TopButtonOption::Calculator => "calculator",
-        TopButtonOption::ChangePointerSpeed => "cycle_dpi",
-        TopButtonOption::CloseWindow => "close_window",
-        TopButtonOption::Copy => "copy",
-        TopButtonOption::Cut => "cut",
-        TopButtonOption::DesktopLeft => "space_left",
-        TopButtonOption::DesktopRight => "space_right",
-        TopButtonOption::Dictation => "dictation",
-        TopButtonOption::DoNothing => "none",
-        TopButtonOption::Emoji => "emoji",
-        TopButtonOption::EmojisMenu => "emojis_menu",
-        TopButtonOption::Forward => "mouse_forward_click",
-        TopButtonOption::InputLanguage => "input_language",
-        TopButtonOption::Lock => "lock",
-        TopButtonOption::MaximizeWindow => "maximize_window",
-        TopButtonOption::MinimizeWindow => "minimize_window",
-        TopButtonOption::MuteUnmuteSpeaker => "volume_mute",
-        TopButtonOption::NewBrowserTab => "new_tab",
-        TopButtonOption::Next => "next_track",
-        TopButtonOption::OpenApplication => "open_application",
-        TopButtonOption::OpenFile => "open_file",
-        TopButtonOption::OpenFolder => "open_folder",
-        TopButtonOption::Paste => "paste",
-        TopButtonOption::PlayPause => "play_pause",
-        TopButtonOption::Previous => "prev_track",
-        TopButtonOption::Redo => "redo",
-        TopButtonOption::RightCtrl => "right_ctrl",
-        TopButtonOption::ScreenSnip => "screen_snip",
-        TopButtonOption::ShowHideDesktop => "win_d",
-        TopButtonOption::SwitchApplication => "alt_tab",
-        TopButtonOption::ThisPC => "this_pc",
-        TopButtonOption::Undo => "undo",
-        TopButtonOption::VolumeDown => "volume_down",
-        TopButtonOption::VolumeUp => "volume_up",
-        TopButtonOption::ZoomIn => "zoom_in",
-        TopButtonOption::ZoomOut => "zoom_out",
-    };
-
-    mappings.insert("mode_shift".to_string(), val.to_string());
-}
-
-fn draw_top_button_action_popup(
-    ui: &mut egui::Ui,
-    _engine: &Engine,
-    config: &mut Config,
-    rect: Rect,
-    card_rect: Rect,
-    customizing_button: &mut Option<CustomizingButton>,
-    selected_option: &mut Option<TopButtonOption>,
-) -> bool {
-    let _response = ui.allocate_rect(rect, egui::Sense::click());
-
-    let clicked_away = ui.input(|i| i.pointer.any_click())
-        && !ui.rect_contains_pointer(rect)
-        && !ui.rect_contains_pointer(card_rect);
-
-    let bg = theme::surface_color(ui.ctx());
-    let border = theme::border_color(ui.ctx());
-
-    // Draw drop shadow
-    let shadow_rect = rect.expand2(vec2(2.0, 3.0)).translate(vec2(0.0, 2.0));
-    ui.painter().rect_filled(
-        shadow_rect,
-        3.0,
-        Color32::from_rgba_unmultiplied(0, 0, 0, 80),
-    );
-
-    // Outer popup container
-    ui.painter().rect_filled(rect, 2.0, bg);
-    ui.painter()
-        .rect_stroke(rect, 2.0, Stroke::new(1.0, border));
-    theme::draw_tech_corners(ui.painter(), rect, theme::accent_color(ui.ctx()), 6.0);
-
-    let profile = config.profiles.get(&config.active_profile).cloned().unwrap();
-    let current_opt = get_top_button_option(&profile.mappings);
-
-    let mut click_occurred = false;
-
-    let mut child_ui = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(rect.shrink(6.0))
-            .layout(egui::Layout::top_down(egui::Align::Min)),
-    );
-
-    egui::ScrollArea::vertical()
-        .id_salt("top_button_scroll")
-        .show(&mut child_ui, |ui| {
-            ui.add_space(4.0);
-
-            // RECOMMENDED header
-            ui.horizontal(|ui| {
-                ui.add_space(12.0);
-                ui.label(
-                    RichText::new("RECOMMENDED")
-                        .font(egui::FontId::proportional(9.0))
-                        .strong()
-                        .color(theme::secondary_text(ui.ctx())),
-                );
-            });
-            ui.add_space(4.0);
-
-            let recommended = &[
-                TopButtonOption::ShiftWheelMode,
-                TopButtonOption::TaskView,
-                TopButtonOption::Gestures,
-                TopButtonOption::ScreenCapture,
-                TopButtonOption::PrintScreen,
-                TopButtonOption::KeyboardShortcut,
-            ];
-
-            for &opt in recommended {
-                if draw_top_item(ui, opt, current_opt, &profile, customizing_button, selected_option) {
-                    click_occurred = true;
-                }
-            }
-
-            ui.add_space(8.0);
-
-            // OTHER ACTIONS header
-            ui.horizontal(|ui| {
-                ui.add_space(12.0);
-                ui.label(
-                    RichText::new("OTHER ACTIONS")
-                        .font(egui::FontId::proportional(9.0))
-                        .strong()
-                        .color(theme::secondary_text(ui.ctx())),
-                );
-            });
-            ui.add_space(4.0);
-
-            let other = &[
-                TopButtonOption::ActionCenter,
-                TopButtonOption::AdvancedClick,
-                TopButtonOption::Back,
-                TopButtonOption::BrightnessDown,
-                TopButtonOption::BrightnessUp,
-                TopButtonOption::Calculator,
-                TopButtonOption::ChangePointerSpeed,
-                TopButtonOption::CloseWindow,
-                TopButtonOption::Copy,
-                TopButtonOption::Cut,
-                TopButtonOption::DesktopLeft,
-                TopButtonOption::DesktopRight,
-                TopButtonOption::Dictation,
-                TopButtonOption::DoNothing,
-                TopButtonOption::Emoji,
-                TopButtonOption::EmojisMenu,
-                TopButtonOption::Forward,
-                TopButtonOption::InputLanguage,
-                TopButtonOption::Lock,
-                TopButtonOption::MaximizeWindow,
-                TopButtonOption::MinimizeWindow,
-                TopButtonOption::MuteUnmuteSpeaker,
-                TopButtonOption::NewBrowserTab,
-                TopButtonOption::Next,
-                TopButtonOption::OpenApplication,
-                TopButtonOption::OpenFile,
-                TopButtonOption::OpenFolder,
-                TopButtonOption::Paste,
-                TopButtonOption::PlayPause,
-                TopButtonOption::Previous,
-                TopButtonOption::Redo,
-                TopButtonOption::RightCtrl,
-                TopButtonOption::ScreenSnip,
-                TopButtonOption::ShowHideDesktop,
-                TopButtonOption::SwitchApplication,
-                TopButtonOption::ThisPC,
-                TopButtonOption::Undo,
-                TopButtonOption::VolumeDown,
-                TopButtonOption::VolumeUp,
-                TopButtonOption::ZoomIn,
-                TopButtonOption::ZoomOut,
-            ];
-
-            for &opt in other {
-                if draw_top_item(ui, opt, current_opt, &profile, customizing_button, selected_option) {
-                    click_occurred = true;
-                }
-            }
-
-            ui.add_space(4.0);
-        });
-
-    clicked_away && !click_occurred
-}
-
-fn draw_top_item(
-    ui: &mut egui::Ui,
-    opt: TopButtonOption,
-    current_opt: TopButtonOption,
-    profile: &mouser_engine::config::Profile,
-    _customizing_button: &mut Option<CustomizingButton>,
-    selected_option: &mut Option<TopButtonOption>,
-) -> bool {
-    let is_selected = opt == current_opt;
-    let item_h = 24.0;
-
-    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), item_h), egui::Sense::click());
-    let is_hovered = response.hovered();
-
-    if is_hovered {
-        ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
-        ui.painter().rect_filled(rect, 0.0, theme::hover_color(ui.ctx()));
-    }
-
-    let bullet_center = pos2(rect.min.x + 14.0, rect.center().y);
-    if is_selected {
-        let accent = theme::accent_color(ui.ctx());
-        ui.painter().circle_filled(bullet_center, 6.0, accent);
-        ui.painter().circle_filled(bullet_center, 2.0, theme::surface_color(ui.ctx()));
-    } else {
-        let bullet_color = Color32::from_gray(60);
-        ui.painter().circle_filled(bullet_center, 6.0, bullet_color);
-    }
-
-    let text_color = if is_selected {
-        theme::accent_color(ui.ctx())
-    } else if is_hovered {
-        theme::primary_text(ui.ctx())
-    } else {
-        theme::secondary_text(ui.ctx())
-    };
-
-    let label_text = opt.display_name();
-    let galley = ui.fonts(|f| {
-        f.layout_job(egui::text::LayoutJob::simple_singleline(
-            label_text.to_string(),
-            egui::FontId::proportional(11.0),
-            text_color,
-        ))
-    });
-    let text_y = rect.center().y - galley.size().y / 2.0;
-    ui.painter().galley(pos2(rect.min.x + 28.0, text_y), galley, text_color);
-
-    let mut clicked = false;
-    if response.clicked() {
-        *selected_option = Some(opt);
-        clicked = true;
-    }
-
-    if opt == TopButtonOption::KeyboardShortcut && is_selected {
-        ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            ui.add_space(28.0);
-
-            let val = profile.mappings.get("mode_shift").cloned().unwrap_or_else(|| "none".to_string());
-            let keys_text = if val.starts_with("custom:") {
-                val.strip_prefix("custom:").unwrap().to_uppercase()
-            } else {
-                "Record Keystroke".to_string()
-            };
-
-            let btn_rec = ui.add(egui::Button::new(
-                RichText::new(keys_text).size(10.0)
-            ));
-            if btn_rec.clicked() {
-                ui.ctx().memory_mut(|mem| mem.stop_text_input());
-                let view_state_id = ui.id().with(format!("popup_view_for_{:?}", CustomizingButton::Top));
-                ui.ctx().data_mut(|d| d.insert_temp(view_state_id, PopupView::RecordShortcut {
-                    target_key: "mode_shift".to_string(),
-                    display_label: "Top Button".to_string(),
-                }));
-                clicked = true;
-            }
-        });
-        ui.add_space(6.0);
-    }
-
-    clicked
-}
-
-// ── WHEEL BUTTON OPTIONS ─────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum WheelButtonOption {
-    MiddleButton,
-    ShiftWheelMode,
-    TaskView,
-    ShowHideDesktop,
-    Gestures,
-    KeyboardShortcut,
-
-    ActionCenter,
-    AdvancedClick,
-    Back,
-    BrightnessDown,
-    BrightnessUp,
-    Calculator,
-    ChangePointerSpeed,
-    CloseWindow,
-    Copy,
-    Cut,
-    DesktopLeft,
-    DesktopRight,
-    Dictation,
-    DoNothing,
-    Emoji,
-    EmojisMenu,
-    Forward,
-    InputLanguage,
-    Lock,
-    MaximizeWindow,
-    MinimizeWindow,
-    MuteUnmuteSpeaker,
-    NewBrowserTab,
-    Next,
-    OpenApplication,
-    OpenFile,
-    OpenFolder,
-    Paste,
-    PlayPause,
-    Previous,
-    PrintScreen,
-    Redo,
-    RightCtrl,
-    ScreenCapture,
-    ScreenSnip,
-    SwitchApplication,
-    ThisPC,
-    VolumeDown,
-    VolumeUp,
-    ZoomIn,
-    ZoomOut,
-}
-
-impl WheelButtonOption {
-    pub fn display_name(self) -> &'static str {
+impl CustomizingButton {
+    pub fn config_keys(self) -> (&'static str, &'static str, &'static str) {
         match self {
-            Self::MiddleButton => "Middle button",
-            Self::ShiftWheelMode => "Shift wheel mode",
-            Self::TaskView => "Task view",
-            Self::ShowHideDesktop => "Show/hide desktop",
-            Self::Gestures => "Gestures",
-            Self::KeyboardShortcut => "Keyboard shortcut",
-            Self::ActionCenter => "Action center",
-            Self::AdvancedClick => "Advanced click",
-            Self::Back => "Back",
-            Self::BrightnessDown => "Brightness down",
-            Self::BrightnessUp => "Brightness up",
-            Self::Calculator => "Calculator",
-            Self::ChangePointerSpeed => "Change pointer speed",
-            Self::CloseWindow => "Close window",
-            Self::Copy => "Copy",
-            Self::Cut => "Cut",
-            Self::DesktopLeft => "Desktop left",
-            Self::DesktopRight => "Desktop right",
-            Self::Dictation => "Dictation",
-            Self::DoNothing => "Do nothing",
-            Self::Emoji => "Emoji",
-            Self::EmojisMenu => "Emoji's menu",
-            Self::Forward => "Forward",
-            Self::InputLanguage => "Input Language",
-            Self::Lock => "Lock",
-            Self::MaximizeWindow => "Maximize window",
-            Self::MinimizeWindow => "Minimize window",
-            Self::MuteUnmuteSpeaker => "Mute/Unmute speaker",
-            Self::NewBrowserTab => "New browser tab",
-            Self::Next => "Next",
-            Self::OpenApplication => "Open application",
-            Self::OpenFile => "Open file",
-            Self::OpenFolder => "Open folder",
-            Self::Paste => "Paste",
-            Self::PlayPause => "Play/Pause",
-            Self::Previous => "Previous",
-            Self::PrintScreen => "Print screen",
-            Self::Redo => "Redo",
-            Self::RightCtrl => "Right Ctrl",
-            Self::ScreenCapture => "Screen capture",
-            Self::ScreenSnip => "Screen snip",
-            Self::SwitchApplication => "Switch application",
-            Self::ThisPC => "This PC",
-            Self::VolumeDown => "Volume down",
-            Self::VolumeUp => "Volume up",
-            Self::ZoomIn => "Zoom in",
-            Self::ZoomOut => "Zoom out",
+            Self::Thumb => ("gesture", "gesture_enabled", "none"),
+            Self::Forward => ("xbutton2", "xbutton2_gesture_enabled", "mouse_forward_click"),
+            Self::Back => ("xbutton1", "xbutton1_gesture_enabled", "mouse_back_click"),
+            Self::Top => ("mode_shift", "top_gesture_enabled", "switch_scroll_mode"),
+            Self::Middle => ("middle", "middle_gesture_enabled", "mouse_middle_click"),
+            _ => ("", "", ""),
         }
+    }
+
+    pub fn recommended_options(self) -> &'static [UniversalButtonOption] {
+        match self {
+            Self::Thumb => &[
+                UniversalButtonOption::Gesture,
+                UniversalButtonOption::TaskView,
+                UniversalButtonOption::ShowHideDesktop,
+                UniversalButtonOption::ScreenCapture,
+                UniversalButtonOption::PrintScreen,
+                UniversalButtonOption::SwitchApplication,
+                UniversalButtonOption::KeyboardShortcut,
+            ],
+            Self::Forward => &[
+                UniversalButtonOption::Forward,
+                UniversalButtonOption::Paste,
+                UniversalButtonOption::VolumeUp,
+                UniversalButtonOption::Redo,
+                UniversalButtonOption::KeyboardShortcut,
+            ],
+            Self::Back => &[
+                UniversalButtonOption::Back,
+                UniversalButtonOption::Copy,
+                UniversalButtonOption::VolumeDown,
+                UniversalButtonOption::Undo,
+                UniversalButtonOption::KeyboardShortcut,
+            ],
+            Self::Top => &[
+                UniversalButtonOption::ShiftWheelMode,
+                UniversalButtonOption::TaskView,
+                UniversalButtonOption::Gesture,
+                UniversalButtonOption::ScreenCapture,
+                UniversalButtonOption::PrintScreen,
+                UniversalButtonOption::KeyboardShortcut,
+            ],
+            Self::Middle => &[
+                UniversalButtonOption::MiddleButton,
+                UniversalButtonOption::ShiftWheelMode,
+                UniversalButtonOption::TaskView,
+                UniversalButtonOption::ShowHideDesktop,
+                UniversalButtonOption::Gesture,
+                UniversalButtonOption::KeyboardShortcut,
+            ],
+            _ => &[],
+        }
+    }
+
+    pub fn other_options(self) -> Vec<UniversalButtonOption> {
+        let recommended = self.recommended_options();
+        let all_options = &[
+            UniversalButtonOption::Gesture,
+            UniversalButtonOption::ActionCenter,
+            UniversalButtonOption::AdvancedClick,
+            UniversalButtonOption::Back,
+            UniversalButtonOption::BrightnessDown,
+            UniversalButtonOption::BrightnessUp,
+            UniversalButtonOption::Calculator,
+            UniversalButtonOption::ChangePointerSpeed,
+            UniversalButtonOption::CloseWindow,
+            UniversalButtonOption::Copy,
+            UniversalButtonOption::Cut,
+            UniversalButtonOption::DesktopLeft,
+            UniversalButtonOption::DesktopRight,
+            UniversalButtonOption::Dictation,
+            UniversalButtonOption::DoNothing,
+            UniversalButtonOption::Emoji,
+            UniversalButtonOption::EmojisMenu,
+            UniversalButtonOption::Forward,
+            UniversalButtonOption::InputLanguage,
+            UniversalButtonOption::Lock,
+            UniversalButtonOption::MaximizeWindow,
+            UniversalButtonOption::MiddleButton,
+            UniversalButtonOption::MinimizeWindow,
+            UniversalButtonOption::MuteUnmuteSpeaker,
+            UniversalButtonOption::NewBrowserTab,
+            UniversalButtonOption::Next,
+            UniversalButtonOption::OpenApplication,
+            UniversalButtonOption::OpenFile,
+            UniversalButtonOption::OpenFolder,
+            UniversalButtonOption::Paste,
+            UniversalButtonOption::PlayPause,
+            UniversalButtonOption::Previous,
+            UniversalButtonOption::PrintScreen,
+            UniversalButtonOption::Redo,
+            UniversalButtonOption::RightCtrl,
+            UniversalButtonOption::ScreenCapture,
+            UniversalButtonOption::ScreenSnip,
+            UniversalButtonOption::ShiftWheelMode,
+            UniversalButtonOption::ShowHideDesktop,
+            UniversalButtonOption::SwitchApplication,
+            UniversalButtonOption::TaskView,
+            UniversalButtonOption::ThisPC,
+            UniversalButtonOption::Undo,
+            UniversalButtonOption::VolumeDown,
+            UniversalButtonOption::VolumeUp,
+            UniversalButtonOption::ZoomIn,
+            UniversalButtonOption::ZoomOut,
+        ];
+
+        all_options.iter()
+            .copied()
+            .filter(|opt| !recommended.contains(opt))
+            .collect()
     }
 }
 
-pub fn get_wheel_button_option(mappings: &std::collections::HashMap<String, String>) -> WheelButtonOption {
-    let gesture_enabled = mappings.get("middle_gesture_enabled").map(|s| s == "true").unwrap_or(false);
+pub fn get_button_option(
+    btn: CustomizingButton,
+    mappings: &std::collections::HashMap<String, String>,
+) -> UniversalButtonOption {
+    let (base_key, gesture_enabled_key, _) = btn.config_keys();
+
+    // Primary check: explicit gesture_enabled flag.
+    let gesture_enabled = mappings.get(gesture_enabled_key).map(|s| s == "true").unwrap_or(false);
     if gesture_enabled {
-        return WheelButtonOption::Gestures;
+        return UniversalButtonOption::Gesture;
     }
 
-    if let Some(val) = mappings.get("middle") {
+    // Legacy migration: if the base key is "gestures" (old placeholder), treat as gesture mode.
+    if mappings.get(base_key).map(|s| s == "gestures").unwrap_or(false) {
+        return UniversalButtonOption::Gesture;
+    }
+
+    // Auto-detect: if any gesture direction is non-"none", the button is in gesture mode
+    // even if gesture_enabled was never explicitly saved as "true" (e.g. old configs).
+    {
+        let (_, _, up_k, down_k, left_k, right_k) = get_button_keys(btn);
+        let has_gesture = [up_k, down_k, left_k, right_k].iter().any(|k| {
+            mappings.get(*k).map(|v| v != "none").unwrap_or(false)
+        });
+        if has_gesture {
+            return UniversalButtonOption::Gesture;
+        }
+    }
+
+    if let Some(val) = mappings.get(base_key) {
         match val.as_str() {
-            "mouse_middle_click" => return WheelButtonOption::MiddleButton,
-            "switch_scroll_mode" => return WheelButtonOption::ShiftWheelMode,
-            "task_view" => return WheelButtonOption::TaskView,
-            "win_d" => return WheelButtonOption::ShowHideDesktop,
-            "action_center" => return WheelButtonOption::ActionCenter,
-            "advanced_click" => return WheelButtonOption::AdvancedClick,
-            "mouse_back_click" => return WheelButtonOption::Back,
-            "brightness_down" => return WheelButtonOption::BrightnessDown,
-            "brightness_up" => return WheelButtonOption::BrightnessUp,
-            "calculator" => return WheelButtonOption::Calculator,
-            "cycle_dpi" => return WheelButtonOption::ChangePointerSpeed,
-            "close_window" => return WheelButtonOption::CloseWindow,
-            "copy" => return WheelButtonOption::Copy,
-            "cut" => return WheelButtonOption::Cut,
-            "space_left" => return WheelButtonOption::DesktopLeft,
-            "space_right" => return WheelButtonOption::DesktopRight,
-            "dictation" => return WheelButtonOption::Dictation,
-            "none" => return WheelButtonOption::DoNothing,
-            "emoji" => return WheelButtonOption::Emoji,
-            "emojis_menu" => return WheelButtonOption::EmojisMenu,
-            "mouse_forward_click" => return WheelButtonOption::Forward,
-            "input_language" => return WheelButtonOption::InputLanguage,
-            "lock" => return WheelButtonOption::Lock,
-            "maximize_window" => return WheelButtonOption::MaximizeWindow,
-            "minimize_window" => return WheelButtonOption::MinimizeWindow,
-            "volume_mute" => return WheelButtonOption::MuteUnmuteSpeaker,
-            "new_tab" => return WheelButtonOption::NewBrowserTab,
-            "next_track" => return WheelButtonOption::Next,
-            "open_application" => return WheelButtonOption::OpenApplication,
-            "open_file" => return WheelButtonOption::OpenFile,
-            "open_folder" => return WheelButtonOption::OpenFolder,
-            "paste" => return WheelButtonOption::Paste,
-            "play_pause" => return WheelButtonOption::PlayPause,
-            "prev_track" => return WheelButtonOption::Previous,
-            "print_screen" => return WheelButtonOption::PrintScreen,
-            "redo" => return WheelButtonOption::Redo,
-            "right_ctrl" => return WheelButtonOption::RightCtrl,
-            "screen_capture" => return WheelButtonOption::ScreenCapture,
-            "screen_snip" => return WheelButtonOption::ScreenSnip,
-            "alt_tab" => return WheelButtonOption::SwitchApplication,
-            "this_pc" => return WheelButtonOption::ThisPC,
-            "volume_down" => return WheelButtonOption::VolumeDown,
-            "volume_up" => return WheelButtonOption::VolumeUp,
-            "zoom_in" => return WheelButtonOption::ZoomIn,
-            "zoom_out" => return WheelButtonOption::ZoomOut,
-            s if s.starts_with("custom:") => return WheelButtonOption::KeyboardShortcut,
+            "task_view" => return UniversalButtonOption::TaskView,
+            "win_d" => return UniversalButtonOption::ShowHideDesktop,
+            "screen_capture" => return UniversalButtonOption::ScreenCapture,
+            "print_screen" => return UniversalButtonOption::PrintScreen,
+            "alt_tab" => return UniversalButtonOption::SwitchApplication,
+            "action_center" => return UniversalButtonOption::ActionCenter,
+            "advanced_click" => return UniversalButtonOption::AdvancedClick,
+            "browser_back" | "mouse_back_click" => return UniversalButtonOption::Back,
+            "brightness_down" => return UniversalButtonOption::BrightnessDown,
+            "brightness_up" => return UniversalButtonOption::BrightnessUp,
+            "calculator" => return UniversalButtonOption::Calculator,
+            "cycle_dpi" => return UniversalButtonOption::ChangePointerSpeed,
+            "close_window" => return UniversalButtonOption::CloseWindow,
+            "copy" => return UniversalButtonOption::Copy,
+            "cut" => return UniversalButtonOption::Cut,
+            "space_left" => return UniversalButtonOption::DesktopLeft,
+            "space_right" => return UniversalButtonOption::DesktopRight,
+            "dictation" => return UniversalButtonOption::Dictation,
+            "none" => return UniversalButtonOption::DoNothing,
+            "emoji" => return UniversalButtonOption::Emoji,
+            "emojis_menu" => return UniversalButtonOption::EmojisMenu,
+            "browser_forward" | "mouse_forward_click" => return UniversalButtonOption::Forward,
+            "input_language" => return UniversalButtonOption::InputLanguage,
+            "lock" => return UniversalButtonOption::Lock,
+            "maximize_window" => return UniversalButtonOption::MaximizeWindow,
+            "mouse_middle_click" => return UniversalButtonOption::MiddleButton,
+            "minimize_window" => return UniversalButtonOption::MinimizeWindow,
+            "volume_mute" => return UniversalButtonOption::MuteUnmuteSpeaker,
+            "new_tab" => return UniversalButtonOption::NewBrowserTab,
+            "next_track" => return UniversalButtonOption::Next,
+            "open_application" => return UniversalButtonOption::OpenApplication,
+            "open_file" => return UniversalButtonOption::OpenFile,
+            "open_folder" => return UniversalButtonOption::OpenFolder,
+            "paste" => return UniversalButtonOption::Paste,
+            "play_pause" => return UniversalButtonOption::PlayPause,
+            "prev_track" => return UniversalButtonOption::Previous,
+            "redo" => return UniversalButtonOption::Redo,
+            "right_ctrl" => return UniversalButtonOption::RightCtrl,
+            "screen_snip" => return UniversalButtonOption::ScreenSnip,
+            "switch_scroll_mode" => return UniversalButtonOption::ShiftWheelMode,
+            "this_pc" => return UniversalButtonOption::ThisPC,
+            "undo" => return UniversalButtonOption::Undo,
+            "volume_down" => return UniversalButtonOption::VolumeDown,
+            "volume_up" => return UniversalButtonOption::VolumeUp,
+            "zoom_in" => return UniversalButtonOption::ZoomIn,
+            "zoom_out" => return UniversalButtonOption::ZoomOut,
+            s if s.starts_with("custom:") => return UniversalButtonOption::KeyboardShortcut,
             _ => {}
         }
     }
-    WheelButtonOption::DoNothing
+
+    match btn {
+        CustomizingButton::Thumb => UniversalButtonOption::DoNothing,
+        CustomizingButton::Forward => UniversalButtonOption::Forward,
+        CustomizingButton::Back => UniversalButtonOption::Back,
+        CustomizingButton::Top => UniversalButtonOption::ShiftWheelMode,
+        CustomizingButton::Middle => UniversalButtonOption::MiddleButton,
+        _ => UniversalButtonOption::DoNothing,
+    }
 }
 
-pub fn save_wheel_button_option(opt: WheelButtonOption, mappings: &mut std::collections::HashMap<String, String>) {
-    if opt == WheelButtonOption::Gestures {
-        mappings.insert("middle_gesture_enabled".to_string(), "true".to_string());
-        mappings.insert("middle".to_string(), "gestures".to_string());
+pub fn save_button_option(
+    btn: CustomizingButton,
+    opt: UniversalButtonOption,
+    mappings: &mut std::collections::HashMap<String, String>,
+) {
+    let (base_key, gesture_enabled_key, _) = btn.config_keys();
+    if opt == UniversalButtonOption::Gesture {
+        mappings.insert(gesture_enabled_key.to_string(), "true".to_string());
+        // Preserve the existing click-fallback action (the base key doubles as the
+        // "CLICK" slot inside gesture config). Only reset if it holds the legacy
+        // "gestures" placeholder or is completely absent — never overwrite a valid action.
+        let existing = mappings.get(base_key).map(|s| s.as_str()).unwrap_or("none");
+        if existing == "gestures" || existing.is_empty() {
+            mappings.insert(base_key.to_string(), "none".to_string());
+        }
         return;
     }
 
-    mappings.insert("middle_gesture_enabled".to_string(), "false".to_string());
+    mappings.insert(gesture_enabled_key.to_string(), "false".to_string());
+
+    // Clear gesture direction slots so auto-detect won't re-enable gesture mode.
+    let (_, _, up_k, down_k, left_k, right_k) = get_button_keys(btn);
+    for dir_key in [up_k, down_k, left_k, right_k] {
+        mappings.insert(dir_key.to_string(), "none".to_string());
+    }
 
     let val = match opt {
-        WheelButtonOption::Gestures => "gestures",
-        WheelButtonOption::MiddleButton => "mouse_middle_click",
-        WheelButtonOption::ShiftWheelMode => "switch_scroll_mode",
-        WheelButtonOption::TaskView => "task_view",
-        WheelButtonOption::ShowHideDesktop => "win_d",
-        WheelButtonOption::KeyboardShortcut => {
-            if !mappings.get("middle").map(|s| s.starts_with("custom:")).unwrap_or(false) {
-                mappings.insert("middle".to_string(), "none".to_string());
+        UniversalButtonOption::Gesture => "gestures",
+        UniversalButtonOption::TaskView => "task_view",
+        UniversalButtonOption::ShowHideDesktop => "win_d",
+        UniversalButtonOption::ScreenCapture => "screen_capture",
+        UniversalButtonOption::PrintScreen => "print_screen",
+        UniversalButtonOption::SwitchApplication => "alt_tab",
+        UniversalButtonOption::KeyboardShortcut => {
+            if !mappings.get(base_key).map(|s| s.starts_with("custom:")).unwrap_or(false) {
+                mappings.insert(base_key.to_string(), "none".to_string());
             }
             return;
         }
-        WheelButtonOption::ActionCenter => "action_center",
-        WheelButtonOption::AdvancedClick => "advanced_click",
-        WheelButtonOption::Back => "mouse_back_click",
-        WheelButtonOption::BrightnessDown => "brightness_down",
-        WheelButtonOption::BrightnessUp => "brightness_up",
-        WheelButtonOption::Calculator => "calculator",
-        WheelButtonOption::ChangePointerSpeed => "cycle_dpi",
-        WheelButtonOption::CloseWindow => "close_window",
-        WheelButtonOption::Copy => "copy",
-        WheelButtonOption::Cut => "cut",
-        WheelButtonOption::DesktopLeft => "space_left",
-        WheelButtonOption::DesktopRight => "space_right",
-        WheelButtonOption::Dictation => "dictation",
-        WheelButtonOption::DoNothing => "none",
-        WheelButtonOption::Emoji => "emoji",
-        WheelButtonOption::EmojisMenu => "emojis_menu",
-        WheelButtonOption::Forward => "mouse_forward_click",
-        WheelButtonOption::InputLanguage => "input_language",
-        WheelButtonOption::Lock => "lock",
-        WheelButtonOption::MaximizeWindow => "maximize_window",
-        WheelButtonOption::MinimizeWindow => "minimize_window",
-        WheelButtonOption::MuteUnmuteSpeaker => "volume_mute",
-        WheelButtonOption::NewBrowserTab => "new_tab",
-        WheelButtonOption::Next => "next_track",
-        WheelButtonOption::OpenApplication => "open_application",
-        WheelButtonOption::OpenFile => "open_file",
-        WheelButtonOption::OpenFolder => "open_folder",
-        WheelButtonOption::Paste => "paste",
-        WheelButtonOption::PlayPause => "play_pause",
-        WheelButtonOption::Previous => "prev_track",
-        WheelButtonOption::PrintScreen => "print_screen",
-        WheelButtonOption::Redo => "redo",
-        WheelButtonOption::RightCtrl => "right_ctrl",
-        WheelButtonOption::ScreenCapture => "screen_capture",
-        WheelButtonOption::ScreenSnip => "screen_snip",
-        WheelButtonOption::SwitchApplication => "alt_tab",
-        WheelButtonOption::ThisPC => "this_pc",
-        WheelButtonOption::VolumeDown => "volume_down",
-        WheelButtonOption::VolumeUp => "volume_up",
-        WheelButtonOption::ZoomIn => "zoom_in",
-        WheelButtonOption::ZoomOut => "zoom_out",
+        UniversalButtonOption::ActionCenter => "action_center",
+        UniversalButtonOption::AdvancedClick => "advanced_click",
+        UniversalButtonOption::Back => {
+            if btn == CustomizingButton::Back { "mouse_back_click" } else { "browser_back" }
+        }
+        UniversalButtonOption::BrightnessDown => "brightness_down",
+        UniversalButtonOption::BrightnessUp => "brightness_up",
+        UniversalButtonOption::Calculator => "calculator",
+        UniversalButtonOption::ChangePointerSpeed => "cycle_dpi",
+        UniversalButtonOption::CloseWindow => "close_window",
+        UniversalButtonOption::Copy => "copy",
+        UniversalButtonOption::Cut => "cut",
+        UniversalButtonOption::DesktopLeft => "space_left",
+        UniversalButtonOption::DesktopRight => "space_right",
+        UniversalButtonOption::Dictation => "dictation",
+        UniversalButtonOption::DoNothing => "none",
+        UniversalButtonOption::Emoji => "emoji",
+        UniversalButtonOption::EmojisMenu => "emojis_menu",
+        UniversalButtonOption::Forward => {
+            if btn == CustomizingButton::Forward { "mouse_forward_click" } else { "browser_forward" }
+        }
+        UniversalButtonOption::InputLanguage => "input_language",
+        UniversalButtonOption::Lock => "lock",
+        UniversalButtonOption::MaximizeWindow => "maximize_window",
+        UniversalButtonOption::MiddleButton => "mouse_middle_click",
+        UniversalButtonOption::MinimizeWindow => "minimize_window",
+        UniversalButtonOption::MuteUnmuteSpeaker => "volume_mute",
+        UniversalButtonOption::NewBrowserTab => "new_tab",
+        UniversalButtonOption::Next => "next_track",
+        UniversalButtonOption::OpenApplication => "open_application",
+        UniversalButtonOption::OpenFile => "open_file",
+        UniversalButtonOption::OpenFolder => "open_folder",
+        UniversalButtonOption::Paste => "paste",
+        UniversalButtonOption::PlayPause => "play_pause",
+        UniversalButtonOption::Previous => "prev_track",
+        UniversalButtonOption::Redo => "redo",
+        UniversalButtonOption::RightCtrl => "right_ctrl",
+        UniversalButtonOption::ScreenSnip => "screen_snip",
+        UniversalButtonOption::ShiftWheelMode => "switch_scroll_mode",
+        UniversalButtonOption::ThisPC => "this_pc",
+        UniversalButtonOption::Undo => "undo",
+        UniversalButtonOption::VolumeDown => "volume_down",
+        UniversalButtonOption::VolumeUp => "volume_up",
+        UniversalButtonOption::ZoomIn => "zoom_in",
+        UniversalButtonOption::ZoomOut => "zoom_out",
     };
 
-    mappings.insert("middle".to_string(), val.to_string());
+    mappings.insert(base_key.to_string(), val.to_string());
 }
 
-fn draw_wheel_button_action_popup(
+fn draw_button_item(
     ui: &mut egui::Ui,
-    _engine: &Engine,
-    config: &mut Config,
-    rect: Rect,
-    card_rect: Rect,
-    customizing_button: &mut Option<CustomizingButton>,
-    selected_option: &mut Option<WheelButtonOption>,
-) -> bool {
-    let _response = ui.allocate_rect(rect, egui::Sense::click());
-
-    let clicked_away = ui.input(|i| i.pointer.any_click())
-        && !ui.rect_contains_pointer(rect)
-        && !ui.rect_contains_pointer(card_rect);
-
-    let bg = theme::surface_color(ui.ctx());
-    let border = theme::border_color(ui.ctx());
-
-    // Draw drop shadow
-    let shadow_rect = rect.expand2(vec2(2.0, 3.0)).translate(vec2(0.0, 2.0));
-    ui.painter().rect_filled(
-        shadow_rect,
-        3.0,
-        Color32::from_rgba_unmultiplied(0, 0, 0, 80),
-    );
-
-    // Outer popup container
-    ui.painter().rect_filled(rect, 2.0, bg);
-    ui.painter()
-        .rect_stroke(rect, 2.0, Stroke::new(1.0, border));
-    theme::draw_tech_corners(ui.painter(), rect, theme::accent_color(ui.ctx()), 6.0);
-
-    let profile = config.profiles.get(&config.active_profile).cloned().unwrap();
-    let current_opt = get_wheel_button_option(&profile.mappings);
-
-    let mut click_occurred = false;
-
-    let mut child_ui = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(rect.shrink(6.0))
-            .layout(egui::Layout::top_down(egui::Align::Min)),
-    );
-
-    egui::ScrollArea::vertical()
-        .id_salt("wheel_button_scroll")
-        .show(&mut child_ui, |ui| {
-            ui.add_space(4.0);
-
-            // RECOMMENDED header
-            ui.horizontal(|ui| {
-                ui.add_space(12.0);
-                ui.label(
-                    RichText::new("RECOMMENDED")
-                        .font(egui::FontId::proportional(9.0))
-                        .strong()
-                        .color(theme::secondary_text(ui.ctx())),
-                );
-            });
-            ui.add_space(4.0);
-
-            let recommended = &[
-                WheelButtonOption::MiddleButton,
-                WheelButtonOption::ShiftWheelMode,
-                WheelButtonOption::TaskView,
-                WheelButtonOption::ShowHideDesktop,
-                WheelButtonOption::Gestures,
-                WheelButtonOption::KeyboardShortcut,
-            ];
-
-            for &opt in recommended {
-                if draw_wheel_item(ui, opt, current_opt, &profile, customizing_button, selected_option) {
-                    click_occurred = true;
-                }
-            }
-
-            ui.add_space(8.0);
-
-            // OTHER ACTIONS header
-            ui.horizontal(|ui| {
-                ui.add_space(12.0);
-                ui.label(
-                    RichText::new("OTHER ACTIONS")
-                        .font(egui::FontId::proportional(9.0))
-                        .strong()
-                        .color(theme::secondary_text(ui.ctx())),
-                );
-            });
-            ui.add_space(4.0);
-
-            let other = &[
-                WheelButtonOption::ActionCenter,
-                WheelButtonOption::AdvancedClick,
-                WheelButtonOption::Back,
-                WheelButtonOption::BrightnessDown,
-                WheelButtonOption::BrightnessUp,
-                WheelButtonOption::Calculator,
-                WheelButtonOption::ChangePointerSpeed,
-                WheelButtonOption::CloseWindow,
-                WheelButtonOption::Copy,
-                WheelButtonOption::Cut,
-                WheelButtonOption::DesktopLeft,
-                WheelButtonOption::DesktopRight,
-                WheelButtonOption::Dictation,
-                WheelButtonOption::DoNothing,
-                WheelButtonOption::Emoji,
-                WheelButtonOption::EmojisMenu,
-                WheelButtonOption::Forward,
-                WheelButtonOption::InputLanguage,
-                WheelButtonOption::Lock,
-                WheelButtonOption::MaximizeWindow,
-                WheelButtonOption::MinimizeWindow,
-                WheelButtonOption::MuteUnmuteSpeaker,
-                WheelButtonOption::NewBrowserTab,
-                WheelButtonOption::Next,
-                WheelButtonOption::OpenApplication,
-                WheelButtonOption::OpenFile,
-                WheelButtonOption::OpenFolder,
-                WheelButtonOption::Paste,
-                WheelButtonOption::PlayPause,
-                WheelButtonOption::Previous,
-                WheelButtonOption::PrintScreen,
-                WheelButtonOption::Redo,
-                WheelButtonOption::RightCtrl,
-                WheelButtonOption::ScreenCapture,
-                WheelButtonOption::ScreenSnip,
-                WheelButtonOption::SwitchApplication,
-                WheelButtonOption::ThisPC,
-                WheelButtonOption::VolumeDown,
-                WheelButtonOption::VolumeUp,
-                WheelButtonOption::ZoomIn,
-                WheelButtonOption::ZoomOut,
-            ];
-
-            for &opt in other {
-                if draw_wheel_item(ui, opt, current_opt, &profile, customizing_button, selected_option) {
-                    click_occurred = true;
-                }
-            }
-
-            ui.add_space(4.0);
-        });
-
-    clicked_away && !click_occurred
-}
-
-fn draw_wheel_item(
-    ui: &mut egui::Ui,
-    opt: WheelButtonOption,
-    current_opt: WheelButtonOption,
+    btn: CustomizingButton,
+    opt: UniversalButtonOption,
+    current_opt: UniversalButtonOption,
     profile: &mouser_engine::config::Profile,
     _customizing_button: &mut Option<CustomizingButton>,
-    selected_option: &mut Option<WheelButtonOption>,
+    selected_option: &mut Option<UniversalButtonOption>,
+    view_state_id: egui::Id,
 ) -> bool {
     let is_selected = opt == current_opt;
     let item_h = 24.0;
@@ -4565,7 +2299,7 @@ fn draw_wheel_item(
         theme::secondary_text(ui.ctx())
     };
 
-    let label_text = opt.display_name();
+    let label_text = opt.display_name(btn);
     let galley = ui.fonts(|f| {
         f.layout_job(egui::text::LayoutJob::simple_singleline(
             label_text.to_string(),
@@ -4582,12 +2316,13 @@ fn draw_wheel_item(
         clicked = true;
     }
 
-    if opt == WheelButtonOption::KeyboardShortcut && is_selected {
+    if opt == UniversalButtonOption::KeyboardShortcut && is_selected {
+        let (base_key, _, _) = btn.config_keys();
         ui.add_space(4.0);
         ui.horizontal(|ui| {
             ui.add_space(28.0);
 
-            let val = profile.mappings.get("middle").cloned().unwrap_or_else(|| "none".to_string());
+            let val = profile.mappings.get(base_key).cloned().unwrap_or_else(|| "none".to_string());
             let keys_text = if val.starts_with("custom:") {
                 val.strip_prefix("custom:").unwrap().to_uppercase()
             } else {
@@ -4599,10 +2334,17 @@ fn draw_wheel_item(
             ));
             if btn_rec.clicked() {
                 ui.ctx().memory_mut(|mem| mem.stop_text_input());
-                let view_state_id = ui.id().with(format!("popup_view_for_{:?}", CustomizingButton::Middle));
+                let display_label = match btn {
+                    CustomizingButton::Thumb => "Thumb Button",
+                    CustomizingButton::Forward => "Forward Button",
+                    CustomizingButton::Back => "Back Button",
+                    CustomizingButton::Top => "Top Button",
+                    CustomizingButton::Middle => "Wheel Button",
+                    _ => "",
+                };
                 ui.ctx().data_mut(|d| d.insert_temp(view_state_id, PopupView::RecordShortcut {
-                    target_key: "middle".to_string(),
-                    display_label: "Wheel Button".to_string(),
+                    target_key: base_key.to_string(),
+                    display_label: display_label.to_string(),
                 }));
                 clicked = true;
             }
@@ -4613,6 +2355,112 @@ fn draw_wheel_item(
     clicked
 }
 
+fn draw_button_action_popup(
+    ui: &mut egui::Ui,
+    btn: CustomizingButton,
+    _engine: &Engine,
+    config: &mut Config,
+    rect: Rect,
+    card_rect: Rect,
+    customizing_button: &mut Option<CustomizingButton>,
+    selected_option: &mut Option<UniversalButtonOption>,
+    view_state_id: egui::Id,
+) -> bool {
+    let _response = ui.allocate_rect(rect, egui::Sense::click());
+
+    let clicked_away = ui.input(|i| i.pointer.any_click())
+        && !ui.rect_contains_pointer(rect)
+        && !ui.rect_contains_pointer(card_rect);
+
+    let bg = theme::surface_color(ui.ctx());
+    let border = theme::border_color(ui.ctx());
+
+    // Draw drop shadow
+    let shadow_rect = rect.expand2(vec2(2.0, 3.0)).translate(vec2(0.0, 2.0));
+    ui.painter().rect_filled(
+        shadow_rect,
+        3.0,
+        Color32::from_rgba_unmultiplied(0, 0, 0, 80),
+    );
+
+    // Outer popup container
+    ui.painter().rect_filled(rect, 2.0, bg);
+    ui.painter()
+        .rect_stroke(rect, 2.0, Stroke::new(1.0, border));
+    theme::draw_tech_corners(ui.painter(), rect, theme::accent_color(ui.ctx()), 6.0);
+
+    let profile = config.profiles.get(&config.active_profile).cloned().unwrap();
+    let current_opt = get_button_option(btn, &profile.mappings);
+
+    let mut click_occurred = false;
+
+    let mut child_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect.shrink(6.0))
+            .layout(egui::Layout::top_down(egui::Align::Min)),
+    );
+
+    let salt = match btn {
+        CustomizingButton::Thumb => "thumb_button_scroll",
+        CustomizingButton::Forward => "forward_button_scroll",
+        CustomizingButton::Back => "back_button_scroll",
+        CustomizingButton::Top => "top_button_scroll",
+        CustomizingButton::Middle => "wheel_button_scroll",
+        _ => "button_scroll",
+    };
+
+    egui::ScrollArea::vertical()
+        .id_salt(salt)
+        .show(&mut child_ui, |ui| {
+            ui.add_space(4.0);
+
+            // RECOMMENDED header
+            ui.horizontal(|ui| {
+                ui.add_space(12.0);
+                ui.label(
+                    RichText::new("RECOMMENDED")
+                        .font(egui::FontId::proportional(9.0))
+                        .strong()
+                        .color(theme::secondary_text(ui.ctx())),
+                );
+            });
+            ui.add_space(4.0);
+
+            let recommended = btn.recommended_options();
+
+            for &opt in recommended {
+                if draw_button_item(ui, btn, opt, current_opt, &profile, customizing_button, selected_option, view_state_id) {
+                    click_occurred = true;
+                }
+            }
+
+            ui.add_space(8.0);
+
+            // OTHER ACTIONS header
+            ui.horizontal(|ui| {
+                ui.add_space(12.0);
+                ui.label(
+                    RichText::new("OTHER ACTIONS")
+                        .font(egui::FontId::proportional(9.0))
+                        .strong()
+                        .color(theme::secondary_text(ui.ctx())),
+                );
+            });
+            ui.add_space(4.0);
+
+            let other = btn.other_options();
+
+            for opt in other {
+                if draw_button_item(ui, btn, opt, current_opt, &profile, customizing_button, selected_option, view_state_id) {
+                    click_occurred = true;
+                }
+            }
+
+            ui.add_space(4.0);
+        });
+
+    clicked_away && !click_occurred
+}
 // ── GESTURES POPUP UI ────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -4769,11 +2617,18 @@ fn draw_record_shortcut_ui(
                             mappings.insert(target_key.clone(), action_str);
                             
                             if !target_key.contains("_gesture_") && !target_key.starts_with("gesture_") && target_key != "hscroll_left" && target_key != "hscroll_right" {
-                                let (_, gesture_enabled_key, _, _, _, _) = get_button_keys(btn);
+                                let (_, gesture_enabled_key, up_k, down_k, left_k, right_k) = get_button_keys(btn);
                                 mappings.insert(gesture_enabled_key.to_string(), "false".to_string());
+                                for dir_key in [up_k, down_k, left_k, right_k] {
+                                    mappings.insert(dir_key.to_string(), "none".to_string());
+                                }
                             }
 
-                            engine.update_profile_mappings(profile_name, mappings);
+                            let engine_bg = engine.clone();
+                            let profile_name_bg = profile_name.clone();
+                            std::thread::spawn(move || {
+                                engine_bg.update_profile_mappings(&profile_name_bg, mappings);
+                            });
                         }
                     }
                     let next_view = if target_key.contains("_gesture_") || target_key.starts_with("gesture_") {
@@ -5138,7 +2993,9 @@ fn draw_gesture_config_ui(
         mps.insert(up_key.to_string(), preset.up.to_string());
         mps.insert(down_key.to_string(), preset.down.to_string());
         mps.insert(click_key.to_string(), preset.click.to_string());
-        engine.update_profile_mappings(&config.active_profile, mps);
+        let engine_bg = engine.clone();
+        let profile_bg = config.active_profile.clone();
+        std::thread::spawn(move || { engine_bg.update_profile_mappings(&profile_bg, mps); });
     }
 
     content_ui.add_space(8.0);
@@ -5282,7 +3139,9 @@ fn draw_gesture_config_ui(
                 let resolved = resolve_generic_slot_action(&act_val, dir);
                 let mut mps = profile.mappings.clone();
                 mps.insert(key_str.to_string(), resolved);
-                engine.update_profile_mappings(&config.active_profile, mps);
+                let engine_bg = engine.clone();
+                let profile_bg = config.active_profile.clone();
+                std::thread::spawn(move || { engine_bg.update_profile_mappings(&profile_bg, mps); });
             }
         }
     }

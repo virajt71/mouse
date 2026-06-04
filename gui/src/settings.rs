@@ -1,4 +1,4 @@
-use mouser_engine::updater::Updater;
+use crate::updater::{Updater, UpdateStatus};
 use mouser_engine::config::Config;
 use mouser_engine::Engine;
 use crate::translation::tr;
@@ -147,7 +147,7 @@ fn render_section_updates(ui: &mut egui::Ui, config: &mut Config, engine: &Engin
 
                     if config.settings.install_updates && !was_auto {
                         let status = updater.status.lock().unwrap().clone();
-                        if let mouser_engine::updater::UpdateStatus::Available {
+                        if let UpdateStatus::Available {
                             version,
                             bin_url,
                             sha_url,
@@ -161,8 +161,8 @@ fn render_section_updates(ui: &mut egui::Ui, config: &mut Config, engine: &Engin
                                 sha_url,
                                 bin_name,
                             );
-                        } else if let mouser_engine::updater::UpdateStatus::Idle
-                        | mouser_engine::updater::UpdateStatus::Failed(_) = status
+                        } else if let UpdateStatus::Idle
+                        | UpdateStatus::Failed(_) = status
                         {
                             updater.check_for_updates(ui.ctx().clone(), config.settings.install_updates);
                         }
@@ -199,10 +199,10 @@ fn render_section_updates(ui: &mut egui::Ui, config: &mut Config, engine: &Engin
             let status = updater.status.lock().unwrap().clone();
             let is_busy = matches!(
                 status,
-                mouser_engine::updater::UpdateStatus::Checking
-                    | mouser_engine::updater::UpdateStatus::Downloading { .. }
-                    | mouser_engine::updater::UpdateStatus::Verifying
-                    | mouser_engine::updater::UpdateStatus::Installing
+                UpdateStatus::Checking
+                    | UpdateStatus::Downloading { .. }
+                    | UpdateStatus::Verifying
+                    | UpdateStatus::Installing
             );
             let btn = ui.add_enabled(
                 !is_busy,
@@ -228,7 +228,7 @@ fn render_section_updates(ui: &mut egui::Ui, config: &mut Config, engine: &Engin
 
         // ── Divider ──
         let status = updater.status.lock().unwrap().clone();
-        if status != mouser_engine::updater::UpdateStatus::Idle {
+        if status != UpdateStatus::Idle {
             ui.add_space(12.0);
             let divider_rect = ui.allocate_space(vec2(ui.available_width(), 1.0)).1;
             ui.painter()
@@ -237,7 +237,7 @@ fn render_section_updates(ui: &mut egui::Ui, config: &mut Config, engine: &Engin
 
             // ── Status row ──
             match status {
-                mouser_engine::updater::UpdateStatus::Checking => {
+                UpdateStatus::Checking => {
                     ui.horizontal(|ui| {
                         ui.add(egui::Label::new(
                             RichText::new("●")
@@ -251,7 +251,7 @@ fn render_section_updates(ui: &mut egui::Ui, config: &mut Config, engine: &Engin
                         ));
                     });
                 }
-                mouser_engine::updater::UpdateStatus::UpToDate => {
+                UpdateStatus::UpToDate => {
                     let current_version = env!("CARGO_PKG_VERSION");
                     ui.horizontal(|ui| {
                         ui.add(egui::Label::new(
@@ -267,7 +267,7 @@ fn render_section_updates(ui: &mut egui::Ui, config: &mut Config, engine: &Engin
                         ));
                     });
                 }
-                mouser_engine::updater::UpdateStatus::Available {
+                UpdateStatus::Available {
                     version,
                     bin_url,
                     sha_url,
@@ -313,7 +313,7 @@ fn render_section_updates(ui: &mut egui::Ui, config: &mut Config, engine: &Engin
                         ));
                     }
                 }
-                mouser_engine::updater::UpdateStatus::Downloading { progress } => {
+                UpdateStatus::Downloading { progress } => {
                     let pct = (progress * 100.0) as u32;
                     ui.add(egui::Label::new(
                         RichText::new(format!("Downloading — {}%", pct))
@@ -334,21 +334,21 @@ fn render_section_updates(ui: &mut egui::Ui, config: &mut Config, engine: &Engin
                     ui.painter()
                         .rect_filled(fill_rect, 2.0, theme::accent_color(ui.ctx()));
                 }
-                mouser_engine::updater::UpdateStatus::Verifying => {
+                UpdateStatus::Verifying => {
                     ui.add(egui::Label::new(
                         RichText::new("Verifying checksum...")
                             .color(theme::secondary_text(ui.ctx()))
                             .size(12.5),
                     ));
                 }
-                mouser_engine::updater::UpdateStatus::Installing => {
+                UpdateStatus::Installing => {
                     ui.add(egui::Label::new(
                         RichText::new("Installing update...")
                             .color(theme::secondary_text(ui.ctx()))
                             .size(12.5),
                     ));
                 }
-                mouser_engine::updater::UpdateStatus::RestartRequired => {
+                UpdateStatus::RestartRequired => {
                     ui.horizontal(|ui| {
                         ui.add(egui::Label::new(
                             RichText::new("✓")
@@ -371,10 +371,10 @@ fn render_section_updates(ui: &mut egui::Ui, config: &mut Config, engine: &Engin
                             .rounding(2.0),
                     );
                     if btn.clicked() {
-                        let _ = mouser_engine::updater::Updater::restart_and_apply();
+                        let _ = Updater::restart_and_apply();
                     }
                 }
-                mouser_engine::updater::UpdateStatus::Failed(err) => {
+                UpdateStatus::Failed(err) => {
                     ui.add(egui::Label::new(
                         RichText::new(format!("Failed: {}", err))
                             .color(theme::danger_color(ui.ctx()))

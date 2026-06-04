@@ -241,7 +241,7 @@ impl HidppClient {
     fn find_feature(&self, feature_id: u16) -> Option<u8> {
         let hi = ((feature_id >> 8) & 0xFF) as u8;
         let lo = (feature_id & 0xFF) as u8;
-        if let Ok(Some(resp)) = self.request(FEAT_IROOT as u8, 0, &[hi, lo, 0x00], 1000) {
+        if let Ok(Some(resp)) = self.request(FEAT_IROOT as u8, 0, &[hi, lo, 0x00], 200) {
             if !resp.is_empty() && resp[0] != 0 {
                 return Some(resp[0]);
             }

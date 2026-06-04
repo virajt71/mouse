@@ -2382,8 +2382,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "dirs",
- "eframe",
- "egui",
  "evdev",
  "hidapi",
  "lazy_static",
@@ -2391,8 +2389,6 @@ dependencies = [
  "nix 0.29.0",
  "serde",
  "serde_json",
- "sha2",
- "ureq",
  "x11rb",
 ]
 
@@ -2407,7 +2403,10 @@ dependencies = [
  "image",
  "log",
  "mouser_engine",
+ "serde",
+ "sha2",
  "tray-icon",
+ "ureq",
 ]
 
 [[package]]

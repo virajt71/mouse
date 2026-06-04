@@ -18,7 +18,7 @@ pub enum BackgroundTxCmd {
 }
 
 pub fn spawn_background_worker(
-    ctx: eframe::egui::Context,
+    repaint_callback: impl Fn() + Send + Sync + 'static,
 ) -> (Sender<BackgroundTxCmd>, Receiver<DeviceStateUpdate>) {
     let (tx_cmd, rx_cmd) = channel::<BackgroundTxCmd>();
     let (tx_state, rx_state) = channel::<DeviceStateUpdate>();
@@ -137,7 +137,7 @@ pub fn spawn_background_worker(
                 };
 
                 let _ = tx_state.send(update);
-                ctx.request_repaint(); // Wake up GUI loop to process the new state
+                repaint_callback(); // Wake up GUI loop to process the new state
                 last_poll = Some(now);
             }
         }

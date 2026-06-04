@@ -8,11 +8,11 @@ pub mod app_detector;
 pub mod bluetooth;
 pub mod battery;
 pub mod receiver;
-pub mod updater;
 pub mod cache;
 pub mod worker;
 
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering, AtomicU64}};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering}};
 use std::thread;
 use std::time::{Duration, Instant};
 use evdev::Key;
@@ -36,6 +36,7 @@ struct EngineInner {
     selected_device_idx: Mutex<usize>,
     running: AtomicBool,
     current_profile: Mutex<String>,
+    active_mappings: Mutex<HashMap<String, String>>,
 
     // Shared state variables with MouseHook
     blocked_buttons_arc: Arc<Mutex<Vec<Key>>>,
@@ -59,11 +60,43 @@ struct EngineInner {
     hscroll_accum_right: Mutex<f32>,
     hscroll_last_fire_left: Mutex<Instant>,
     hscroll_last_fire_right: Mutex<Instant>,
+
+    // Cached gesture settings (atomics for lock-free hot-path reads)
+    cached_gesture_threshold: AtomicU32,   // f32 bits
+    cached_gesture_deadzone: AtomicU32,    // f32 bits
+    cached_gesture_timeout_ms: AtomicU64,
+    cached_gesture_cooldown_ms: AtomicU64,
 }
 
 #[derive(Clone)]
 pub struct Engine {
     inner: Arc<EngineInner>,
+}
+
+fn compute_blocked_buttons(mappings: &std::collections::HashMap<String, String>) -> (Vec<Key>, bool) {
+    let mut blocked = Vec::new();
+    let mut hscroll_blocked = false;
+    for (btn_key, action) in mappings {
+        let is_enabled_flag = btn_key.ends_with("_gesture_enabled");
+        if action != "none" || (is_enabled_flag && action == "true") {
+            if btn_key == "middle" || btn_key.starts_with("middle_gesture_") {
+                if !blocked.contains(&Key::BTN_MIDDLE) {
+                    blocked.push(Key::BTN_MIDDLE);
+                }
+            } else if btn_key == "xbutton1" || btn_key.starts_with("xbutton1_gesture_") {
+                if !blocked.contains(&Key::BTN_SIDE) {
+                    blocked.push(Key::BTN_SIDE);
+                }
+            } else if btn_key == "xbutton2" || btn_key.starts_with("xbutton2_gesture_") {
+                if !blocked.contains(&Key::BTN_EXTRA) {
+                    blocked.push(Key::BTN_EXTRA);
+                }
+            } else if btn_key == "hscroll_left" || btn_key == "hscroll_right" {
+                hscroll_blocked = true;
+            }
+        }
+    }
+    (blocked, hscroll_blocked)
 }
 
 impl Default for Engine {
@@ -80,6 +113,10 @@ impl Engine {
 
         let invert_vscroll = config.settings.invert_vscroll;
         let invert_hscroll = config.settings.invert_hscroll;
+        let init_gesture_threshold = config.settings.gesture_threshold.max(0) as u32;
+        let init_gesture_deadzone = config.settings.gesture_deadzone.max(0) as u32;
+        let init_gesture_timeout_ms = config.settings.gesture_timeout_ms;
+        let init_gesture_cooldown_ms = config.settings.gesture_cooldown_ms;
 
         let inner = EngineInner {
             config: Mutex::new(config),
@@ -93,6 +130,7 @@ impl Engine {
             selected_device_idx: Mutex::new(0),
             running: AtomicBool::new(false),
             current_profile: Mutex::new(current_profile),
+            active_mappings: Mutex::new(HashMap::new()),
 
             blocked_buttons_arc: Arc::new(Mutex::new(Vec::new())),
             invert_vscroll_arc: Arc::new(AtomicBool::new(invert_vscroll)),
@@ -113,6 +151,11 @@ impl Engine {
             hscroll_accum_right: Mutex::new(0.0),
             hscroll_last_fire_left: Mutex::new(Instant::now() - Duration::from_secs(1)),
             hscroll_last_fire_right: Mutex::new(Instant::now() - Duration::from_secs(1)),
+
+            cached_gesture_threshold: AtomicU32::new(init_gesture_threshold),
+            cached_gesture_deadzone: AtomicU32::new(init_gesture_deadzone),
+            cached_gesture_timeout_ms: AtomicU64::new(init_gesture_timeout_ms),
+            cached_gesture_cooldown_ms: AtomicU64::new(init_gesture_cooldown_ms),
         };
 
         let engine = Engine {
@@ -127,33 +170,18 @@ impl Engine {
             let cfg = self.inner.config.lock().unwrap();
             let target = cfg.active_profile.clone();
             let mappings = cfg.get_resolved_mappings(&target);
+            // Also refresh cached gesture settings atomics
+            self.inner.cached_gesture_threshold.store(cfg.settings.gesture_threshold.max(0) as u32, Ordering::Relaxed);
+            self.inner.cached_gesture_deadzone.store(cfg.settings.gesture_deadzone.max(0) as u32, Ordering::Relaxed);
+            self.inner.cached_gesture_timeout_ms.store(cfg.settings.gesture_timeout_ms, Ordering::Relaxed);
+            self.inner.cached_gesture_cooldown_ms.store(cfg.settings.gesture_cooldown_ms, Ordering::Relaxed);
             (target, mappings)
         };
 
         *self.inner.current_profile.lock().unwrap() = profile_name;
+        *self.inner.active_mappings.lock().unwrap() = mappings.clone();
 
-        let mut blocked = Vec::new();
-        let mut hscroll_blocked = false;
-        for (btn_key, action) in &mappings {
-            let is_enabled_flag = btn_key.ends_with("_gesture_enabled");
-            if action != "none" || (is_enabled_flag && action == "true") {
-                if btn_key == "middle" || btn_key.starts_with("middle_gesture_") {
-                    if !blocked.contains(&Key::BTN_MIDDLE) {
-                        blocked.push(Key::BTN_MIDDLE);
-                    }
-                } else if btn_key == "xbutton1" || btn_key.starts_with("xbutton1_gesture_") {
-                    if !blocked.contains(&Key::BTN_SIDE) {
-                        blocked.push(Key::BTN_SIDE);
-                    }
-                } else if btn_key == "xbutton2" || btn_key.starts_with("xbutton2_gesture_") {
-                    if !blocked.contains(&Key::BTN_EXTRA) {
-                        blocked.push(Key::BTN_EXTRA);
-                    }
-                } else if btn_key == "hscroll_left" || btn_key == "hscroll_right" {
-                    hscroll_blocked = true;
-                }
-            }
-        }
+        let (blocked, hscroll_blocked) = compute_blocked_buttons(&mappings);
 
         *self.inner.blocked_buttons_arc.lock().unwrap() = blocked;
         self.inner.block_hscroll_arc.store(hscroll_blocked, Ordering::SeqCst);
@@ -451,29 +479,11 @@ impl Engine {
                 let _ = cfg.save();
             }
 
+            // Refresh the active_mappings cache for the new profile
+            *self.inner.active_mappings.lock().unwrap() = mappings.clone();
+
             // Update filters for evdev blocking
-            let mut blocked = Vec::new();
-            let mut hscroll_blocked = false;
-            for (btn_key, action) in &mappings {
-                let is_enabled_flag = btn_key.ends_with("_gesture_enabled");
-                if action != "none" || (is_enabled_flag && action == "true") {
-                    if btn_key == "middle" || btn_key.starts_with("middle_gesture_") {
-                        if !blocked.contains(&Key::BTN_MIDDLE) {
-                            blocked.push(Key::BTN_MIDDLE);
-                        }
-                    } else if btn_key == "xbutton1" || btn_key.starts_with("xbutton1_gesture_") {
-                        if !blocked.contains(&Key::BTN_SIDE) {
-                            blocked.push(Key::BTN_SIDE);
-                        }
-                    } else if btn_key == "xbutton2" || btn_key.starts_with("xbutton2_gesture_") {
-                        if !blocked.contains(&Key::BTN_EXTRA) {
-                            blocked.push(Key::BTN_EXTRA);
-                        }
-                    } else if btn_key == "hscroll_left" || btn_key == "hscroll_right" {
-                        hscroll_blocked = true;
-                    }
-                }
-            }
+            let (blocked, hscroll_blocked) = compute_blocked_buttons(&mappings);
 
             *self.inner.blocked_buttons_arc.lock().unwrap() = blocked;
             self.inner.block_hscroll_arc.store(hscroll_blocked, Ordering::SeqCst);
@@ -497,11 +507,27 @@ impl Engine {
                 };
 
                 let gestures_enabled = {
-                    let cfg = self.inner.config.lock().unwrap();
+                    let active = self.inner.active_mappings.lock().unwrap();
                     let enabled_key = if btn_key == "middle" { "middle_gesture_enabled" }
                                      else if btn_key == "xbutton1" { "xbutton1_gesture_enabled" }
                                      else { "xbutton2_gesture_enabled" };
-                    cfg.get_active_mappings().get(enabled_key).cloned().unwrap_or_else(|| "true".to_string()) == "true"
+
+                    // Explicit flag: "true" → enabled, "false" → check further, absent → enabled.
+                    let explicit = active.get(enabled_key).map(|s| s.as_str());
+                    match explicit {
+                        Some("false") => {
+                            // Even if flag says false, enable gesture mode if any direction is mapped.
+                            let prefix = if btn_key == "middle" { "middle_gesture_" }
+                                         else if btn_key == "xbutton1" { "xbutton1_gesture_" }
+                                         else { "xbutton2_gesture_" };
+                            ["left", "right", "up", "down"].iter().any(|dir| {
+                                let k = format!("{}{}", prefix, dir);
+                                active.get(&k).map(|v| v != "none").unwrap_or(false)
+                            })
+                        }
+                        Some("true") => true,
+                        _ => true, // absent key → enabled by default
+                    }
                 };
 
                 if gestures_enabled {
@@ -522,8 +548,8 @@ impl Engine {
                 }
 
                 let mapping = {
-                    let cfg = self.inner.config.lock().unwrap();
-                    cfg.get_active_mappings().get(btn_key).cloned()
+                    let active = self.inner.active_mappings.lock().unwrap();
+                    active.get(btn_key).cloned()
                 };
 
                 if let Some(action_id) = mapping {
@@ -552,8 +578,8 @@ impl Engine {
                     };
 
                     let mapping = {
-                        let cfg = self.inner.config.lock().unwrap();
-                        cfg.get_active_mappings().get(action_key).cloned()
+                        let active = self.inner.active_mappings.lock().unwrap();
+                        active.get(action_key).cloned()
                     };
 
                     if let Some(action_id) = mapping {
@@ -575,41 +601,52 @@ impl Engine {
         match event {
             HidppEvent::GestureDown => {
                 let (enabled, mapping) = {
-                    let cfg = self.inner.config.lock().unwrap();
-                    let active = cfg.get_active_mappings();
-                    let enabled = active.get("gesture_enabled").cloned().unwrap_or_else(|| "true".to_string()) == "true";
+                    let active = self.inner.active_mappings.lock().unwrap();
+                    let enabled = match active.get("gesture_enabled").map(|s| s.as_str()) {
+                        Some("false") => {
+                            // Auto-detect: enable if any direction is configured.
+                            ["gesture_left", "gesture_right", "gesture_up", "gesture_down"]
+                                .iter().any(|k| active.get(*k).map(|v| v != "none").unwrap_or(false))
+                        }
+                        _ => true,
+                    };
                     let mapping = active.get("gesture").cloned();
                     (enabled, mapping)
                 };
                 if enabled {
                     self.handle_gesture_down();
-                } else if let Some(action_id) = mapping {
+                } else if let Some(ref action_id) = mapping {
                     if action_id != "none" {
-                        if is_mouse_button_action(&action_id) {
-                            if let Some(sim_key) = get_mouse_button_key(&action_id) {
+                        if is_mouse_button_action(action_id) {
+                            if let Some(sim_key) = get_mouse_button_key(action_id) {
                                 log::info!("[Engine] Pressing mouse button for gesture action: {:?}", sim_key);
                                 self.inner.key_simulator.inject_mouse_down(sim_key);
                             }
                         } else {
                             log::info!("[Engine] Executing gesture simple click action: {}", action_id);
-                            self.execute_engine_action(&action_id);
+                            self.execute_engine_action(action_id);
                         }
                     }
                 }
             }
             HidppEvent::GestureUp => {
                 let (enabled, mapping) = {
-                    let cfg = self.inner.config.lock().unwrap();
-                    let active = cfg.get_active_mappings();
-                    let enabled = active.get("gesture_enabled").cloned().unwrap_or_else(|| "true".to_string()) == "true";
+                    let active = self.inner.active_mappings.lock().unwrap();
+                    let enabled = match active.get("gesture_enabled").map(|s| s.as_str()) {
+                        Some("false") => {
+                            ["gesture_left", "gesture_right", "gesture_up", "gesture_down"]
+                                .iter().any(|k| active.get(*k).map(|v| v != "none").unwrap_or(false))
+                        }
+                        _ => true,
+                    };
                     let mapping = active.get("gesture").cloned();
                     (enabled, mapping)
                 };
                 if enabled {
                     self.handle_gesture_up();
-                } else if let Some(action_id) = mapping {
-                    if action_id != "none" && is_mouse_button_action(&action_id) {
-                        if let Some(sim_key) = get_mouse_button_key(&action_id) {
+                } else if let Some(ref action_id) = mapping {
+                    if action_id != "none" && is_mouse_button_action(action_id) {
+                        if let Some(sim_key) = get_mouse_button_key(action_id) {
                             log::info!("[Engine] Releasing mouse button for gesture action: {:?}", sim_key);
                             self.inner.key_simulator.inject_mouse_up(sim_key);
                         }
@@ -618,24 +655,29 @@ impl Engine {
             }
             HidppEvent::GestureMove { dx, dy } => {
                 let enabled = {
-                    let cfg = self.inner.config.lock().unwrap();
-                    let btn_key = {
-                        let gb = self.inner.gesture_button.lock().unwrap();
-                        gb.clone()
+                    let btn_key = self.inner.gesture_button.lock().unwrap().clone();
+                    let active = self.inner.active_mappings.lock().unwrap();
+                    let enabled_key = match btn_key.as_deref() {
+                        Some("middle")   => "middle_gesture_enabled",
+                        Some("xbutton1") => "xbutton1_gesture_enabled",
+                        Some("xbutton2") => "xbutton2_gesture_enabled",
+                        _               => "gesture_enabled",
                     };
-                    if let Some(ref btn) = btn_key {
-                        let enabled_key = if btn == "middle" {
-                            "middle_gesture_enabled"
-                        } else if btn == "xbutton1" {
-                            "xbutton1_gesture_enabled"
-                        } else if btn == "xbutton2" {
-                            "xbutton2_gesture_enabled"
-                        } else {
-                            "gesture_enabled"
-                        };
-                        cfg.get_active_mappings().get(enabled_key).cloned().unwrap_or_else(|| "true".to_string()) == "true"
-                    } else {
-                        cfg.get_active_mappings().get("gesture_enabled").cloned().unwrap_or_else(|| "true".to_string()) == "true"
+                    // "false" → check auto-detect (any direction configured)
+                    match active.get(enabled_key).map(|s| s.as_str()) {
+                        Some("false") => {
+                            let prefix = match btn_key.as_deref() {
+                                Some("middle")   => "middle_gesture_",
+                                Some("xbutton1") => "xbutton1_gesture_",
+                                Some("xbutton2") => "xbutton2_gesture_",
+                                _               => "gesture_",
+                            };
+                            ["left", "right", "up", "down"].iter().any(|dir| {
+                                let k = format!("{}{}", prefix, dir);
+                                active.get(&k).map(|v| v != "none").unwrap_or(false)
+                            })
+                        }
+                        _ => true,
                     }
                 };
                 if enabled {
@@ -646,12 +688,10 @@ impl Engine {
             }
             HidppEvent::ModeShiftDown => {
                 log::debug!("[Engine] HID ModeShift button down");
-                let mapping = {
-                    let cfg = self.inner.config.lock().unwrap();
-                    cfg.get_active_mappings().get("mode_shift").cloned()
-                };
-                if let Some(action_id) = mapping {
-                    self.execute_engine_action(&action_id);
+                let mapping = self.inner.active_mappings.lock().unwrap()
+                    .get("mode_shift").cloned();
+                if let Some(ref action_id) = mapping {
+                    self.execute_engine_action(action_id);
                 }
             }
             HidppEvent::ModeShiftUp => {
@@ -685,13 +725,11 @@ impl Engine {
                 gb.clone().unwrap_or_else(|| "gesture".to_string())
             };
 
-            let mapping = {
-                let cfg = self.inner.config.lock().unwrap();
-                cfg.get_active_mappings().get(&btn_key).cloned()
-            };
-            if let Some(action_id) = mapping {
+            let mapping = self.inner.active_mappings.lock().unwrap()
+                .get(&btn_key).cloned();
+            if let Some(ref action_id) = mapping {
                 log::info!("[Engine] Executing {} click fallback action: {}", btn_key, action_id);
-                self.execute_engine_action(&action_id);
+                self.execute_engine_action(action_id);
             }
         }
         *self.inner.gesture_input_source.lock().unwrap() = None;
@@ -699,22 +737,10 @@ impl Engine {
     }
 
     fn handle_gesture_move(&self, dx: i16, dy: i16, source: &str) {
-        let threshold = {
-            let cfg = self.inner.config.lock().unwrap();
-            cfg.settings.gesture_threshold as f32
-        };
-        let deadzone = {
-            let cfg = self.inner.config.lock().unwrap();
-            cfg.settings.gesture_deadzone as f32
-        };
-        let timeout = {
-            let cfg = self.inner.config.lock().unwrap();
-            Duration::from_millis(cfg.settings.gesture_timeout_ms)
-        };
-        let cooldown = {
-            let cfg = self.inner.config.lock().unwrap();
-            Duration::from_millis(cfg.settings.gesture_cooldown_ms)
-        };
+        let threshold = self.inner.cached_gesture_threshold.load(Ordering::Relaxed) as f32;
+        let deadzone = self.inner.cached_gesture_deadzone.load(Ordering::Relaxed) as f32;
+        let timeout = Duration::from_millis(self.inner.cached_gesture_timeout_ms.load(Ordering::Relaxed));
+        let cooldown = Duration::from_millis(self.inner.cached_gesture_cooldown_ms.load(Ordering::Relaxed));
 
         let now = Instant::now();
 
@@ -821,12 +847,10 @@ impl Engine {
 
             log::info!("[Engine] Gesture detected for {}: {}", btn_key, resolved_action_key);
 
-            let mapping = {
-                let cfg = self.inner.config.lock().unwrap();
-                cfg.get_active_mappings().get(&resolved_action_key).cloned()
-            };
-            if let Some(action_id) = mapping {
-                self.execute_engine_action(&action_id);
+            let mapping = self.inner.active_mappings.lock().unwrap()
+                .get(&resolved_action_key).cloned();
+            if let Some(ref action_id) = mapping {
+                self.execute_engine_action(action_id);
             }
         }
     }
@@ -1100,20 +1124,28 @@ impl Engine {
                 self.increment_config_generation();
             }
         }
+        log::info!("[Engine] Saved mappings, refreshing active profile...");
         self.refresh_active_profile();
+        log::info!("[Engine] Refreshed active profile, restarting keyboard hooks...");
         let _ = self.restart_keyboard_hooks();
+        log::info!("[Engine] Keyboard hooks restarted successfully!");
     }
 
     fn restart_keyboard_hooks(&self) -> anyhow::Result<()> {
+        log::info!("[Engine] restart_keyboard_hooks: locking keyboard_hooks...");
         let mut kb_hooks = self.inner.keyboard_hooks.lock().unwrap();
+        log::info!("[Engine] restart_keyboard_hooks: stopping existing hooks...");
         for hook in kb_hooks.iter_mut() {
             hook.stop();
         }
         kb_hooks.clear();
 
+        log::info!("[Engine] restart_keyboard_hooks: scanning for Logitech keyboards...");
         let kb_paths = self::keyboard_hook::find_logitech_keyboards();
+        log::info!("[Engine] restart_keyboard_hooks: found {} keyboards, locking config...", kb_paths.len());
         let mappings = Arc::new(std::sync::Mutex::new(self.inner.config.lock().unwrap().get_active_mappings()));
 
+        log::info!("[Engine] restart_keyboard_hooks: starting new hooks...");
         for path in kb_paths {
             let mut hook = KeyboardHook::new();
             if hook.start(
@@ -1125,6 +1157,7 @@ impl Engine {
                 kb_hooks.push(hook);
             }
         }
+        log::info!("[Engine] restart_keyboard_hooks: done!");
         Ok(())
     }
 
@@ -1163,6 +1196,9 @@ impl Engine {
 
         self.inner.invert_vscroll_arc.store(invert_vscroll, Ordering::SeqCst);
         self.inner.invert_hscroll_arc.store(invert_hscroll, Ordering::SeqCst);
+        // Keep lock-free gesture settings cache in sync
+        self.inner.cached_gesture_threshold.store(gesture_threshold.max(0) as u32, Ordering::Relaxed);
+        self.inner.cached_gesture_deadzone.store(gesture_deadzone.max(0) as u32, Ordering::Relaxed);
 
         let inner_clone = self.inner.clone();
         thread::spawn(move || {

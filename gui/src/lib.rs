@@ -5,8 +5,9 @@ pub mod select_connection;
 pub mod settings;
 pub mod mouse_ui;
 pub mod translation;
+pub mod updater;
 
-use mouser_engine::updater::Updater;
+use crate::updater::Updater;
 use eframe::egui;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,7 +81,10 @@ impl MouserApp {
             }
         });
 
-        let (tx, rx) = mouser_engine::worker::spawn_background_worker(ctx);
+        let repaint_ctx = ctx.clone();
+        let (tx, rx) = mouser_engine::worker::spawn_background_worker(move || {
+            repaint_ctx.request_repaint();
+        });
 
         Self {
             tray_icon,

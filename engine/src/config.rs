@@ -138,24 +138,7 @@ pub fn get_log_dir() -> PathBuf {
     path
 }
 
-// Minimal stub for dirs config_dir to avoid adding `dirs` crate if we can do it simply.
-// Actually, let's use standard std::env var of HOME or XDG_CONFIG_HOME.
-mod dirs {
-    use std::path::PathBuf;
-    pub fn config_dir() -> Option<PathBuf> {
-        if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
-            if !xdg.is_empty() {
-                return Some(PathBuf::from(xdg));
-            }
-        }
-        if let Ok(home) = std::env::var("HOME") {
-            if !home.is_empty() {
-                return Some(PathBuf::from(home).join(".config"));
-            }
-        }
-        None
-    }
-}
+
 
 impl Config {
     pub fn load() -> Self {
