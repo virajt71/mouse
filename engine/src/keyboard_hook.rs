@@ -1,5 +1,5 @@
 use anyhow::Result;
-use evdev::{Device, EventType, Key};
+use evdev::{Device, EventType, Key, InputEvent};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -110,6 +110,8 @@ impl KeyboardHook {
                 }
                 log::info!("[KeyboardHook] Grabbed physical keyboard exclusively: {}", dev_path);
 
+                let mut pressed_keys = std::collections::HashSet::new();
+
                 while running.load(Ordering::SeqCst) {
                     match dev.fetch_events() {
                         Ok(events) => {
@@ -151,6 +153,14 @@ impl KeyboardHook {
                                             }
                                         }
                                     }
+
+                                    if should_forward {
+                                        if down {
+                                            pressed_keys.insert(key_code);
+                                        } else {
+                                            pressed_keys.remove(&key_code);
+                                        }
+                                    }
                                 }
 
                                 if should_forward {
@@ -171,6 +181,21 @@ impl KeyboardHook {
                                 }
                                 break;
                             }
+                        }
+                    }
+                }
+
+                // Release any stuck keys on the virtual uinput device
+                if !pressed_keys.is_empty() {
+                    log::info!("[KeyboardHook] Releasing {} stuck keys on uinput during shutdown", pressed_keys.len());
+                    if let Ok(mut uinput_lock) = uinput_device.lock() {
+                        if let Some(uinput_dev) = uinput_lock.as_mut() {
+                            let mut release_events = Vec::new();
+                            for &key_code in &pressed_keys {
+                                release_events.push(InputEvent::new(EventType::KEY, key_code, 0));
+                            }
+                            release_events.push(InputEvent::new(EventType::SYNCHRONIZATION, 0, 0));
+                            let _ = uinput_dev.emit(&release_events);
                         }
                     }
                 }

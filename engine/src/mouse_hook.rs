@@ -115,6 +115,8 @@ impl MouseHook {
                 use nix::poll::{poll, PollFd, PollFlags, PollTimeout};
                 let mut fds = [PollFd::new(unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) }, PollFlags::POLLIN)];
 
+                let mut pressed_keys = std::collections::HashSet::new();
+
                 while running.load(Ordering::SeqCst) {
                     let timeout = PollTimeout::try_from(Duration::from_millis(200)).unwrap_or(PollTimeout::NONE);
                     match poll(&mut fds, timeout) {
@@ -135,6 +137,14 @@ impl MouseHook {
                                                     on_event(MouseHookEvent::Button { key, down });
                                                     if is_blocked {
                                                         should_forward = false;
+                                                    }
+                                                }
+
+                                                if should_forward {
+                                                    if event.value() != 0 {
+                                                        pressed_keys.insert(event.code());
+                                                    } else {
+                                                        pressed_keys.remove(&event.code());
                                                     }
                                                 }
                                             }
@@ -216,6 +226,21 @@ impl MouseHook {
                                 log::error!("[MouseHook] Poll error on {}: {}. Releasing grab.", dev_path, e);
                                 break;
                             }
+                        }
+                    }
+                }
+
+                // Release any stuck buttons on the virtual uinput device
+                if !pressed_keys.is_empty() {
+                    log::info!("[MouseHook] Releasing {} stuck buttons on uinput during shutdown", pressed_keys.len());
+                    if let Ok(mut uinput_lock) = uinput_device.lock() {
+                        if let Some(uinput_dev) = uinput_lock.as_mut() {
+                            let mut release_events = Vec::new();
+                            for &key_code in &pressed_keys {
+                                release_events.push(InputEvent::new(EventType::KEY, key_code, 0));
+                            }
+                            release_events.push(InputEvent::new(EventType::SYNCHRONIZATION, 0, 0));
+                            let _ = uinput_dev.emit(&release_events);
                         }
                     }
                 }

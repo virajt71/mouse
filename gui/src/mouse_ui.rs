@@ -245,6 +245,7 @@ pub fn show(
     customization_tab: &mut SidebarTab,
     conn_type: &str,
     battery_pct: &str,
+    is_connected: bool,
 ) {
     let rect = ui.max_rect();
     let bg = theme::app_bg(ctx);
@@ -321,11 +322,10 @@ pub fn show(
     header_ui.add_space(8.0);
 
     // Profile pill in header
-    let active_profile_name = config.active_profile.clone();
-    let profile_label = format!("MX Master 3 ({})", active_profile_name);
+    let profile_label = "MX Master 3";
     header_ui.add(
         egui::Label::new(
-            RichText::new(&profile_label)
+            RichText::new(profile_label)
                 .color(theme::primary_text(ctx))
                 .size(15.0)
                 .strong(),
@@ -494,22 +494,99 @@ pub fn show(
     });
 
     // ── 4. Bottom-Left Status Pill ───────────────────────────────────────────
+    let status_w = if is_connected { 85.0 } else { 110.0 };
     let status_rect = Rect::from_min_max(
         pos2(sidebar_rect.min.x + 20.0, sidebar_rect.max.y - 54.0),
-        pos2(sidebar_rect.min.x + 105.0, sidebar_rect.max.y - 20.0),
+        pos2(sidebar_rect.min.x + 20.0 + status_w, sidebar_rect.max.y - 20.0),
     );
-    ui.painter()
-        .rect_filled(status_rect, 2.0, theme::surface_color(ctx));
-    ui.painter()
-        .rect_stroke(status_rect, 2.0, Stroke::new(1.0, theme::border_color(ctx)));
+    let status_res = ui.allocate_rect(status_rect, egui::Sense::hover());
+    let status_res = if is_connected {
+        status_res.on_hover_text(format!("{}%", battery_pct))
+    } else {
+        status_res
+    };
+    let t = ui.ctx().animate_bool(status_res.id, status_res.hovered());
 
-    let b_center = pos2(status_rect.min.x + 22.0, status_rect.center().y);
-    let level = battery_pct.parse::<f32>().unwrap_or(100.0) / 100.0;
-    let b_rect = Rect::from_center_size(b_center, vec2(20.0, 10.0));
-    crate::empty_state::draw_battery_widget(ui.painter(), b_rect, level);
- 
-    let conn_center = pos2(status_rect.max.x - 22.0, status_rect.center().y);
-    crate::empty_state::draw_connection_icon_mini(ui.painter(), conn_center, conn_type);
+    let bg = theme::lerp_color(
+        theme::surface_color(ctx),
+        if ui.visuals().dark_mode {
+            egui::Color32::from_rgb(0x1c, 0x1c, 0x1c)
+        } else {
+            egui::Color32::from_rgb(0xf3, 0xf4, 0xf6)
+        },
+        t,
+    );
+    let border = theme::lerp_color(
+        theme::border_color(ctx),
+        if is_connected {
+            theme::COLOR_ACCENT_DIM
+        } else {
+            theme::border_color(ctx)
+        },
+        t,
+    );
+
+    // Subtle elevation shadow
+    let shadow_rect = status_rect
+        .expand2(egui::vec2(1.5, 2.0))
+        .translate(egui::vec2(0.0, 1.5));
+    let shadow_color = if ui.visuals().dark_mode {
+        egui::Color32::from_rgba_unmultiplied(0, 0, 0, 60)
+    } else {
+        egui::Color32::from_rgba_unmultiplied(0, 0, 0, 12)
+    };
+    ui.painter().rect_filled(shadow_rect, 3.0, shadow_color);
+
+    ui.painter().rect_filled(status_rect, 2.0, bg);
+    ui.painter().rect_stroke(status_rect, 2.0, Stroke::new(1.0 + 0.5 * t, border));
+
+    let cx = status_rect.center().x;
+    let cy = status_rect.center().y;
+
+    if is_connected {
+        // Battery widget
+        let b_center = pos2(cx - 19.0, cy);
+        let level = battery_pct.parse::<f32>().unwrap_or(100.0) / 100.0;
+        let b_rect = Rect::from_center_size(b_center, vec2(20.0, 10.0));
+        crate::empty_state::draw_battery_widget(ui.painter(), b_rect, level);
+
+        // Thin vertical divider
+        let div_x = cx;
+        ui.painter().line_segment(
+            [pos2(div_x, cy - 9.0), pos2(div_x, cy + 9.0)],
+            Stroke::new(1.0, theme::divider_color(ctx)),
+        );
+
+        // Connection icon
+        let conn_center = pos2(cx + 19.0, cy);
+        crate::empty_state::draw_connection_icon_mini(ui.painter(), conn_center, conn_type);
+    } else {
+        // Grey status dot
+        let dot_cx = status_rect.min.x + 14.0;
+        let dot_cy = cy;
+        ui.painter().circle_filled(
+            pos2(dot_cx, dot_cy),
+            3.0,
+            theme::elevated_color(ctx),
+        );
+        ui.painter().circle_stroke(
+            pos2(dot_cx, dot_cy),
+            3.0,
+            Stroke::new(1.0, egui::Color32::from_rgb(0x44, 0x44, 0x44)),
+        );
+
+        // "Disconnected" label
+        let label_font = egui::FontId::proportional(10.0);
+        let text_start = pos2(dot_cx + 8.0, dot_cy);
+        let disc_text = crate::translation::tr("disconnected", &config.settings.language);
+        ui.painter().text(
+            text_start,
+            egui::Align2::LEFT_CENTER,
+            disc_text,
+            label_font,
+            theme::COLOR_INACTIVE_TEXT,
+        );
+    }
 
     // ── 5. Main Content Canvas ───────────────────────────────────────────────
     let canvas_rect = Rect::from_min_max(pos2(sidebar_rect.max.x, header_rect.max.y), rect.max);
@@ -569,10 +646,13 @@ pub fn show(
                 ));
 
                 // Listen to keyboard keys
-                let mut current_pressed = RECORDED_KEYS.with(|rk| rk.borrow().clone());
+                let mut escape_pressed = false;
+                let mut enter_pressed = false;
+                let mut new_keys_recorded = None;
                 
                 modal_ui.input(|i| {
                     let mods = i.modifiers;
+                    let has_modifiers = mods.ctrl || mods.shift || mods.alt || mods.mac_cmd;
                     let mut parts = Vec::new();
                     if mods.ctrl { parts.push("ctrl".to_string()); }
                     if mods.shift { parts.push("shift".to_string()); }
@@ -589,60 +669,68 @@ pub fn show(
                         };
 
                         if let Some(key) = detected_key {
-                            if key == egui::Key::Escape {
-                                RECORDING_TARGET.with(|r| *r.borrow_mut() = None);
-                                RECORDED_KEYS.with(|rk| rk.borrow_mut().clear());
-                            } else if key == egui::Key::Enter {
-                                let recorded = RECORDED_KEYS.with(|rk| rk.borrow().clone());
-                                if is_valid_combo(&recorded) {
-                                    // Save the shortcut safely
-                                    let profile_name = &config.active_profile;
-                                    if let Some(profile) = config.profiles.get(profile_name).cloned().or_else(|| config.profiles.get("default").cloned()) {
-                                        let mut mappings = profile.mappings;
-                                        let action_str = format!("custom:{}", recorded);
-                                        match &target {
-                                            RecordingTarget::Button(b) => {
-                                                let (base_key, gesture_enabled_key, up_k, down_k, left_k, right_k) = get_button_keys(*b);
-                                                mappings.insert(base_key.to_string(), action_str);
-                                                mappings.insert(gesture_enabled_key.to_string(), "false".to_string());
-                                                for dir_key in [up_k, down_k, left_k, right_k] {
-                                                    mappings.insert(dir_key.to_string(), "none".to_string());
-                                                }
-                                            }
-                                            RecordingTarget::Gesture(b, dir) => {
-                                                let (_, _, up_key, down_key, left_key, right_key) = get_button_keys(*b);
-                                                let key_to_update = match dir.as_str() {
-                                                    "up" => up_key,
-                                                    "down" => down_key,
-                                                    "left" => left_key,
-                                                    _ => right_key,
-                                                };
-                                                mappings.insert(key_to_update.to_string(), action_str);
-                                            }
-                                        }
-                                        let engine_bg = engine.clone();
-                                        let profile_name_bg = profile_name.clone();
-                                        std::thread::spawn(move || {
-                                            engine_bg.update_profile_mappings(&profile_name_bg, mappings);
-                                        });
-                                    }
-                                }
-                                RECORDING_TARGET.with(|r| *r.borrow_mut() = None);
-                                RECORDED_KEYS.with(|rk| rk.borrow_mut().clear());
+                            if key == egui::Key::Escape && !has_modifiers {
+                                escape_pressed = true;
+                            } else if key == egui::Key::Enter && !has_modifiers {
+                                enter_pressed = true;
                             } else {
                                 let name = egui_key_to_string(key);
                                 if !name.is_empty() && name != "ctrl" && name != "shift" && name != "alt" && name != "meta" && name != "tab" {
                                     parts.push(name);
-                                    current_pressed = parts.join("+");
+                                    new_keys_recorded = Some(parts.join("+"));
                                 }
                             }
                         }
                     }
                 });
 
-                if !current_pressed.is_empty() {
-                    RECORDED_KEYS.with(|rk| *rk.borrow_mut() = current_pressed.clone());
+                if let Some(keys) = new_keys_recorded {
+                    RECORDED_KEYS.with(|rk| *rk.borrow_mut() = keys);
                 }
+
+                if escape_pressed {
+                    RECORDING_TARGET.with(|r| *r.borrow_mut() = None);
+                    RECORDED_KEYS.with(|rk| rk.borrow_mut().clear());
+                } else if enter_pressed {
+                    let recorded = RECORDED_KEYS.with(|rk| rk.borrow().clone());
+                    if is_valid_combo(&recorded) {
+                        // Save the shortcut safely
+                        let profile_name = &config.active_profile;
+                        if let Some(profile) = config.profiles.get(profile_name).cloned().or_else(|| config.profiles.get("default").cloned()) {
+                            let mut mappings = profile.mappings;
+                            let action_str = format!("custom:{}", recorded);
+                            match &target {
+                                RecordingTarget::Button(b) => {
+                                    let (base_key, gesture_enabled_key, up_k, down_k, left_k, right_k) = get_button_keys(*b);
+                                    mappings.insert(base_key.to_string(), action_str);
+                                    mappings.insert(gesture_enabled_key.to_string(), "false".to_string());
+                                    for dir_key in [up_k, down_k, left_k, right_k] {
+                                        mappings.insert(dir_key.to_string(), "none".to_string());
+                                    }
+                                }
+                                RecordingTarget::Gesture(b, dir) => {
+                                    let (_, _, up_key, down_key, left_key, right_key) = get_button_keys(*b);
+                                    let key_to_update = match dir.as_str() {
+                                        "up" => up_key,
+                                        "down" => down_key,
+                                        "left" => left_key,
+                                        _ => right_key,
+                                    };
+                                    mappings.insert(key_to_update.to_string(), action_str);
+                                }
+                            }
+                            let engine_bg = engine.clone();
+                            let profile_name_bg = profile_name.clone();
+                            std::thread::spawn(move || {
+                                engine_bg.update_profile_mappings(&profile_name_bg, mappings);
+                            });
+                        }
+                    }
+                    RECORDING_TARGET.with(|r| *r.borrow_mut() = None);
+                    RECORDED_KEYS.with(|rk| rk.borrow_mut().clear());
+                }
+
+                let current_pressed = RECORDED_KEYS.with(|rk| rk.borrow().clone());
 
                 modal_ui.add_space(20.0);
 
@@ -2523,16 +2611,25 @@ fn draw_record_shortcut_ui(
     let view_state_id = ui.id().with(format!("popup_view_for_{:?}", btn));
 
     // Back Button (←)
-    let back_btn = header_ui.add(egui::Button::new(
-        RichText::new("←")
-            .font(egui::FontId::proportional(14.0))
-            .strong()
-            .color(Color32::BLACK)
-    ).frame(false));
+    let (back_rect, back_res) = header_ui.allocate_exact_size(vec2(20.0, 20.0), egui::Sense::click());
+    let back_hover_color = if back_res.hovered() {
+        header_ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
+        Color32::from_rgba_unmultiplied(0, 0, 0, 20)
+    } else {
+        Color32::TRANSPARENT
+    };
+    header_ui.painter().rect_filled(back_rect, 4.0, back_hover_color);
+
+    let stroke = egui::Stroke::new(1.5, Color32::BLACK);
+    let cx = back_rect.center().x;
+    let cy = back_rect.center().y;
+    header_ui.painter().line_segment([pos2(cx - 5.0, cy), pos2(cx + 5.0, cy)], stroke);
+    header_ui.painter().line_segment([pos2(cx - 5.0, cy), pos2(cx - 1.0, cy - 4.0)], stroke);
+    header_ui.painter().line_segment([pos2(cx - 5.0, cy), pos2(cx - 1.0, cy + 4.0)], stroke);
 
     let mut click_occurred = false;
 
-    if back_btn.clicked() {
+    if back_res.clicked() {
         // Return to parent view
         let next_view = if target_key.contains("_gesture_") || target_key.starts_with("gesture_") {
             PopupView::GesturesConfig
@@ -2578,10 +2675,13 @@ fn draw_record_shortcut_ui(
     ));
 
     // Listen to keyboard keys
-    let mut current_pressed = RECORDED_KEYS.with(|rk| rk.borrow().clone());
+    let mut escape_pressed = false;
+    let mut enter_pressed = false;
+    let mut new_keys_recorded = None;
     
     ui.input(|i| {
         let mods = i.modifiers;
+        let has_modifiers = mods.ctrl || mods.shift || mods.alt || mods.mac_cmd;
         let mut parts = Vec::new();
         if mods.ctrl { parts.push("ctrl".to_string()); }
         if mods.shift { parts.push("shift".to_string()); }
@@ -2598,60 +2698,68 @@ fn draw_record_shortcut_ui(
             };
 
             if let Some(key) = detected_key {
-                if key == egui::Key::Escape {
-                    let next_view = if target_key.contains("_gesture_") || target_key.starts_with("gesture_") {
-                        PopupView::GesturesConfig
-                    } else {
-                        PopupView::ActionList
-                    };
-                    ui.ctx().data_mut(|d| d.insert_temp(view_state_id, next_view));
-                    RECORDED_KEYS.with(|rk| rk.borrow_mut().clear());
-                } else if key == egui::Key::Enter {
-                    let recorded = RECORDED_KEYS.with(|rk| rk.borrow().clone());
-                    if is_valid_combo(&recorded) {
-                        let profile_name = &config.active_profile;
-                        if let Some(profile) = config.profiles.get(profile_name).cloned().or_else(|| config.profiles.get("default").cloned()) {
-                            let mut mappings = profile.mappings;
-                            let action_str = format!("custom:{}", recorded);
-                            
-                            mappings.insert(target_key.clone(), action_str);
-                            
-                            if !target_key.contains("_gesture_") && !target_key.starts_with("gesture_") && target_key != "hscroll_left" && target_key != "hscroll_right" {
-                                let (_, gesture_enabled_key, up_k, down_k, left_k, right_k) = get_button_keys(btn);
-                                mappings.insert(gesture_enabled_key.to_string(), "false".to_string());
-                                for dir_key in [up_k, down_k, left_k, right_k] {
-                                    mappings.insert(dir_key.to_string(), "none".to_string());
-                                }
-                            }
-
-                            let engine_bg = engine.clone();
-                            let profile_name_bg = profile_name.clone();
-                            std::thread::spawn(move || {
-                                engine_bg.update_profile_mappings(&profile_name_bg, mappings);
-                            });
-                        }
-                    }
-                    let next_view = if target_key.contains("_gesture_") || target_key.starts_with("gesture_") {
-                        PopupView::GesturesConfig
-                    } else {
-                        PopupView::ActionList
-                    };
-                    ui.ctx().data_mut(|d| d.insert_temp(view_state_id, next_view));
-                    RECORDED_KEYS.with(|rk| rk.borrow_mut().clear());
+                if key == egui::Key::Escape && !has_modifiers {
+                    escape_pressed = true;
+                } else if key == egui::Key::Enter && !has_modifiers {
+                    enter_pressed = true;
                 } else {
                     let name = egui_key_to_string(key);
                     if !name.is_empty() && name != "ctrl" && name != "shift" && name != "alt" && name != "meta" && name != "tab" {
                         parts.push(name);
-                        current_pressed = parts.join("+");
+                        new_keys_recorded = Some(parts.join("+"));
                     }
                 }
             }
         }
     });
 
-    if !current_pressed.is_empty() {
-        RECORDED_KEYS.with(|rk| *rk.borrow_mut() = current_pressed.clone());
+    if let Some(keys) = new_keys_recorded {
+        RECORDED_KEYS.with(|rk| *rk.borrow_mut() = keys);
     }
+
+    if escape_pressed {
+        let next_view = if target_key.contains("_gesture_") || target_key.starts_with("gesture_") {
+            PopupView::GesturesConfig
+        } else {
+            PopupView::ActionList
+        };
+        ui.ctx().data_mut(|d| d.insert_temp(view_state_id, next_view));
+        RECORDED_KEYS.with(|rk| rk.borrow_mut().clear());
+    } else if enter_pressed {
+        let recorded = RECORDED_KEYS.with(|rk| rk.borrow().clone());
+        if is_valid_combo(&recorded) {
+            let profile_name = &config.active_profile;
+            if let Some(profile) = config.profiles.get(profile_name).cloned().or_else(|| config.profiles.get("default").cloned()) {
+                let mut mappings = profile.mappings;
+                let action_str = format!("custom:{}", recorded);
+                
+                mappings.insert(target_key.clone(), action_str);
+                
+                if !target_key.contains("_gesture_") && !target_key.starts_with("gesture_") && target_key != "hscroll_left" && target_key != "hscroll_right" {
+                    let (_, gesture_enabled_key, up_k, down_k, left_k, right_k) = get_button_keys(btn);
+                    mappings.insert(gesture_enabled_key.to_string(), "false".to_string());
+                    for dir_key in [up_k, down_k, left_k, right_k] {
+                        mappings.insert(dir_key.to_string(), "none".to_string());
+                    }
+                }
+
+                let engine_bg = engine.clone();
+                let profile_name_bg = profile_name.clone();
+                std::thread::spawn(move || {
+                    engine_bg.update_profile_mappings(&profile_name_bg, mappings);
+                });
+            }
+        }
+        let next_view = if target_key.contains("_gesture_") || target_key.starts_with("gesture_") {
+            PopupView::GesturesConfig
+        } else {
+            PopupView::ActionList
+        };
+        ui.ctx().data_mut(|d| d.insert_temp(view_state_id, next_view));
+        RECORDED_KEYS.with(|rk| rk.borrow_mut().clear());
+    }
+
+    let current_pressed = RECORDED_KEYS.with(|rk| rk.borrow().clone());
 
     content_ui.add_space(20.0);
 
@@ -2902,13 +3010,23 @@ fn draw_gesture_config_ui(
     );
 
     // Back Button (←)
-    let back_btn = header_ui.add(egui::Button::new(
-        RichText::new("←")
-            .font(egui::FontId::proportional(14.0))
-            .strong()
-            .color(Color32::BLACK)
-    ).frame(false));
-    if back_btn.clicked() {
+    let (back_rect, back_res) = header_ui.allocate_exact_size(vec2(20.0, 20.0), egui::Sense::click());
+    let back_hover_color = if back_res.hovered() {
+        header_ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
+        Color32::from_rgba_unmultiplied(0, 0, 0, 20)
+    } else {
+        Color32::TRANSPARENT
+    };
+    header_ui.painter().rect_filled(back_rect, 4.0, back_hover_color);
+
+    let stroke = egui::Stroke::new(1.5, Color32::BLACK);
+    let cx = back_rect.center().x;
+    let cy = back_rect.center().y;
+    header_ui.painter().line_segment([pos2(cx - 5.0, cy), pos2(cx + 5.0, cy)], stroke);
+    header_ui.painter().line_segment([pos2(cx - 5.0, cy), pos2(cx - 1.0, cy - 4.0)], stroke);
+    header_ui.painter().line_segment([pos2(cx - 5.0, cy), pos2(cx - 1.0, cy + 4.0)], stroke);
+
+    if back_res.clicked() {
         let view_state_id = ui.id().with(format!("popup_view_for_{:?}", btn));
         ui.ctx().data_mut(|d| d.insert_temp(view_state_id, PopupView::ActionList));
         click_occurred = true;
@@ -3048,16 +3166,36 @@ fn draw_gesture_config_ui(
         let icon_color = theme::primary_text(ui.ctx());
         match dir {
             "left" => {
-                ui.painter().text(icon_pos, egui::Align2::CENTER_CENTER, "←", egui::FontId::proportional(14.0), icon_color);
+                let cx = icon_pos.x;
+                let cy = icon_pos.y;
+                let stroke = Stroke::new(1.5, icon_color);
+                ui.painter().line_segment([pos2(cx - 5.0, cy), pos2(cx + 5.0, cy)], stroke);
+                ui.painter().line_segment([pos2(cx - 5.0, cy), pos2(cx - 1.0, cy - 4.0)], stroke);
+                ui.painter().line_segment([pos2(cx - 5.0, cy), pos2(cx - 1.0, cy + 4.0)], stroke);
             }
             "right" => {
-                ui.painter().text(icon_pos, egui::Align2::CENTER_CENTER, "→", egui::FontId::proportional(14.0), icon_color);
+                let cx = icon_pos.x;
+                let cy = icon_pos.y;
+                let stroke = Stroke::new(1.5, icon_color);
+                ui.painter().line_segment([pos2(cx - 5.0, cy), pos2(cx + 5.0, cy)], stroke);
+                ui.painter().line_segment([pos2(cx + 5.0, cy), pos2(cx + 1.0, cy - 4.0)], stroke);
+                ui.painter().line_segment([pos2(cx + 5.0, cy), pos2(cx + 1.0, cy + 4.0)], stroke);
             }
             "up" => {
-                ui.painter().text(icon_pos, egui::Align2::CENTER_CENTER, "↑", egui::FontId::proportional(14.0), icon_color);
+                let cx = icon_pos.x;
+                let cy = icon_pos.y;
+                let stroke = Stroke::new(1.5, icon_color);
+                ui.painter().line_segment([pos2(cx, cy - 5.0), pos2(cx, cy + 5.0)], stroke);
+                ui.painter().line_segment([pos2(cx, cy - 5.0), pos2(cx - 4.0, cy - 1.0)], stroke);
+                ui.painter().line_segment([pos2(cx, cy - 5.0), pos2(cx + 4.0, cy - 1.0)], stroke);
             }
             "down" => {
-                ui.painter().text(icon_pos, egui::Align2::CENTER_CENTER, "↓", egui::FontId::proportional(14.0), icon_color);
+                let cx = icon_pos.x;
+                let cy = icon_pos.y;
+                let stroke = Stroke::new(1.5, icon_color);
+                ui.painter().line_segment([pos2(cx, cy - 5.0), pos2(cx, cy + 5.0)], stroke);
+                ui.painter().line_segment([pos2(cx, cy + 5.0), pos2(cx - 4.0, cy + 1.0)], stroke);
+                ui.painter().line_segment([pos2(cx, cy + 5.0), pos2(cx + 4.0, cy + 1.0)], stroke);
             }
             _ => {
                 ui.painter().circle_stroke(icon_pos, 4.0, Stroke::new(1.5, icon_color));

@@ -47,6 +47,7 @@ pub struct MouserApp {
     // CPU-side pixel buffers; Some until the first GPU upload, then None to free memory
     preloaded_mouse_image: Option<egui::ColorImage>,
     preloaded_customization_mouse_image: Option<egui::ColorImage>,
+    current_connection_type: Option<String>,
 }
 
 impl MouserApp {
@@ -110,6 +111,7 @@ impl MouserApp {
             img_rx: Some(img_rx),
             preloaded_mouse_image: None,
             preloaded_customization_mouse_image: None,
+            current_connection_type: None,
         }
     }
 
@@ -200,22 +202,36 @@ impl eframe::App for MouserApp {
             self.has_active_hidpp_battery = Some(update.has_active_hidpp_battery);
         }
 
-        // Update system tray icon based on connection type transition
-        let active_conn = {
-            let any_bt_connected = self.paired_devices.iter().any(|(_, _, is_conn)| *is_conn);
-            if any_bt_connected {
-                "bluetooth"
-            } else if self.has_active_hidpp_battery.unwrap_or(false) {
-                if self.bolt_receiver_connected.unwrap_or(false) {
-                    "mouse"
+        // Evaluate and lock/freeze connection type on device connect
+        let is_device_connected = self.paired_devices.iter().any(|(_, _, is_conn)| *is_conn)
+            || self.has_active_hidpp_battery.unwrap_or(false);
+
+        if is_device_connected {
+            if self.current_connection_type.is_none() {
+                let conn = if self.paired_devices.iter().any(|(_, _, is_conn)| *is_conn) {
+                    "bluetooth"
+                } else if self.bolt_receiver_connected.unwrap_or(false) {
+                    "bolt"
                 } else if self.unifying_receiver_connected.unwrap_or(false) {
-                    "mouse"
+                    "unifying"
                 } else {
                     "bluetooth"
-                }
+                };
+                self.current_connection_type = Some(conn.to_string());
+            }
+        } else {
+            self.current_connection_type = None;
+        }
+
+        // Update system tray icon based on connection type transition
+        let active_conn = if let Some(ref conn) = self.current_connection_type {
+            if conn == "bluetooth" {
+                "bluetooth"
             } else {
                 "mouse"
             }
+        } else {
+            "mouse"
         };
 
         if active_conn != self.current_tray_icon_type {
@@ -274,12 +290,14 @@ impl eframe::App for MouserApp {
                                         "0".to_string()
                                     };
 
+                                    let conn_type = self.current_connection_type.as_deref().unwrap_or("bluetooth");
+
                                     match empty_state::show_known_device(
                                         ui,
                                         &name,
                                         is_connected,
                                         &mouse_tex,
-                                        "bluetooth",
+                                        conn_type,
                                         &battery_pct,
                                         &self.config.settings.language,
                                     ) {
@@ -304,17 +322,7 @@ impl eframe::App for MouserApp {
                                 }
                             } else if self.has_active_hidpp_battery.unwrap_or(false) {
                                 if let Some(mouse_tex) = self.get_or_load_mouse_texture(ctx) {
-                                    let conn_type =
-                                        if self.bolt_receiver_connected.unwrap_or(false) {
-                                            "bolt"
-                                        } else if self
-                                            .unifying_receiver_connected
-                                            .unwrap_or(false)
-                                        {
-                                            "unifying"
-                                        } else {
-                                            "bluetooth"
-                                        };
+                                    let conn_type = self.current_connection_type.as_deref().unwrap_or("bluetooth");
 
                                     if empty_state::show_known_device(
                                         ui,
@@ -356,30 +364,10 @@ impl eframe::App for MouserApp {
                             );
                         }
                         ActiveView::Customization => {
-                            // If mouse is disconnected, redirect back to EmptyState
-                            let is_mouse_connected = if !self.paired_devices.is_empty() {
-                                self.paired_devices[0].2
-                            } else {
-                                self.has_active_hidpp_battery.unwrap_or(false)
-                            };
-
-                            if !is_mouse_connected {
-                                self.active_view = ActiveView::EmptyState;
-                                ctx.request_repaint();
-                            } else if let Some(mouse_tex) =
+                            if let Some(mouse_tex) =
                                 self.get_or_load_customization_mouse_texture(ctx)
                             {
-                                let conn_type =
-                                    if self.bolt_receiver_connected.unwrap_or(false) {
-                                        "bolt"
-                                    } else if self
-                                        .unifying_receiver_connected
-                                        .unwrap_or(false)
-                                    {
-                                        "unifying"
-                                    } else {
-                                        "bluetooth"
-                                    };
+                                let conn_type = self.current_connection_type.as_deref().unwrap_or("bluetooth");
 
                                 self::mouse_ui::show(
                                     ui,
@@ -392,10 +380,9 @@ impl eframe::App for MouserApp {
                                     &mut self.customization_tab,
                                     conn_type,
                                     &self.battery_pct,
+                                    is_device_connected,
                                 );
                             } else {
-                                // Texture not ready yet — go back and retry next frame
-                                self.active_view = ActiveView::EmptyState;
                                 ctx.request_repaint();
                             }
                         }

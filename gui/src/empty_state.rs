@@ -51,12 +51,12 @@ pub fn show_known_device(
         let img_size = egui::vec2(300.0, 300.0);
         let (mouse_rect, mouse_res) = ui.allocate_exact_size(
             img_size,
-            if is_active { egui::Sense::click() } else { egui::Sense::hover() }
+            egui::Sense::click()
         );
-        if is_active && mouse_res.hovered() {
+        if mouse_res.hovered() {
             ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
         }
-        if is_active && mouse_res.clicked() {
+        if mouse_res.clicked() {
             action = DeviceCardAction::Customize;
         }
 
