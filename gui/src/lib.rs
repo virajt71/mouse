@@ -6,6 +6,8 @@ pub mod settings;
 pub mod mouse_ui;
 pub mod translation;
 pub mod updater;
+pub mod desktop_apps;
+
 
 use crate::updater::Updater;
 use eframe::egui;
