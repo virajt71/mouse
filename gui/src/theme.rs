@@ -23,7 +23,7 @@ pub const LIGHT_BORDER: Color32 = Color32::from_rgb(0xDC, 0xDC, 0xD8);
 
 // ── Dark Theme Scale ─────────────────────────────────────────────────────────
 pub const DARK_BASE: Color32 = Color32::from_rgb(0x07, 0x07, 0x08);
-pub const DARK_APP_BG: Color32 = Color32::from_rgb(0x0C, 0x0C, 0x0D);
+pub const DARK_APP_BG: Color32 = Color32::from_rgb(0x11, 0x11, 0x11);
 pub const DARK_SURFACE: Color32 = Color32::from_rgb(0x11, 0x11, 0x13);
 pub const DARK_ELEVATED: Color32 = Color32::from_rgb(0x18, 0x18, 0x1B);
 pub const DARK_HOVER: Color32 = Color32::from_rgb(0x20, 0x20, 0x24);
@@ -33,7 +33,7 @@ pub const DARK_TEXT_SECONDARY: Color32 = Color32::from_rgb(0xA8, 0xA8, 0xA8);
 pub const DARK_TEXT_MUTED: Color32 = Color32::from_rgb(0x60, 0x60, 0x60);
 pub const DARK_TEXT_DISABLED: Color32 = Color32::from_rgb(0x38, 0x38, 0x38);
 
-pub const DARK_ACCENT: Color32 = Color32::from_rgb(0x00, 0xC8, 0xB0);
+pub const DARK_ACCENT: Color32 = Color32::from_rgb(0x00, 0xd4, 0xc8);
 pub const DARK_ACCENT_DIM: Color32 = Color32::from_rgb(0x00, 0x6E, 0x60);
 pub const DARK_DANGER: Color32 = Color32::from_rgb(0xFF, 0x4A, 0x4A);
 pub const DARK_WARNING: Color32 = Color32::from_rgb(0xFF, 0x98, 0x00);

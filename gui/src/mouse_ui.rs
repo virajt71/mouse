@@ -223,6 +223,12 @@ fn is_valid_combo(combo: &str) -> bool {
     false
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PointScrollPopup {
+    PointerSpeed,
+    ThumbwheelSpeed,
+}
+
 // Global UI states for text edits (thread local to avoid unsafe static mut)
 thread_local! {
     pub static NEW_PROFILE_NAME: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
@@ -231,6 +237,7 @@ thread_local! {
     // Keystroke recording state (thread local to avoid multi-thread unsafety)
     pub static RECORDING_TARGET: std::cell::RefCell<Option<RecordingTarget>> = const { std::cell::RefCell::new(None) };
     pub static RECORDED_KEYS: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+    pub static ACTIVE_POINT_SCROLL_POPUP: std::cell::RefCell<Option<PointScrollPopup>> = const { std::cell::RefCell::new(None) };
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -253,25 +260,79 @@ pub fn show(
     // Fill background
     ui.painter().rect_filled(rect, 0.0, bg);
 
-    // ── 1. Header Row ────────────────────────────────────────────────────────
-    let header_height = 45.0;
-    let header_rect = Rect::from_min_max(rect.min, pos2(rect.max.x, rect.min.y + header_height));
+    // ── 1. Thin Window Title Bar (decorations) ───────────────────────────────
+    let title_bar_height = 24.0;
+    let title_bar_rect = Rect::from_min_max(rect.min, pos2(rect.max.x, rect.min.y + title_bar_height));
 
-    let top_bar_bg = if ui.visuals().dark_mode {
-        theme::COLOR_TOP_BAR
-    } else {
-        egui::Color32::from_rgb(0xe5, 0xe7, 0xeb)
-    };
-    ui.painter().rect_filled(header_rect, 0.0, top_bar_bg);
+    let title_bar_bg = Color32::from_rgb(0x11, 0x11, 0x11);
+    ui.painter().rect_filled(title_bar_rect, 0.0, title_bar_bg);
 
-    let border_y = header_rect.max.y;
-    ui.painter().line_segment(
-        [
-            pos2(header_rect.min.x, border_y),
-            pos2(header_rect.max.x, border_y),
-        ],
-        Stroke::new(1.0, theme::border_color(ctx)),
+    let mut title_bar_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(title_bar_rect)
+            .layout(egui::Layout::right_to_left(egui::Align::Center)),
     );
+    title_bar_ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
+    title_bar_ui.add_space(8.0);
+
+    // Close button in thin title bar
+    let (close_rect, close_res) = title_bar_ui.allocate_exact_size(vec2(20.0, 20.0), egui::Sense::click());
+    let close_hover = if close_res.hovered() {
+        Color32::from_rgba_unmultiplied(255, 0, 0, 40)
+    } else {
+        Color32::TRANSPARENT
+    };
+    title_bar_ui.painter().rect_filled(close_rect, 2.0, close_hover);
+    let cr_stroke = Stroke::new(1.0, Color32::from_rgb(0xaa, 0xaa, 0xaa));
+    let ccx = close_rect.center().x;
+    let ccy = close_rect.center().y;
+    title_bar_ui.painter().line_segment(
+        [pos2(ccx - 4.0, ccy - 4.0), pos2(ccx + 4.0, ccy + 4.0)],
+        cr_stroke,
+    );
+    title_bar_ui.painter().line_segment(
+        [pos2(ccx - 4.0, ccy + 4.0), pos2(ccx + 4.0, ccy - 4.0)],
+        cr_stroke,
+    );
+    if close_res.clicked() {
+        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+    }
+
+    title_bar_ui.add_space(4.0);
+
+    // Minimize button in thin title bar
+    let (min_rect, min_res) = title_bar_ui.allocate_exact_size(vec2(20.0, 20.0), egui::Sense::click());
+    let min_hover = if min_res.hovered() {
+        Color32::from_rgba_unmultiplied(255, 255, 255, 20)
+    } else {
+        Color32::TRANSPARENT
+    };
+    title_bar_ui.painter().rect_filled(min_rect, 2.0, min_hover);
+    let mcx = min_rect.center().x;
+    let mcy = min_rect.center().y;
+    title_bar_ui.painter().line_segment(
+        [pos2(mcx - 5.0, mcy), pos2(mcx + 5.0, mcy)],
+        cr_stroke,
+    );
+    if min_res.clicked() {
+        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+    }
+
+    // Drag behavior for title bar
+    let is_title_button_hovered = close_res.hovered() || min_res.hovered();
+    if !is_title_button_hovered && ui.rect_contains_pointer(title_bar_rect) && ui.input(|i| i.pointer.primary_pressed()) {
+        ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+    }
+
+    // ── 2. Content Header Row ────────────────────────────────────────────────
+    let header_height = 45.0;
+    let header_rect = Rect::from_min_max(
+        pos2(rect.min.x, title_bar_rect.max.y),
+        pos2(rect.max.x, title_bar_rect.max.y + header_height),
+    );
+
+    let header_bg = Color32::from_rgb(0x11, 0x11, 0x11);
+    ui.painter().rect_filled(header_rect, 0.0, header_bg);
 
     let mut header_ui = ui.new_child(
         egui::UiBuilder::new()
@@ -281,39 +342,23 @@ pub fn show(
     header_ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
 
     let mut back_clicked = false;
-    let mut header_buttons_hovered = false;
-
     header_ui.add_space(20.0);
 
-    let (back_rect, back_res) =
-        header_ui.allocate_exact_size(vec2(32.0, 32.0), egui::Sense::click());
+    let (back_rect, back_res) = header_ui.allocate_exact_size(vec2(32.0, 32.0), egui::Sense::click());
     let back_hover_color = if back_res.hovered() {
-        header_buttons_hovered = true;
         header_ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
-        if ui.visuals().dark_mode {
-            Color32::from_rgba_unmultiplied(255, 255, 255, 20)
-        } else {
-            Color32::from_rgba_unmultiplied(0, 0, 0, 15)
-        }
+        Color32::from_rgba_unmultiplied(255, 255, 255, 20)
     } else {
         Color32::TRANSPARENT
     };
-    header_ui
-        .painter()
-        .rect_filled(back_rect, 2.0, back_hover_color);
+    header_ui.painter().rect_filled(back_rect, 2.0, back_hover_color);
 
-    let arrow_stroke = Stroke::new(1.5, theme::primary_text(ctx));
+    let arrow_stroke = Stroke::new(1.5, Color32::WHITE);
     let cx = back_rect.center().x;
     let cy = back_rect.center().y;
-    header_ui
-        .painter()
-        .line_segment([pos2(cx - 7.0, cy), pos2(cx + 7.0, cy)], arrow_stroke);
-    header_ui
-        .painter()
-        .line_segment([pos2(cx - 7.0, cy), pos2(cx - 2.0, cy - 5.0)], arrow_stroke);
-    header_ui
-        .painter()
-        .line_segment([pos2(cx - 7.0, cy), pos2(cx - 2.0, cy + 5.0)], arrow_stroke);
+    header_ui.painter().line_segment([pos2(cx - 7.0, cy), pos2(cx + 7.0, cy)], arrow_stroke);
+    header_ui.painter().line_segment([pos2(cx - 7.0, cy), pos2(cx - 2.0, cy - 5.0)], arrow_stroke);
+    header_ui.painter().line_segment([pos2(cx - 7.0, cy), pos2(cx - 2.0, cy + 5.0)], arrow_stroke);
 
     if back_res.clicked() {
         back_clicked = true;
@@ -321,13 +366,13 @@ pub fn show(
 
     header_ui.add_space(8.0);
 
-    // Profile pill in header
+    // Profile title in header
     let profile_label = "MX Master 3";
     header_ui.add(
         egui::Label::new(
             RichText::new(profile_label)
-                .color(theme::primary_text(ctx))
-                .size(15.0)
+                .color(Color32::WHITE)
+                .size(17.0)
                 .strong(),
         )
         .selectable(false),
@@ -335,72 +380,102 @@ pub fn show(
 
     header_ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-        ui.add_space(16.0);
+        ui.add_space(20.0);
 
-        let (close_rect, close_res) =
-            ui.allocate_exact_size(vec2(32.0, 32.0), egui::Sense::click());
-        let close_hover = if close_res.hovered() {
-            header_buttons_hovered = true;
-            if ui.visuals().dark_mode {
-                Color32::from_rgba_unmultiplied(255, 0, 0, 40)
-            } else {
-                Color32::from_rgba_unmultiplied(255, 0, 0, 30)
-            }
-        } else {
-            Color32::TRANSPARENT
-        };
-        ui.painter().rect_filled(close_rect, 2.0, close_hover);
-
-        let cr_stroke = Stroke::new(1.5, theme::primary_text(ctx));
-        let ccx = close_rect.center().x;
-        let ccy = close_rect.center().y;
-        ui.painter().line_segment(
-            [pos2(ccx - 5.0, ccy - 5.0), pos2(ccx + 5.0, ccy + 5.0)],
-            cr_stroke,
-        );
-        ui.painter().line_segment(
-            [pos2(ccx - 5.0, ccy + 5.0), pos2(ccx + 5.0, ccy - 5.0)],
-            cr_stroke,
-        );
-        if close_res.clicked() {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+        // 3. Plus Icon
+        let (plus_rect, plus_res) = ui.allocate_exact_size(vec2(20.0, 20.0), egui::Sense::click());
+        if plus_res.hovered() {
+            ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
         }
-
-        ui.add_space(6.0);
-
-        let (min_rect, min_res) = ui.allocate_exact_size(vec2(32.0, 32.0), egui::Sense::click());
-        let min_hover = if min_res.hovered() {
-            header_buttons_hovered = true;
-            if ui.visuals().dark_mode {
-                Color32::from_rgba_unmultiplied(255, 255, 255, 20)
-            } else {
-                Color32::from_rgba_unmultiplied(0, 0, 0, 15)
-            }
+        let plus_color = if plus_res.hovered() {
+            Color32::from_rgb(0, 212, 200)
         } else {
-            Color32::TRANSPARENT
+            Color32::WHITE
         };
-        ui.painter().rect_filled(min_rect, 2.0, min_hover);
+        let pc = plus_rect.center();
+        ui.painter().line_segment([pos2(pc.x - 7.0, pc.y), pos2(pc.x + 7.0, pc.y)], Stroke::new(2.0, plus_color));
+        ui.painter().line_segment([pos2(pc.x, pc.y - 7.0), pos2(pc.x, pc.y + 7.0)], Stroke::new(2.0, plus_color));
 
-        let mcx = min_rect.center().x;
-        let mcy = min_rect.center().y;
-        ui.painter()
-            .line_segment([pos2(mcx - 6.0, mcy), pos2(mcx + 6.0, mcy)], cr_stroke);
-        if min_res.clicked() {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+        // Gap ~14px
+        ui.add_space(14.0);
+
+        // 2. Brave Shield Icon
+        let (shield_rect, shield_res) = ui.allocate_exact_size(vec2(23.0, 23.0), egui::Sense::click());
+        if shield_res.hovered() {
+            ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
         }
+        let shield_center = shield_rect.center();
+        let mut shield_pts = Vec::new();
+        let sc = shield_center;
+        shield_pts.push(pos2(sc.x - 10.0, sc.y - 10.0));
+        shield_pts.push(pos2(sc.x + 10.0, sc.y - 10.0));
+        shield_pts.push(pos2(sc.x + 10.0, sc.y + 1.0));
+        shield_pts.push(pos2(sc.x + 5.0, sc.y + 8.0));
+        shield_pts.push(pos2(sc.x, sc.y + 11.5));
+        shield_pts.push(pos2(sc.x - 5.0, sc.y + 8.0));
+        shield_pts.push(pos2(sc.x - 10.0, sc.y + 1.0));
+
+        let shield_fill = if shield_res.hovered() {
+            Color32::from_rgb(251, 146, 60)
+        } else {
+            Color32::from_rgb(249, 115, 22) // #f97316
+        };
+        ui.painter().add(egui::Shape::convex_polygon(shield_pts, shield_fill, Stroke::NONE));
+
+        // Draw white lion emblem inside shield
+        let lion_stroke = Stroke::new(1.2, Color32::WHITE);
+        ui.painter().line_segment([pos2(sc.x, sc.y - 2.0), pos2(sc.x, sc.y + 3.0)], lion_stroke);
+        ui.painter().line_segment([pos2(sc.x - 2.0, sc.y + 3.0), pos2(sc.x + 2.0, sc.y + 3.0)], lion_stroke);
+        ui.painter().line_segment([pos2(sc.x - 4.0, sc.y - 4.0), pos2(sc.x, sc.y - 2.0)], lion_stroke);
+        ui.painter().line_segment([pos2(sc.x + 4.0, sc.y - 4.0), pos2(sc.x, sc.y - 2.0)], lion_stroke);
+        ui.painter().line_segment([pos2(sc.x - 5.0, sc.y - 1.0), pos2(sc.x - 3.0, sc.y + 3.0)], lion_stroke);
+        ui.painter().line_segment([pos2(sc.x + 5.0, sc.y - 1.0), pos2(sc.x + 3.0, sc.y + 3.0)], lion_stroke);
+        ui.painter().line_segment([pos2(sc.x - 4.0, sc.y - 7.0), pos2(sc.x - 2.0, sc.y - 5.0)], lion_stroke);
+        ui.painter().line_segment([pos2(sc.x + 4.0, sc.y - 7.0), pos2(sc.x + 2.0, sc.y - 5.0)], lion_stroke);
+        ui.painter().line_segment([pos2(sc.x, sc.y - 7.0), pos2(sc.x, sc.y - 4.0)], lion_stroke);
+
+        // Gap ~14px
+        ui.add_space(14.0);
+
+        // 1. 2x2 Grid Icon
+        let (grid_rect, grid_res) = ui.allocate_exact_size(vec2(23.0, 23.0), egui::Sense::click());
+        if grid_res.hovered() {
+            ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
+        }
+        let grid_center = grid_rect.center();
+        let gc = grid_center;
+        let teal_color = Color32::from_rgb(0, 212, 200);
+
+        let sq_size = 8.0;
+        let sq_half = sq_size / 2.0;
+        let gap = 3.0;
+        let r = 1.5;
+
+        let draw_sq = |painter: &egui::Painter, center_pos: egui::Pos2| {
+            let rect = Rect::from_center_size(center_pos, vec2(sq_size, sq_size));
+            painter.rect_filled(rect, r, teal_color);
+        };
+
+        draw_sq(ui.painter(), pos2(gc.x - sq_half - gap / 2.0, gc.y - sq_half - gap / 2.0));
+        draw_sq(ui.painter(), pos2(gc.x + sq_half + gap / 2.0, gc.y - sq_half - gap / 2.0));
+        draw_sq(ui.painter(), pos2(gc.x - sq_half - gap / 2.0, gc.y + sq_half + gap / 2.0));
+        draw_sq(ui.painter(), pos2(gc.x + sq_half + gap / 2.0, gc.y + sq_half + gap / 2.0));
+
+        // Active State: Teal underline bar (2px tall, full icon width, 4px below icon)
+        let icon_w = 2.0 * sq_size + gap;
+        let bar_y = gc.y + sq_size + gap / 2.0 + 4.0;
+        let bar_left = gc.x - icon_w / 2.0;
+        let bar_right = gc.x + icon_w / 2.0;
+        ui.painter().line_segment(
+            [pos2(bar_left, bar_y), pos2(bar_right, bar_y)],
+            Stroke::new(2.0, teal_color),
+        );
     });
 
     if back_clicked {
         *active_view = ActiveView::EmptyState;
         *customizing_button = None;
         return;
-    }
-
-    if !header_buttons_hovered
-        && ui.rect_contains_pointer(header_rect)
-        && ui.input(|i| i.pointer.primary_pressed())
-    {
-        ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
     }
 
     // ── 3. Sidebar (Vertical Navigation) ─────────────────────────────────────
@@ -597,7 +672,7 @@ pub fn show(
             show_buttons_tab(&mut canvas_ui, engine, config, mouse_texture, customizing_button);
         }
         SidebarTab::PointAndScroll => {
-            show_point_scroll_tab(&mut canvas_ui, engine, config);
+            show_point_scroll_tab(&mut canvas_ui, engine, config, mouse_texture);
         }
         SidebarTab::Flow => {
             show_flow_tab(&mut canvas_ui);
@@ -1141,102 +1216,343 @@ fn show_buttons_tab(
 }
 
 // ── POINT & SCROLL TAB ──────────────────────────────────────────────────────
-fn show_point_scroll_tab(ui: &mut egui::Ui, engine: &Engine, config: &mut Config) {
+fn draw_point_scroll_card(
+    ui: &mut egui::Ui,
+    pos: egui::Pos2,
+    width: f32,
+    height: f32,
+    title: &str,
+    rows: &[&str],
+    hovered_row_idx: &mut Option<usize>,
+) -> egui::Response {
+    let rect = Rect::from_center_size(pos, vec2(width, height));
+    let response = ui.allocate_rect(rect, egui::Sense::click());
+
+    let is_hovered = response.hovered();
+    if is_hovered {
+        ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
+    }
+
+    // Card background & border (identically styled as in Buttons tab / draw_tooltip_card)
+    let bg_fill = if is_hovered {
+        Color32::from_rgb(0x24, 0x24, 0x24)
+    } else {
+        Color32::from_rgb(0x16, 0x16, 0x16)
+    };
+
+    let border_color = if is_hovered {
+        Color32::from_rgb(0x3c, 0x3c, 0x3c)
+    } else {
+        Color32::from_rgb(0x26, 0x26, 0x26)
+    };
+
+    ui.painter().rect_filled(rect, 2.0, bg_fill);
+    ui.painter().rect_stroke(rect, 2.0, Stroke::new(1.0, border_color));
+
+    // Tech corners animation
+    let is_hov_anim = ui.ctx().animate_bool(response.id.with("hov"), is_hovered);
+    let corner_color = theme::lerp_color(
+        Color32::TRANSPARENT,
+        theme::accent_color(ui.ctx()),
+        is_hov_anim,
+    );
+    theme::draw_tech_corners(ui.painter(), rect, corner_color, 4.0);
+
+    // Draw lines of text (Padding matching draw_tooltip_card: 10px horizontal, 7px vertical)
+    let left_x = rect.left() + 10.0;
+    let mut current_y = rect.top() + 7.0;
+
+    // Draw title
+    let title_color = theme::primary_text(ui.ctx());
+    let title_galley = ui.fonts(|f| {
+        f.layout_job(egui::text::LayoutJob::simple_singleline(
+            title.to_string(),
+            egui::FontId::proportional(10.5),
+            title_color,
+        ))
+    });
+    ui.painter().galley(pos2(left_x, current_y), title_galley, title_color);
+    current_y += 14.0;
+
+    // Draw rows
+    let mouse_pos = ui.input(|i| i.pointer.interact_pos());
+    for (idx, &row_text) in rows.iter().enumerate() {
+        let row_rect = Rect::from_min_max(
+            pos2(rect.left(), current_y),
+            pos2(rect.right(), current_y + 14.0),
+        );
+        let is_row_hovered = if let Some(m_pos) = mouse_pos {
+            row_rect.contains(m_pos) && is_hovered
+        } else {
+            false
+        };
+
+        if is_row_hovered {
+            *hovered_row_idx = Some(idx);
+            // Draw a subtle row hover background highlight
+            ui.painter().rect_filled(
+                row_rect.shrink2(vec2(4.0, 0.0)),
+                1.0,
+                Color32::from_rgba_unmultiplied(255, 255, 255, 10),
+            );
+        }
+
+        let text_color = if is_row_hovered {
+            theme::accent_color(ui.ctx())
+        } else {
+            theme::muted_text(ui.ctx())
+        };
+
+        let row_galley = ui.fonts(|f| {
+            f.layout_job(egui::text::LayoutJob::simple_singleline(
+                row_text.to_string(),
+                egui::FontId::proportional(9.0),
+                text_color,
+            ))
+        });
+        ui.painter().galley(pos2(left_x, current_y + 1.0), row_galley, text_color);
+        current_y += 14.0;
+    }
+
+    response
+}
+
+fn draw_slider_popup(
+    ui: &mut egui::Ui,
+    pos: egui::Pos2,
+    value: &mut i32,
+    range: std::ops::RangeInclusive<i32>,
+    label: &str,
+    card_rect: Rect,
+) -> (bool, bool) {
+    let popup_rect = Rect::from_center_size(pos, vec2(180.0, 60.0));
+    
+    ui.painter().rect_filled(popup_rect, 6.0, Color32::from_rgb(0x1a, 0x1a, 0x1a));
+    ui.painter().rect_stroke(popup_rect, 6.0, Stroke::new(1.0, Color32::from_rgb(0x2a, 0x2a, 0x2a)));
+
+    let mut popup_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(popup_rect.shrink(10.0))
+            .layout(egui::Layout::top_down(egui::Align::Center)),
+    );
+
+    popup_ui.label(RichText::new(label).color(Color32::WHITE).size(10.5));
+    popup_ui.add_space(4.0);
+
+    let mut changed = false;
+    popup_ui.horizontal(|ui| {
+        let res = ui.add(egui::Slider::new(value, range).show_value(true));
+        if res.changed() {
+            changed = true;
+        }
+    });
+
+    let mut should_close = false;
+    if ui.input(|i| i.pointer.any_click()) {
+        if let Some(m_pos) = ui.input(|i| i.pointer.interact_pos()) {
+            if !popup_rect.contains(m_pos) && !card_rect.contains(m_pos) {
+                should_close = true;
+            }
+        }
+    }
+
+    (changed, should_close)
+}
+
+fn show_point_scroll_tab(
+    ui: &mut egui::Ui,
+    engine: &Engine,
+    config: &mut Config,
+    mouse_texture: &egui::TextureHandle,
+) {
+    let rect = ui.max_rect();
+    let center = rect.center() + vec2(30.0, -10.0);
+
+    // 1. Draw Clean Mouse Image
+    let img_size = vec2(600.0, 600.0);
+    let mouse_rect = Rect::from_center_size(center, img_size);
+    ui.put(
+        mouse_rect,
+        egui::Image::new(mouse_texture).fit_to_exact_size(img_size),
+    );
+
     let mut settings_dirty = false;
-    ui.horizontal(|ui| {
-        ui.add_space(40.0);
-        ui.vertical(|ui| {
-            ui.add_space(40.0);
-            ui.add(egui::Label::new(
-                RichText::new("POINT AND SCROLL")
-                    .color(Color32::WHITE)
-                    .size(18.0)
-                    .strong(),
-            ));
-            ui.add_space(24.0);
 
-            // Pointer DPI Slider
-            ui.add(egui::Label::new(
-                RichText::new(format!("Pointer speed (DPI: {})", config.settings.dpi))
-                    .color(Color32::WHITE)
-                    .size(13.0),
-            ));
-            ui.add_space(6.0);
-            let mut dpi = config.settings.dpi;
-            if ui.add(egui::Slider::new(&mut dpi, 200..=4000).step_by(50.0).show_value(false)).changed() {
-                config.settings.dpi = dpi;
-                settings_dirty = true;
-            }
-            ui.add_space(20.0);
+    // Define card and dot positions
+    let scroll_wheel_dot = center + vec2(80.0, -190.0);
+    let scroll_wheel_card_pos = center + vec2(270.0, -140.0);
 
-            // SmartShift toggle
-            ui.horizontal(|ui| {
-                let mut smart_shift_enabled = config.settings.smart_shift_enabled;
-                if ui.checkbox(&mut smart_shift_enabled, "SmartShift (Auto-switching Wheel)").changed() {
-                    config.settings.smart_shift_enabled = smart_shift_enabled;
+    let thumb_wheel_dot = center + vec2(0.0, -23.0);
+    let thumb_wheel_card_pos = center + vec2(-180.0, 30.0);
+
+    let pointer_dot = center + vec2(110.0, 40.0);
+    let pointer_card_pos = center + vec2(240.0, 40.0);
+
+    // 2. Draw annotation rings/dots (white stroke circles)
+    ui.painter().circle_stroke(scroll_wheel_dot, 8.0, Stroke::new(1.5, Color32::WHITE));
+    ui.painter().circle_stroke(thumb_wheel_dot, 8.0, Stroke::new(1.5, Color32::WHITE));
+    ui.painter().circle_stroke(pointer_dot, 8.0, Stroke::new(1.5, Color32::WHITE));
+
+    // Get current settings
+    let invert_v = config.settings.invert_vscroll;
+    let invert_h = config.settings.invert_hscroll;
+    let smart_shift = config.settings.smart_shift_enabled;
+    let dpi = config.settings.dpi;
+
+    let pointer_speed_pct = ((dpi.clamp(200, 4000) - 200) as f32 * 100.0 / 3800.0).round() as i32;
+    let thumb_speed_pct = ((11 - config.settings.hscroll_threshold.clamp(1, 10)) * 10).clamp(10, 100);
+
+    // Draw Card 1: Scroll wheel
+    let scroll_dir_str = if invert_v { "Scroll direction: Inverted" } else { "Scroll direction: Standard" };
+    let smart_shift_str = if smart_shift { "SmartShift: On" } else { "SmartShift: Off" };
+    let scroll_rows = &[
+        scroll_dir_str,
+        "Smooth scrolling: Off",
+        smart_shift_str,
+    ];
+    let mut scroll_hovered_row = None;
+    let _scroll_card_rect = Rect::from_center_size(scroll_wheel_card_pos, vec2(160.0, 72.0));
+    let scroll_res = draw_point_scroll_card(
+        ui,
+        scroll_wheel_card_pos,
+        160.0,
+        72.0,
+        "Scroll wheel",
+        scroll_rows,
+        &mut scroll_hovered_row,
+    );
+
+    if scroll_res.clicked() {
+        if let Some(row_idx) = scroll_hovered_row {
+            match row_idx {
+                0 => {
+                    config.settings.invert_vscroll = !config.settings.invert_vscroll;
                     settings_dirty = true;
                 }
-            });
-            ui.add_space(10.0);
+                2 => {
+                    config.settings.smart_shift_enabled = !config.settings.smart_shift_enabled;
+                    settings_dirty = true;
+                }
+                _ => {}
+            }
+        }
+    }
 
-            if config.settings.smart_shift_enabled {
-                // SmartShift Mode dropdown
-                ui.horizontal(|ui| {
-                    ui.label("Wheel Mode:");
-                    let mut mode = config.settings.smart_shift_mode.clone();
-                    let combo = egui::ComboBox::from_id_salt("ss_mode")
-                        .selected_text(if mode == "ratchet" { "Ratchet (Tactile)" } else { "Freespin (Smooth)" });
-                    let res = combo.show_ui(ui, |ui| {
-                        let mut changed = false;
-                        if ui.selectable_value(&mut mode, "ratchet".to_string(), "Ratchet (Tactile)").clicked() {
-                            changed = true;
+    // Draw Card 2: Thumb wheel
+    let thumb_dir_str = if invert_h { "Scroll direction: Inverted" } else { "Scroll direction: Default" };
+    let thumb_speed_str = format!("Speed: {}%", thumb_speed_pct);
+    let thumb_rows = &[
+        thumb_speed_str.as_str(),
+        thumb_dir_str,
+    ];
+    let mut thumb_hovered_row = None;
+    let thumb_card_rect = Rect::from_center_size(thumb_wheel_card_pos, vec2(160.0, 58.0));
+    let thumb_res = draw_point_scroll_card(
+        ui,
+        thumb_wheel_card_pos,
+        160.0,
+        58.0,
+        "Thumb wheel",
+        thumb_rows,
+        &mut thumb_hovered_row,
+    );
+
+    if thumb_res.clicked() {
+        if let Some(row_idx) = thumb_hovered_row {
+            match row_idx {
+                0 => {
+                    ACTIVE_POINT_SCROLL_POPUP.with(|p| {
+                        let mut val = p.borrow_mut();
+                        if *val == Some(PointScrollPopup::ThumbwheelSpeed) {
+                            *val = None;
+                        } else {
+                            *val = Some(PointScrollPopup::ThumbwheelSpeed);
                         }
-                        if ui.selectable_value(&mut mode, "freespin".to_string(), "Freespin (Smooth)").clicked() {
-                            changed = true;
-                        }
-                        changed
                     });
-
-                    if let Some(true) = res.inner {
-                        config.settings.smart_shift_mode = mode;
-                        settings_dirty = true;
-                    }
-                });
-                ui.add_space(10.0);
-
-                // SmartShift sensitivity threshold slider
-                ui.add(egui::Label::new(
-                    RichText::new(format!("SmartShift Sensitivity (Threshold: {})", config.settings.smart_shift_threshold))
-                        .color(Color32::WHITE)
-                        .size(12.0),
-                ));
-                let mut ss_thresh = config.settings.smart_shift_threshold;
-                if ui.add(egui::Slider::new(&mut ss_thresh, 1..=50).show_value(false)).changed() {
-                    config.settings.smart_shift_threshold = ss_thresh;
+                }
+                1 => {
+                    config.settings.invert_hscroll = !config.settings.invert_hscroll;
                     settings_dirty = true;
                 }
-                ui.add_space(20.0);
+                _ => {}
             }
+        }
+    }
 
-            // Scroll Direction
-            ui.add(egui::Label::new(
-                RichText::new("Scroll Direction Settings").color(Color32::WHITE).size(13.0).strong(),
-            ));
-            ui.add_space(6.0);
+    // Draw Card 3: Pointer speed
+    let pointer_speed_str = format!("Speed: {}%", pointer_speed_pct);
+    let pointer_rows = &[
+        pointer_speed_str.as_str(),
+    ];
+    let mut pointer_hovered_row = None;
+    let pointer_card_rect = Rect::from_center_size(pointer_card_pos, vec2(145.0, 44.0));
+    let pointer_res = draw_point_scroll_card(
+        ui,
+        pointer_card_pos,
+        145.0,
+        44.0,
+        "Pointer speed",
+        pointer_rows,
+        &mut pointer_hovered_row,
+    );
 
-            let mut invert_v = config.settings.invert_vscroll;
-            if ui.checkbox(&mut invert_v, "Invert Vertical Scroll").changed() {
-                config.settings.invert_vscroll = invert_v;
-                settings_dirty = true;
-            }
-
-            let mut invert_h = config.settings.invert_hscroll;
-            if ui.checkbox(&mut invert_h, "Invert Horizontal Scroll").changed() {
-                config.settings.invert_hscroll = invert_h;
-                settings_dirty = true;
+    if pointer_res.clicked() {
+        ACTIVE_POINT_SCROLL_POPUP.with(|p| {
+            let mut val = p.borrow_mut();
+            if *val == Some(PointScrollPopup::PointerSpeed) {
+                *val = None;
+            } else {
+                *val = Some(PointScrollPopup::PointerSpeed);
             }
         });
-    });
+    }
+
+    // Render active popups
+    let active_popup = ACTIVE_POINT_SCROLL_POPUP.with(|p| p.borrow().clone());
+    if let Some(popup) = active_popup {
+        match popup {
+            PointScrollPopup::PointerSpeed => {
+                let popup_pos = pointer_card_pos + vec2(0.0, 70.0);
+                let mut current_dpi = config.settings.dpi;
+                let (changed, should_close) = draw_slider_popup(
+                    ui,
+                    popup_pos,
+                    &mut current_dpi,
+                    200..=4000,
+                    "Pointer speed (DPI)",
+                    pointer_card_rect,
+                );
+                if changed {
+                    config.settings.dpi = current_dpi;
+                    settings_dirty = true;
+                }
+                if should_close {
+                    ACTIVE_POINT_SCROLL_POPUP.with(|p| *p.borrow_mut() = None);
+                }
+            }
+            PointScrollPopup::ThumbwheelSpeed => {
+                let popup_pos = thumb_wheel_card_pos + vec2(0.0, 75.0);
+                let mut current_speed = thumb_speed_pct;
+                let (changed, should_close) = draw_slider_popup(
+                    ui,
+                    popup_pos,
+                    &mut current_speed,
+                    10..=100,
+                    "Thumb Wheel Speed (%)",
+                    thumb_card_rect,
+                );
+                if changed {
+                    let rounded_speed = ((current_speed as f32 / 10.0).round() * 10.0) as i32;
+                    let threshold = 11 - (rounded_speed / 10);
+                    config.settings.hscroll_threshold = threshold.clamp(1, 10);
+                    settings_dirty = true;
+                }
+                if should_close {
+                    ACTIVE_POINT_SCROLL_POPUP.with(|p| *p.borrow_mut() = None);
+                }
+            }
+        }
+    }
 
     if settings_dirty {
         engine.update_global_settings(
