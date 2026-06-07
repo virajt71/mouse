@@ -238,6 +238,12 @@ thread_local! {
     pub static RECORDING_TARGET: std::cell::RefCell<Option<RecordingTarget>> = const { std::cell::RefCell::new(None) };
     pub static RECORDED_KEYS: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
     pub static ACTIVE_POINT_SCROLL_POPUP: std::cell::RefCell<Option<PointScrollPopup>> = const { std::cell::RefCell::new(None) };
+    
+    // Linux Application profiles switcher states
+    pub static SHOW_ADD_APP_MODAL: std::cell::RefCell<bool> = const { std::cell::RefCell::new(false) };
+    pub static APP_SEARCH_QUERY: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+    pub static SCANNED_APPS: std::cell::RefCell<Option<Vec<crate::desktop_apps::DesktopApp>>> = const { std::cell::RefCell::new(None) };
+    pub static FOCUS_REQUESTED: std::cell::RefCell<bool> = const { std::cell::RefCell::new(false) };
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -378,99 +384,275 @@ pub fn show(
         .selectable(false),
     );
 
-    header_ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-        ui.add_space(20.0);
+    let show_switcher = *customization_tab == SidebarTab::Buttons || *customization_tab == SidebarTab::PointAndScroll;
+    
+    // Auto-close modal if we switch tabs away from Buttons or PointAndScroll
+    if !show_switcher {
+        SHOW_ADD_APP_MODAL.with(|s| *s.borrow_mut() = false);
+    }
 
-        // 3. Plus Icon
-        let (plus_rect, plus_res) = ui.allocate_exact_size(vec2(20.0, 20.0), egui::Sense::click());
-        if plus_res.hovered() {
-            ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
-        }
-        let plus_color = if plus_res.hovered() {
-            Color32::from_rgb(0, 212, 200)
-        } else {
-            Color32::WHITE
-        };
-        let pc = plus_rect.center();
-        ui.painter().line_segment([pos2(pc.x - 7.0, pc.y), pos2(pc.x + 7.0, pc.y)], Stroke::new(2.0, plus_color));
-        ui.painter().line_segment([pos2(pc.x, pc.y - 7.0), pos2(pc.x, pc.y + 7.0)], Stroke::new(2.0, plus_color));
+    if show_switcher {
+        header_ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
+            ui.add_space(20.0);
 
-        // Gap ~14px
-        ui.add_space(14.0);
+            // 3. Plus Icon
+            let (plus_rect, plus_res) = ui.allocate_exact_size(vec2(20.0, 20.0), egui::Sense::click());
+            if plus_res.hovered() {
+                ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
+            }
+            let plus_color = if plus_res.hovered() {
+                Color32::from_rgb(0, 212, 200)
+            } else {
+                Color32::WHITE
+            };
+            let pc = plus_rect.center();
+            ui.painter().line_segment([pos2(pc.x - 7.0, pc.y), pos2(pc.x + 7.0, pc.y)], Stroke::new(2.0, plus_color));
+            ui.painter().line_segment([pos2(pc.x, pc.y - 7.0), pos2(pc.x, pc.y + 7.0)], Stroke::new(2.0, plus_color));
 
-        // 2. Brave Shield Icon
-        let (shield_rect, shield_res) = ui.allocate_exact_size(vec2(23.0, 23.0), egui::Sense::click());
-        if shield_res.hovered() {
-            ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
-        }
-        let shield_center = shield_rect.center();
-        let mut shield_pts = Vec::new();
-        let sc = shield_center;
-        shield_pts.push(pos2(sc.x - 10.0, sc.y - 10.0));
-        shield_pts.push(pos2(sc.x + 10.0, sc.y - 10.0));
-        shield_pts.push(pos2(sc.x + 10.0, sc.y + 1.0));
-        shield_pts.push(pos2(sc.x + 5.0, sc.y + 8.0));
-        shield_pts.push(pos2(sc.x, sc.y + 11.5));
-        shield_pts.push(pos2(sc.x - 5.0, sc.y + 8.0));
-        shield_pts.push(pos2(sc.x - 10.0, sc.y + 1.0));
+            if plus_res.clicked() {
+                SHOW_ADD_APP_MODAL.with(|s| *s.borrow_mut() = true);
+                APP_SEARCH_QUERY.with(|q| q.borrow_mut().clear());
+                FOCUS_REQUESTED.with(|f| *f.borrow_mut() = false);
+                SCANNED_APPS.with(|apps| {
+                    *apps.borrow_mut() = Some(crate::desktop_apps::scan_desktop_applications());
+                });
+            }
 
-        let shield_fill = if shield_res.hovered() {
-            Color32::from_rgb(251, 146, 60)
-        } else {
-            Color32::from_rgb(249, 115, 22) // #f97316
-        };
-        ui.painter().add(egui::Shape::convex_polygon(shield_pts, shield_fill, Stroke::NONE));
+            // Gap ~14px
+            ui.add_space(14.0);
 
-        // Draw white lion emblem inside shield
-        let lion_stroke = Stroke::new(1.2, Color32::WHITE);
-        ui.painter().line_segment([pos2(sc.x, sc.y - 2.0), pos2(sc.x, sc.y + 3.0)], lion_stroke);
-        ui.painter().line_segment([pos2(sc.x - 2.0, sc.y + 3.0), pos2(sc.x + 2.0, sc.y + 3.0)], lion_stroke);
-        ui.painter().line_segment([pos2(sc.x - 4.0, sc.y - 4.0), pos2(sc.x, sc.y - 2.0)], lion_stroke);
-        ui.painter().line_segment([pos2(sc.x + 4.0, sc.y - 4.0), pos2(sc.x, sc.y - 2.0)], lion_stroke);
-        ui.painter().line_segment([pos2(sc.x - 5.0, sc.y - 1.0), pos2(sc.x - 3.0, sc.y + 3.0)], lion_stroke);
-        ui.painter().line_segment([pos2(sc.x + 5.0, sc.y - 1.0), pos2(sc.x + 3.0, sc.y + 3.0)], lion_stroke);
-        ui.painter().line_segment([pos2(sc.x - 4.0, sc.y - 7.0), pos2(sc.x - 2.0, sc.y - 5.0)], lion_stroke);
-        ui.painter().line_segment([pos2(sc.x + 4.0, sc.y - 7.0), pos2(sc.x + 2.0, sc.y - 5.0)], lion_stroke);
-        ui.painter().line_segment([pos2(sc.x, sc.y - 7.0), pos2(sc.x, sc.y - 4.0)], lion_stroke);
+            // Get custom profiles sorted alphabetically
+            let mut custom_profiles: Vec<String> = config.profiles.keys()
+                .filter(|k| *k != "default")
+                .cloned()
+                .collect();
+            custom_profiles.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
 
-        // Gap ~14px
-        ui.add_space(14.0);
+            // In right-to-left layout, drawing in reverse order preserves left-to-right alphabetical sequence
+            for p_name in custom_profiles.iter().rev() {
+                let is_active = config.active_profile == *p_name;
+                let is_brave = p_name.to_lowercase().contains("brave");
 
-        // 1. 2x2 Grid Icon
-        let (grid_rect, grid_res) = ui.allocate_exact_size(vec2(23.0, 23.0), egui::Sense::click());
-        if grid_res.hovered() {
-            ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
-        }
-        let grid_center = grid_rect.center();
-        let gc = grid_center;
-        let teal_color = Color32::from_rgb(0, 212, 200);
+                let (p_rect, p_res) = ui.allocate_exact_size(vec2(23.0, 23.0), egui::Sense::click());
+                if p_res.hovered() {
+                    ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
+                }
 
-        let sq_size = 8.0;
-        let sq_half = sq_size / 2.0;
-        let gap = 3.0;
-        let r = 1.5;
+                let mut delete_clicked = false;
 
-        let draw_sq = |painter: &egui::Painter, center_pos: egui::Pos2| {
-            let rect = Rect::from_center_size(center_pos, vec2(sq_size, sq_size));
-            painter.rect_filled(rect, r, teal_color);
-        };
+                if is_active {
+                    // Delete/Close button geometry
+                    let delete_rect = Rect::from_center_size(pos2(p_rect.max.x - 3.0, p_rect.min.y + 3.0), vec2(12.0, 12.0));
+                    let delete_id = ui.make_persistent_id(format!("del_prof_{}", p_name));
+                    let delete_res = ui.interact(delete_rect, delete_id, egui::Sense::click());
 
-        draw_sq(ui.painter(), pos2(gc.x - sq_half - gap / 2.0, gc.y - sq_half - gap / 2.0));
-        draw_sq(ui.painter(), pos2(gc.x + sq_half + gap / 2.0, gc.y - sq_half - gap / 2.0));
-        draw_sq(ui.painter(), pos2(gc.x - sq_half - gap / 2.0, gc.y + sq_half + gap / 2.0));
-        draw_sq(ui.painter(), pos2(gc.x + sq_half + gap / 2.0, gc.y + sq_half + gap / 2.0));
+                    if delete_res.hovered() {
+                        ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
+                    }
 
-        // Active State: Teal underline bar (2px tall, full icon width, 4px below icon)
-        let icon_w = 2.0 * sq_size + gap;
-        let bar_y = gc.y + sq_size + gap / 2.0 + 4.0;
-        let bar_left = gc.x - icon_w / 2.0;
-        let bar_right = gc.x + icon_w / 2.0;
-        ui.painter().line_segment(
-            [pos2(bar_left, bar_y), pos2(bar_right, bar_y)],
-            Stroke::new(2.0, teal_color),
-        );
-    });
+                    if delete_res.clicked() {
+                        engine.delete_profile(p_name);
+                        delete_clicked = true;
+                    }
+
+                    let pc = p_rect.center();
+
+                    if is_brave {
+                        let sc = pc;
+                        let mut shield_pts = Vec::new();
+                        shield_pts.push(pos2(sc.x - 10.0, sc.y - 10.0));
+                        shield_pts.push(pos2(sc.x + 10.0, sc.y - 10.0));
+                        shield_pts.push(pos2(sc.x + 10.0, sc.y + 1.0));
+                        shield_pts.push(pos2(sc.x + 5.0, sc.y + 8.0));
+                        shield_pts.push(pos2(sc.x, sc.y + 11.5));
+                        shield_pts.push(pos2(sc.x - 5.0, sc.y + 8.0));
+                        shield_pts.push(pos2(sc.x - 10.0, sc.y + 1.0));
+
+                        let shield_fill = if p_res.hovered() {
+                            Color32::from_rgb(251, 146, 60)
+                        } else {
+                            Color32::from_rgb(249, 115, 22)
+                        };
+                        ui.painter().add(egui::Shape::convex_polygon(shield_pts, shield_fill, Stroke::NONE));
+
+                        let lion_stroke = Stroke::new(1.2, Color32::WHITE);
+                        ui.painter().line_segment([pos2(sc.x, sc.y - 2.0), pos2(sc.x, sc.y + 3.0)], lion_stroke);
+                        ui.painter().line_segment([pos2(sc.x - 2.0, sc.y + 3.0), pos2(sc.x + 2.0, sc.y + 3.0)], lion_stroke);
+                        ui.painter().line_segment([pos2(sc.x - 4.0, sc.y - 4.0), pos2(sc.x, sc.y - 2.0)], lion_stroke);
+                        ui.painter().line_segment([pos2(sc.x + 4.0, sc.y - 4.0), pos2(sc.x, sc.y - 2.0)], lion_stroke);
+                        ui.painter().line_segment([pos2(sc.x - 5.0, sc.y - 1.0), pos2(sc.x - 3.0, sc.y + 3.0)], lion_stroke);
+                        ui.painter().line_segment([pos2(sc.x + 5.0, sc.y - 1.0), pos2(sc.x + 3.0, sc.y + 3.0)], lion_stroke);
+                        ui.painter().line_segment([pos2(sc.x - 4.0, sc.y - 7.0), pos2(sc.x - 2.0, sc.y - 5.0)], lion_stroke);
+                        ui.painter().line_segment([pos2(sc.x + 4.0, sc.y - 7.0), pos2(sc.x + 2.0, sc.y - 5.0)], lion_stroke);
+                        ui.painter().line_segment([pos2(sc.x, sc.y - 7.0), pos2(sc.x, sc.y - 4.0)], lion_stroke);
+                    } else {
+                        let initial = p_name.chars().next().unwrap_or('?').to_uppercase().to_string();
+                        let circle_color = if is_active {
+                            Color32::from_rgb(0x1a, 0x1a, 0x1a)
+                        } else if p_res.hovered() {
+                            Color32::from_rgb(0x2a, 0x2a, 0x2a)
+                        } else {
+                            Color32::from_rgb(0x22, 0x22, 0x22)
+                        };
+                        let border_color = if is_active {
+                            Color32::from_rgb(0, 212, 200)
+                        } else if p_res.hovered() {
+                            Color32::from_rgb(0x88, 0x88, 0x88)
+                        } else {
+                            Color32::from_rgb(0x44, 0x44, 0x44)
+                        };
+
+                        ui.painter().circle(pc, 11.5, circle_color, Stroke::new(1.0, border_color));
+
+                        let text_color = if is_active {
+                            Color32::from_rgb(0, 212, 200)
+                        } else {
+                            Color32::WHITE
+                        };
+                        ui.painter().text(
+                            pos2(pc.x, pc.y - 0.5),
+                            egui::Align2::CENTER_CENTER,
+                            initial,
+                            egui::FontId::proportional(11.0),
+                            text_color,
+                        );
+                    }
+
+                    // Draw close/delete button overlay (only on active profile hover/interact)
+                    let is_profile_hovered = p_res.hovered() || delete_res.hovered();
+                    let del_circle_color = if delete_res.hovered() {
+                        Color32::from_rgb(239, 68, 68) // Bright red
+                    } else if is_profile_hovered {
+                        Color32::from_rgb(185, 28, 28) // Muted red
+                    } else {
+                        Color32::from_rgb(63, 63, 70) // Gray
+                    };
+
+                    ui.painter().circle_filled(delete_rect.center(), 5.0, del_circle_color);
+                    let cross_stroke = Stroke::new(1.0, Color32::WHITE);
+                    let dc = delete_rect.center();
+                    ui.painter().line_segment([pos2(dc.x - 2.0, dc.y - 2.0), pos2(dc.x + 2.0, dc.y + 2.0)], cross_stroke);
+                    ui.painter().line_segment([pos2(dc.x - 2.0, dc.y + 2.0), pos2(dc.x + 2.0, dc.y - 2.0)], cross_stroke);
+
+                    let bar_y = pc.y + 11.5 + 4.0;
+                    let bar_left = pc.x - 11.5;
+                    let bar_right = pc.x + 11.5;
+                    ui.painter().line_segment(
+                        [pos2(bar_left, bar_y), pos2(bar_right, bar_y)],
+                        Stroke::new(2.0, Color32::from_rgb(0, 212, 200)),
+                    );
+                } else {
+                    let pc = p_rect.center();
+
+                    if is_brave {
+                        let sc = pc;
+                        let mut shield_pts = Vec::new();
+                        shield_pts.push(pos2(sc.x - 10.0, sc.y - 10.0));
+                        shield_pts.push(pos2(sc.x + 10.0, sc.y - 10.0));
+                        shield_pts.push(pos2(sc.x + 10.0, sc.y + 1.0));
+                        shield_pts.push(pos2(sc.x + 5.0, sc.y + 8.0));
+                        shield_pts.push(pos2(sc.x, sc.y + 11.5));
+                        shield_pts.push(pos2(sc.x - 5.0, sc.y + 8.0));
+                        shield_pts.push(pos2(sc.x - 10.0, sc.y + 1.0));
+
+                        let shield_fill = if p_res.hovered() {
+                            Color32::from_rgb(251, 146, 60)
+                        } else {
+                            Color32::from_rgb(249, 115, 22)
+                        };
+                        ui.painter().add(egui::Shape::convex_polygon(shield_pts, shield_fill, Stroke::NONE));
+
+                        let lion_stroke = Stroke::new(1.2, Color32::WHITE);
+                        ui.painter().line_segment([pos2(sc.x, sc.y - 2.0), pos2(sc.x, sc.y + 3.0)], lion_stroke);
+                        ui.painter().line_segment([pos2(sc.x - 2.0, sc.y + 3.0), pos2(sc.x + 2.0, sc.y + 3.0)], lion_stroke);
+                        ui.painter().line_segment([pos2(sc.x - 4.0, sc.y - 4.0), pos2(sc.x, sc.y - 2.0)], lion_stroke);
+                        ui.painter().line_segment([pos2(sc.x + 4.0, sc.y - 4.0), pos2(sc.x, sc.y - 2.0)], lion_stroke);
+                        ui.painter().line_segment([pos2(sc.x - 5.0, sc.y - 1.0), pos2(sc.x - 3.0, sc.y + 3.0)], lion_stroke);
+                        ui.painter().line_segment([pos2(sc.x + 5.0, sc.y - 1.0), pos2(sc.x + 3.0, sc.y + 3.0)], lion_stroke);
+                        ui.painter().line_segment([pos2(sc.x - 4.0, sc.y - 7.0), pos2(sc.x - 2.0, sc.y - 5.0)], lion_stroke);
+                        ui.painter().line_segment([pos2(sc.x + 4.0, sc.y - 7.0), pos2(sc.x + 2.0, sc.y - 5.0)], lion_stroke);
+                        ui.painter().line_segment([pos2(sc.x, sc.y - 7.0), pos2(sc.x, sc.y - 4.0)], lion_stroke);
+                    } else {
+                        let initial = p_name.chars().next().unwrap_or('?').to_uppercase().to_string();
+                        let circle_color = if p_res.hovered() {
+                            Color32::from_rgb(0x2a, 0x2a, 0x2a)
+                        } else {
+                            Color32::from_rgb(0x22, 0x22, 0x22)
+                        };
+                        let border_color = if p_res.hovered() {
+                            Color32::from_rgb(0x88, 0x88, 0x88)
+                        } else {
+                            Color32::from_rgb(0x44, 0x44, 0x44)
+                        };
+
+                        ui.painter().circle(pc, 11.5, circle_color, Stroke::new(1.0, border_color));
+
+                        ui.painter().text(
+                            pos2(pc.x, pc.y - 0.5),
+                            egui::Align2::CENTER_CENTER,
+                            initial,
+                            egui::FontId::proportional(11.0),
+                            Color32::WHITE,
+                        );
+                    }
+                }
+
+                if p_res.clicked() && !delete_clicked {
+                    engine.select_profile(p_name);
+                }
+
+                ui.add_space(14.0);
+            }
+
+            // 1. 2x2 Grid Icon
+            let is_default_active = config.active_profile == "default";
+            let (grid_rect, grid_res) = ui.allocate_exact_size(vec2(23.0, 23.0), egui::Sense::click());
+            if grid_res.hovered() {
+                ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
+            }
+
+            if grid_res.clicked() {
+                engine.select_profile("default");
+            }
+
+            let gc = grid_rect.center();
+            let grid_color = if is_default_active {
+                Color32::from_rgb(0, 212, 200)
+            } else if grid_res.hovered() {
+                Color32::from_rgb(200, 200, 200)
+            } else {
+                Color32::WHITE
+            };
+
+            let sq_size = 8.0;
+            let sq_half = sq_size / 2.0;
+            let gap = 3.0;
+            let r = 1.5;
+
+            let draw_sq = |painter: &egui::Painter, center_pos: egui::Pos2| {
+                let rect = Rect::from_center_size(center_pos, vec2(sq_size, sq_size));
+                painter.rect_filled(rect, r, grid_color);
+            };
+
+            draw_sq(ui.painter(), pos2(gc.x - sq_half - gap / 2.0, gc.y - sq_half - gap / 2.0));
+            draw_sq(ui.painter(), pos2(gc.x + sq_half + gap / 2.0, gc.y - sq_half - gap / 2.0));
+            draw_sq(ui.painter(), pos2(gc.x - sq_half - gap / 2.0, gc.y + sq_half + gap / 2.0));
+            draw_sq(ui.painter(), pos2(gc.x + sq_half + gap / 2.0, gc.y + sq_half + gap / 2.0));
+
+            // Active State: Underline
+            if is_default_active {
+                let icon_w = 2.0 * sq_size + gap;
+                let bar_y = gc.y + sq_size + gap / 2.0 + 4.0;
+                let bar_left = gc.x - icon_w / 2.0;
+                let bar_right = gc.x + icon_w / 2.0;
+                ui.painter().line_segment(
+                    [pos2(bar_left, bar_y), pos2(bar_right, bar_y)],
+                    Stroke::new(2.0, Color32::from_rgb(0, 212, 200)),
+                );
+            }
+        });
+    }
 
     if back_clicked {
         *active_view = ActiveView::EmptyState;
@@ -834,7 +1016,204 @@ pub fn show(
                 );
             });
     }
+
+    // ── 7. Linux Application Selector Modal ──────────────────────────────────
+    let show_app_modal = SHOW_ADD_APP_MODAL.with(|s| *s.borrow());
+    if show_app_modal {
+        egui::Area::new(egui::Id::new("add_application_modal"))
+            .order(egui::Order::Foreground)
+            .show(ctx, |ui| {
+                let screen_r = ctx.screen_rect();
+                // Dark overlay
+                ui.painter().rect_filled(screen_r, 0.0, Color32::from_rgba_unmultiplied(0, 0, 0, 180));
+
+                let card_w = 480.0;
+                let card_h = 520.0_f32.min(screen_r.height() - 40.0);
+                let card_rect = Rect::from_center_size(screen_r.center(), vec2(card_w, card_h));
+
+                // Draw premium dark container
+                ui.painter().rect_filled(card_rect, 4.0, Color32::from_rgb(0x16, 0x16, 0x16));
+                ui.painter().rect_stroke(card_rect, 4.0, Stroke::new(1.0, Color32::from_rgb(0x2d, 0x2d, 0x2d)));
+                theme::draw_tech_corners(ui.painter(), card_rect, theme::accent_color(ctx), 8.0);
+
+                let mut modal_ui = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(card_rect.shrink(20.0))
+                );
+
+                modal_ui.vertical(|ui| {
+                    // Title and Close Button
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new("ADD APPLICATION PROFILE")
+                                .color(Color32::WHITE)
+                                .size(13.0)
+                                .strong()
+                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let (close_rect, close_res) = ui.allocate_exact_size(vec2(16.0, 16.0), egui::Sense::click());
+                            if close_res.hovered() {
+                                ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
+                            }
+                            let close_color = if close_res.hovered() {
+                                Color32::from_rgb(0, 212, 200)
+                            } else {
+                                Color32::from_rgb(0x88, 0x88, 0x88)
+                            };
+                            let ccx = close_rect.center().x;
+                            let ccy = close_rect.center().y;
+                            ui.painter().line_segment(
+                                [pos2(ccx - 4.5, ccy - 4.5), pos2(ccx + 4.5, ccy + 4.5)],
+                                Stroke::new(1.5, close_color),
+                            );
+                            ui.painter().line_segment(
+                                [pos2(ccx - 4.5, ccy + 4.5), pos2(ccx + 4.5, ccy - 4.5)],
+                                Stroke::new(1.5, close_color),
+                            );
+                            if close_res.clicked() {
+                                SHOW_ADD_APP_MODAL.with(|s| *s.borrow_mut() = false);
+                            }
+                        });
+                    });
+
+                    ui.add_space(12.0);
+
+                    // Search box
+                    let mut query = APP_SEARCH_QUERY.with(|q| q.borrow().clone());
+                    ui.horizontal(|ui| {
+                        ui.add_space(2.0);
+                        let search_response = ui.add(
+                            egui::TextEdit::singleline(&mut query)
+                                .hint_text("Search applications...")
+                                .desired_width(ui.available_width() - 4.0)
+                                .margin(egui::vec2(8.0, 6.0))
+                        );
+                        
+                        // Set focus to the search field automatically on popup
+                        let focused = FOCUS_REQUESTED.with(|f| *f.borrow());
+                        if !focused {
+                            search_response.request_focus();
+                            FOCUS_REQUESTED.with(|f| *f.borrow_mut() = true);
+                        }
+                    });
+                    APP_SEARCH_QUERY.with(|q| *q.borrow_mut() = query.clone());
+
+                    ui.add_space(12.0);
+
+                    // Get apps and filter
+                    let scanned_opt = SCANNED_APPS.with(|apps| apps.borrow().clone());
+                    if let Some(scanned_apps) = scanned_opt {
+                        let query_lower = query.to_lowercase();
+                        let filtered_apps: Vec<_> = scanned_apps.into_iter()
+                            .filter(|app| {
+                                app.name.to_lowercase().contains(&query_lower) ||
+                                app.exec.to_lowercase().contains(&query_lower)
+                            })
+                            .collect();
+
+                        if filtered_apps.is_empty() {
+                            ui.vertical_centered(|ui| {
+                                ui.add_space(40.0);
+                                ui.label(
+                                    RichText::new("No applications found")
+                                        .color(theme::muted_text(ctx))
+                                        .size(12.0)
+                                );
+                            });
+                        } else {
+                            let list_h = ui.available_height();
+                            egui::ScrollArea::vertical()
+                                .id_salt("add_app_scroll")
+                                .max_height(list_h)
+                                .auto_shrink([false; 2])
+                                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                                .show(ui, |ui| {
+                                    ui.spacing_mut().item_spacing = egui::vec2(0.0, 4.0);
+                                    for app in filtered_apps {
+                                        let item_w = ui.available_width();
+                                        let item_h = 42.0;
+                                        let (item_rect, item_res) = ui.allocate_exact_size(vec2(item_w, item_h), egui::Sense::click());
+                                        
+                                        if item_res.hovered() {
+                                            ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
+                                        }
+
+                                        let is_hovered = item_res.hovered();
+                                        let bg_color = if is_hovered {
+                                            Color32::from_rgb(0x22, 0x22, 0x22)
+                                        } else {
+                                            Color32::from_rgb(0x1c, 0x1c, 0x1c)
+                                        };
+                                        ui.painter().rect_filled(item_rect, 2.0, bg_color);
+                                        ui.painter().rect_stroke(item_rect, 2.0, Stroke::new(1.0, Color32::from_rgb(0x2d, 0x2d, 0x2d)));
+
+                                        // Draw app icon or fallback badge
+                                        let is_brave = app.name.to_lowercase().contains("brave");
+                                        let icon_center = pos2(item_rect.min.x + 24.0, item_rect.center().y);
+                                        if is_brave {
+                                            let sc = icon_center;
+                                            let mut shield_pts = Vec::new();
+                                            shield_pts.push(pos2(sc.x - 7.0, sc.y - 7.0));
+                                            shield_pts.push(pos2(sc.x + 7.0, sc.y - 7.0));
+                                            shield_pts.push(pos2(sc.x + 7.0, sc.y + 0.5));
+                                            shield_pts.push(pos2(sc.x + 3.5, sc.y + 5.5));
+                                            shield_pts.push(pos2(sc.x, sc.y + 8.0));
+                                            shield_pts.push(pos2(sc.x - 3.5, sc.y + 5.5));
+                                            shield_pts.push(pos2(sc.x - 7.0, sc.y + 0.5));
+                                            ui.painter().add(egui::Shape::convex_polygon(shield_pts, Color32::from_rgb(249, 115, 22), Stroke::NONE));
+                                        } else {
+                                            let initial = app.name.chars().next().unwrap_or('?').to_uppercase().to_string();
+                                            ui.painter().circle(icon_center, 9.0, Color32::from_rgb(0x2d, 0x2d, 0x2d), Stroke::new(1.0, Color32::from_rgb(0x44, 0x44, 0x44)));
+                                            ui.painter().text(
+                                                pos2(icon_center.x, icon_center.y - 0.5),
+                                                egui::Align2::CENTER_CENTER,
+                                                initial,
+                                                egui::FontId::proportional(9.0),
+                                                Color32::WHITE,
+                                            );
+                                        }
+
+                                        // Text details
+                                        ui.painter().text(
+                                            pos2(item_rect.min.x + 45.0, item_rect.center().y - 6.0),
+                                            egui::Align2::LEFT_CENTER,
+                                            &app.name,
+                                            egui::FontId::proportional(12.0),
+                                            Color32::WHITE,
+                                        );
+
+                                        ui.painter().text(
+                                            pos2(item_rect.min.x + 45.0, item_rect.center().y + 8.0),
+                                            egui::Align2::LEFT_CENTER,
+                                            &format!("Executable: {}", app.exec),
+                                            egui::FontId::proportional(9.5),
+                                            theme::muted_text(ctx),
+                                        );
+
+                                        if item_res.clicked() {
+                                            // 1. Add Profile to config
+                                            engine.add_profile(&app.name);
+                                            // 2. Update its app bindings
+                                            engine.update_app_bindings(&app.name, &app.exec);
+                                            // 3. Switch to it as the active profile
+                                            engine.select_profile(&app.name);
+                                            // 4. Hide modal
+                                            SHOW_ADD_APP_MODAL.with(|s| *s.borrow_mut() = false);
+                                        }
+                                    }
+                                });
+                        }
+                    } else {
+                        ui.vertical_centered(|ui| {
+                            ui.add_space(40.0);
+                            ui.label("Loading applications...");
+                        });
+                    }
+                });
+            });
+    }
 }
+
 
 // ── BUTTONS TAB IMPLEMENTATION ───────────────────────────────────────────────
 fn show_buttons_tab(
