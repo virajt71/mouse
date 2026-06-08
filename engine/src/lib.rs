@@ -37,6 +37,8 @@ struct EngineInner {
     running: AtomicBool,
     current_profile: Mutex<String>,
     active_mappings: Mutex<HashMap<String, String>>,
+    active_profile_shared: Arc<Mutex<String>>,
+    last_detected_exe: Mutex<String>,
 
     // Shared state variables with MouseHook
     blocked_buttons_arc: Arc<Mutex<Vec<Key>>>,
@@ -129,8 +131,10 @@ impl Engine {
             hid_clients: Mutex::new(Vec::new()),
             selected_device_idx: Mutex::new(0),
             running: AtomicBool::new(false),
-            current_profile: Mutex::new(current_profile),
+            current_profile: Mutex::new(current_profile.clone()),
             active_mappings: Mutex::new(HashMap::new()),
+            active_profile_shared: Arc::new(Mutex::new(current_profile)),
+            last_detected_exe: Mutex::new(String::new()),
 
             blocked_buttons_arc: Arc::new(Mutex::new(Vec::new())),
             invert_vscroll_arc: Arc::new(AtomicBool::new(invert_vscroll)),
@@ -178,7 +182,8 @@ impl Engine {
             (target, mappings)
         };
 
-        *self.inner.current_profile.lock().unwrap() = profile_name;
+        *self.inner.current_profile.lock().unwrap() = profile_name.clone();
+        *self.inner.active_profile_shared.lock().unwrap() = profile_name;
         *self.inner.active_mappings.lock().unwrap() = mappings.clone();
 
         let (blocked, hscroll_blocked) = compute_blocked_buttons(&mappings);
@@ -466,29 +471,36 @@ impl Engine {
             let target = cfg.get_profile_for_app(&exe_name);
             let mappings = cfg.get_resolved_mappings(&target);
             (target, mappings)
-        };
+        }; // cfg lock dropped here
 
+        let mut last_exe = self.inner.last_detected_exe.lock().unwrap();
         let mut current_profile = self.inner.current_profile.lock().unwrap();
+        
+        // Skip only if BOTH profile AND exe unchanged
+        if *current_profile == profile_name && *last_exe == exe_name {
+            return;
+        }
+        
+        *last_exe = exe_name.clone();
+        
         if *current_profile != profile_name {
-            log::info!("[Engine] App changed to {} -> switching to profile '{}'", exe_name, profile_name);
+            log::info!("[Engine] App {} → profile '{}'", exe_name, profile_name);
             *current_profile = profile_name.clone();
-
+            drop(current_profile); // release before config lock
+            drop(last_exe);
+            
             {
                 let mut cfg = self.inner.config.lock().unwrap();
-                cfg.active_profile = profile_name;
+                cfg.active_profile = profile_name.clone();
                 let _ = cfg.save();
+                self.increment_config_generation();
             }
-
-            // Refresh the active_mappings cache for the new profile
+            
+            *self.inner.active_profile_shared.lock().unwrap() = profile_name;
             *self.inner.active_mappings.lock().unwrap() = mappings.clone();
-
-            // Update filters for evdev blocking
             let (blocked, hscroll_blocked) = compute_blocked_buttons(&mappings);
-
             *self.inner.blocked_buttons_arc.lock().unwrap() = blocked;
             self.inner.block_hscroll_arc.store(hscroll_blocked, Ordering::SeqCst);
-
-            // Re-apply keyboard hooks for new profile mappings
             let _ = self.restart_keyboard_hooks();
         }
     }
@@ -1001,6 +1013,10 @@ impl Engine {
         self.inner.config.lock().unwrap().clone()
     }
 
+    pub fn active_profile_shared(&self) -> Arc<Mutex<String>> {
+        self.inner.active_profile_shared.clone()
+    }
+
     pub fn config_generation(&self) -> u64 {
         self.inner.config_generation.load(Ordering::Relaxed)
     }
@@ -1132,32 +1148,20 @@ impl Engine {
     }
 
     fn restart_keyboard_hooks(&self) -> anyhow::Result<()> {
-        log::info!("[Engine] restart_keyboard_hooks: locking keyboard_hooks...");
+        // Drop config lock before acquiring keyboard_hooks lock
+        let mappings = Arc::new(std::sync::Mutex::new(
+            self.inner.config.lock().unwrap().get_active_mappings()
+        ));
         let mut kb_hooks = self.inner.keyboard_hooks.lock().unwrap();
-        log::info!("[Engine] restart_keyboard_hooks: stopping existing hooks...");
-        for hook in kb_hooks.iter_mut() {
-            hook.stop();
-        }
+        for hook in kb_hooks.iter_mut() { hook.stop(); }
         kb_hooks.clear();
-
-        log::info!("[Engine] restart_keyboard_hooks: scanning for Logitech keyboards...");
-        let kb_paths = self::keyboard_hook::find_logitech_keyboards();
-        log::info!("[Engine] restart_keyboard_hooks: found {} keyboards, locking config...", kb_paths.len());
-        let mappings = Arc::new(std::sync::Mutex::new(self.inner.config.lock().unwrap().get_active_mappings()));
-
-        log::info!("[Engine] restart_keyboard_hooks: starting new hooks...");
+        let kb_paths = crate::keyboard_hook::find_logitech_keyboards();
         for path in kb_paths {
             let mut hook = KeyboardHook::new();
-            if hook.start(
-                path,
-                mappings.clone(),
-                self.inner.key_simulator.device(),
-                self.inner.key_simulator.clone(),
-            ).is_ok() {
+            if hook.start(path, mappings.clone(), self.inner.key_simulator.device(), self.inner.key_simulator.clone()).is_ok() {
                 kb_hooks.push(hook);
             }
         }
-        log::info!("[Engine] restart_keyboard_hooks: done!");
         Ok(())
     }
 

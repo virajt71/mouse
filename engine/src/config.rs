@@ -175,9 +175,7 @@ impl Config {
         if profile_name != "default" {
             if let Some(target_profile) = self.profiles.get(profile_name) {
                 for (k, v) in &target_profile.mappings {
-                    if v != "none" {
-                        resolved.insert(k.clone(), v.clone());
-                    }
+                    resolved.insert(k.clone(), v.clone()); // always override, explicit "none" = disabled
                 }
             }
         }
