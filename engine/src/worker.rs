@@ -9,6 +9,7 @@ pub struct DeviceStateUpdate {
     pub paired_devices: Vec<(String, String, bool)>, // (mac, name, is_connected)
     pub battery_pct: String,
     pub has_active_hidpp_battery: bool,
+    pub active_profile: String,
 }
 
 #[allow(dead_code)]
@@ -19,6 +20,7 @@ pub enum BackgroundTxCmd {
 
 pub fn spawn_background_worker(
     repaint_callback: impl Fn() + Send + Sync + 'static,
+    active_profile_ref: std::sync::Arc<std::sync::Mutex<String>>,
 ) -> (Sender<BackgroundTxCmd>, Receiver<DeviceStateUpdate>) {
     let (tx_cmd, rx_cmd) = channel::<BackgroundTxCmd>();
     let (tx_state, rx_state) = channel::<DeviceStateUpdate>();
@@ -127,6 +129,7 @@ pub fn spawn_background_worker(
                     "0".to_string()
                 };
 
+                let active_profile = active_profile_ref.lock().unwrap().clone();
                 let update = DeviceStateUpdate {
                     unifying_receiver_connected: unifying,
                     bolt_receiver_connected: bolt,
@@ -134,6 +137,7 @@ pub fn spawn_background_worker(
                     paired_devices: paired_devices.clone(),
                     battery_pct,
                     has_active_hidpp_battery: has_active_hidpp,
+                    active_profile,
                 };
 
                 let _ = tx_state.send(update);

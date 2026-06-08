@@ -171,6 +171,42 @@ fn clean_exec_command(raw_exec: &str) -> String {
     }
 }
 
+const PROC_NOISE: &[&str] = &[
+    "systemd", "kworker", "dbus-daemon", "Xorg", "Xwayland",
+    "pulseaudio", "pipewire", "wireplumber", "gdm", "lightdm",
+    "NetworkManager", "wpa_supplicant", "bluetoothd", "udisksd",
+    "upowerd", "packagekitd", "polkitd", "rsyslogd", "cron",
+];
+
+pub fn scan_running_processes() -> Vec<DesktopApp> {
+    let mut seen = std::collections::HashSet::new();
+    let mut apps = Vec::new();
+    if let Ok(entries) = std::fs::read_dir("/proc") {
+        for entry in entries.flatten() {
+            let fname = entry.file_name();
+            if !fname.to_string_lossy().chars().all(|c| c.is_ascii_digit()) { continue; }
+            let exe_link = entry.path().join("exe");
+            if let Ok(target) = std::fs::read_link(&exe_link) {
+                if let Some(basename) = target.file_name() {
+                    let exe = basename.to_string_lossy().to_string();
+                    if exe.starts_with('[') { continue; }
+                    if PROC_NOISE.contains(&exe.as_str()) { continue; }
+                    if seen.insert(exe.clone()) {
+                        apps.push(DesktopApp {
+                            name: exe.clone(),
+                            exec: exe,
+                            icon: String::new(),
+                            path: String::new(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    apps
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
