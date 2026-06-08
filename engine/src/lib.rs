@@ -24,6 +24,15 @@ use self::hidpp::{HidppClient, HidppEvent};
 use self::mouse_hook::{MouseHook, MouseHookEvent};
 use self::keyboard_hook::KeyboardHook;
 
+struct GestureState {
+    delta_x: f32,
+    delta_y: f32,
+    last_move_at: Instant,
+    cooldown_until: Instant,
+    input_source: Option<String>,
+    button: Option<String>,
+}
+
 struct EngineInner {
     config: Mutex<Config>,
     config_generation: AtomicU64,
@@ -50,12 +59,7 @@ struct EngineInner {
     // Gesture tracking state
     gesture_tracking: AtomicBool,
     gesture_triggered: AtomicBool,
-    gesture_delta_x: Mutex<f32>,
-    gesture_delta_y: Mutex<f32>,
-    gesture_last_move_at: Mutex<Instant>,
-    gesture_cooldown_until: Mutex<Instant>,
-    gesture_input_source: Mutex<Option<String>>,
-    gesture_button: Mutex<Option<String>>,
+    gesture_state: Mutex<GestureState>,
 
     // HScroll tracking state
     hscroll_accum_left: Mutex<f32>,
@@ -144,12 +148,14 @@ impl Engine {
 
             gesture_tracking: AtomicBool::new(false),
             gesture_triggered: AtomicBool::new(false),
-            gesture_delta_x: Mutex::new(0.0),
-            gesture_delta_y: Mutex::new(0.0),
-            gesture_last_move_at: Mutex::new(Instant::now()),
-            gesture_cooldown_until: Mutex::new(Instant::now()),
-            gesture_input_source: Mutex::new(None),
-            gesture_button: Mutex::new(None),
+            gesture_state: Mutex::new(GestureState {
+                delta_x: 0.0,
+                delta_y: 0.0,
+                last_move_at: Instant::now(),
+                cooldown_until: Instant::now(),
+                input_source: None,
+                button: None,
+            }),
 
             hscroll_accum_left: Mutex::new(0.0),
             hscroll_accum_right: Mutex::new(0.0),
@@ -413,21 +419,32 @@ impl Engine {
                     }
 
                     // Poll all clients
-                    let mut clients = inner.hid_clients.lock().unwrap();
                     let mut all_events = Vec::new();
-                    for client in clients.iter_mut() {
-                        if let Ok(evs) = client.poll_events() {
-                            for ev in evs {
-                                all_events.push(ev);
+                    let has_clients = {
+                        let mut clients = inner.hid_clients.lock().unwrap();
+                        for client in clients.iter_mut() {
+                            if let Ok(evs) = client.poll_events() {
+                                for ev in evs {
+                                    all_events.push(ev);
+                                }
                             }
                         }
-                    }
+                        !clients.is_empty()
+                    };
 
                     for ev in all_events {
                         engine_clone.handle_hid_event(ev);
                     }
 
-                    thread::sleep(Duration::from_millis(5));
+                    if has_clients {
+                        if inner.gesture_active_arc.load(Ordering::Relaxed) {
+                            thread::sleep(Duration::from_millis(5));
+                        } else {
+                            thread::sleep(Duration::from_millis(20));
+                        }
+                    } else {
+                        thread::sleep(Duration::from_millis(100));
+                    }
                 }
             })?;
 
@@ -545,12 +562,12 @@ impl Engine {
                 if gestures_enabled {
                     if down {
                         self.handle_gesture_down();
-                        *self.inner.gesture_button.lock().unwrap() = Some(btn_key.to_string());
+                        self.inner.gesture_state.lock().unwrap().button = Some(btn_key.to_string());
                     } else {
                         // Check if this button was the one that started the gesture
                         let is_current = {
-                            let gb = self.inner.gesture_button.lock().unwrap();
-                            gb.as_ref() == Some(&btn_key.to_string())
+                            let state = self.inner.gesture_state.lock().unwrap();
+                            state.button.as_ref() == Some(&btn_key.to_string())
                         };
                         if is_current {
                             self.handle_gesture_up();
@@ -667,7 +684,7 @@ impl Engine {
             }
             HidppEvent::GestureMove { dx, dy } => {
                 let enabled = {
-                    let btn_key = self.inner.gesture_button.lock().unwrap().clone();
+                    let btn_key = self.inner.gesture_state.lock().unwrap().button.clone();
                     let active = self.inner.active_mappings.lock().unwrap();
                     let enabled_key = match btn_key.as_deref() {
                         Some("middle")   => "middle_gesture_enabled",
@@ -717,10 +734,13 @@ impl Engine {
         self.inner.gesture_active_arc.store(true, Ordering::SeqCst);
         self.inner.gesture_tracking.store(true, Ordering::SeqCst);
         self.inner.gesture_triggered.store(false, Ordering::SeqCst);
-        *self.inner.gesture_delta_x.lock().unwrap() = 0.0;
-        *self.inner.gesture_delta_y.lock().unwrap() = 0.0;
-        *self.inner.gesture_last_move_at.lock().unwrap() = Instant::now();
-        *self.inner.gesture_input_source.lock().unwrap() = None;
+        {
+            let mut state = self.inner.gesture_state.lock().unwrap();
+            state.delta_x = 0.0;
+            state.delta_y = 0.0;
+            state.last_move_at = Instant::now();
+            state.input_source = None;
+        }
     }
 
     fn handle_gesture_up(&self) {
@@ -733,8 +753,8 @@ impl Engine {
 
         if !triggered {
             let btn_key = {
-                let gb = self.inner.gesture_button.lock().unwrap();
-                gb.clone().unwrap_or_else(|| "gesture".to_string())
+                let state = self.inner.gesture_state.lock().unwrap();
+                state.button.clone().unwrap_or_else(|| "gesture".to_string())
             };
 
             let mapping = self.inner.active_mappings.lock().unwrap()
@@ -744,8 +764,11 @@ impl Engine {
                 self.execute_engine_action(action_id);
             }
         }
-        *self.inner.gesture_input_source.lock().unwrap() = None;
-        *self.inner.gesture_button.lock().unwrap() = None;
+        {
+            let mut state = self.inner.gesture_state.lock().unwrap();
+            state.input_source = None;
+            state.button = None;
+        }
     }
 
     fn handle_gesture_move(&self, dx: i16, dy: i16, source: &str) {
@@ -756,59 +779,50 @@ impl Engine {
 
         let now = Instant::now();
 
+        let mut state = self.inner.gesture_state.lock().unwrap();
+
         // 1. Cooldown check
-        {
-            let cooldown_until = self.inner.gesture_cooldown_until.lock().unwrap();
-            if now < *cooldown_until {
-                return;
-            }
+        if now < state.cooldown_until {
+            return;
         }
 
         // 2. Segment timeout check
-        {
-            let mut last_move = self.inner.gesture_last_move_at.lock().unwrap();
-            let idle_time = now.duration_since(*last_move);
-            if idle_time > timeout {
-                log::debug!("[Engine] Segment timeout, resetting accumulator");
-                self.inner.gesture_tracking.store(true, Ordering::SeqCst);
-                self.inner.gesture_triggered.store(false, Ordering::SeqCst);
-                *self.inner.gesture_delta_x.lock().unwrap() = 0.0;
-                *self.inner.gesture_delta_y.lock().unwrap() = 0.0;
-            }
-            *last_move = now;
+        let idle_time = now.duration_since(state.last_move_at);
+        if idle_time > timeout {
+            log::debug!("[Engine] Segment timeout, resetting accumulator");
+            self.inner.gesture_tracking.store(true, Ordering::SeqCst);
+            self.inner.gesture_triggered.store(false, Ordering::SeqCst);
+            state.delta_x = 0.0;
+            state.delta_y = 0.0;
         }
+        state.last_move_at = now;
 
         // 3. Source locking
-        {
-            let mut input_source = self.inner.gesture_input_source.lock().unwrap();
-            if let Some(ref active_source) = *input_source {
-                if active_source == "evdev" && source == "hid_rawxy" {
-                    log::debug!("[Engine] Promoting source to hid_rawxy");
-                    *input_source = Some(source.to_string());
-                    *self.inner.gesture_delta_x.lock().unwrap() = 0.0;
-                    *self.inner.gesture_delta_y.lock().unwrap() = 0.0;
-                } else if active_source != source {
-                    return;
-                }
-            } else {
-                *input_source = Some(source.to_string());
+        if let Some(ref active_source) = state.input_source {
+            if active_source == "evdev" && source == "hid_rawxy" {
+                log::debug!("[Engine] Promoting source to hid_rawxy");
+                state.input_source = Some(source.to_string());
+                state.delta_x = 0.0;
+                state.delta_y = 0.0;
+            } else if active_source != source {
+                return;
             }
+        } else {
+            state.input_source = Some(source.to_string());
         }
 
         if !self.inner.gesture_tracking.load(Ordering::SeqCst) {
             self.inner.gesture_tracking.store(true, Ordering::SeqCst);
             self.inner.gesture_triggered.store(false, Ordering::SeqCst);
-            *self.inner.gesture_delta_x.lock().unwrap() = 0.0;
-            *self.inner.gesture_delta_y.lock().unwrap() = 0.0;
+            state.delta_x = 0.0;
+            state.delta_y = 0.0;
         }
 
-        let (accum_x, accum_y) = {
-            let mut gx = self.inner.gesture_delta_x.lock().unwrap();
-            let mut gy = self.inner.gesture_delta_y.lock().unwrap();
-            *gx += dx as f32;
-            *gy += dy as f32;
-            (*gx, *gy)
-        };
+        state.delta_x += dx as f32;
+        state.delta_y += dy as f32;
+
+        let accum_x = state.delta_x;
+        let accum_y = state.delta_y;
 
         let abs_x = accum_x.abs();
         let abs_y = accum_y.abs();
@@ -844,12 +858,12 @@ impl Engine {
 
         if let Some(action_key) = gesture_action {
             self.inner.gesture_triggered.store(true, Ordering::SeqCst);
-            *self.inner.gesture_cooldown_until.lock().unwrap() = now + cooldown;
+            state.cooldown_until = now + cooldown;
 
-            let btn_key = {
-                let gb = self.inner.gesture_button.lock().unwrap();
-                gb.clone().unwrap_or_else(|| "gesture".to_string())
-            };
+            let btn_key = state.button.clone().unwrap_or_else(|| "gesture".to_string());
+
+            // Drop state lock before calling potentially blocking or locking operations (execute_engine_action, active_mappings, etc.)
+            drop(state);
 
             let resolved_action_key = if btn_key == "gesture" {
                 action_key.to_string()

@@ -111,7 +111,7 @@ pub fn get_button_keys(btn: CustomizingButton) -> (&'static str, &'static str, &
 
 pub fn mapping_to_action(btn: CustomizingButton, mappings: &std::collections::HashMap<String, String>) -> ButtonAction {
     let (base_key, gesture_enabled_key, _, _, _, _) = get_button_keys(btn);
-    let val = mappings.get(base_key).cloned().unwrap_or_else(|| "none".to_string());
+    let val = mappings.get(base_key).map(|s| s.as_str()).unwrap_or("none");
     let gesture_enabled = mappings.get(gesture_enabled_key).map(|s| s == "true").unwrap_or(false);
 
     // Check gesture mode via explicit flag, legacy placeholder, or any configured direction.
@@ -120,7 +120,7 @@ pub fn mapping_to_action(btn: CustomizingButton, mappings: &std::collections::Ha
         || {
             let (_, _, up_k, down_k, left_k, right_k) = get_button_keys(btn);
             [up_k, down_k, left_k, right_k].iter().any(|k| {
-                mappings.get(*k).map(|v| v != "none").unwrap_or(false)
+                mappings.get(*k).map(|v| v.as_str() != "none").unwrap_or(false)
             })
         };
 
@@ -131,7 +131,7 @@ pub fn mapping_to_action(btn: CustomizingButton, mappings: &std::collections::Ha
     } else if val.starts_with("custom:") {
         ButtonAction::Keystroke
     } else {
-        match val.as_str() {
+        match val {
             "mouse_middle_click" => ButtonAction::MiddleClick,
             "switch_scroll_mode" => ButtonAction::ModeShift,
             "mouse_forward_click" => ButtonAction::Forward,
@@ -957,8 +957,8 @@ pub fn show(
                     if is_valid_combo(&recorded) {
                         // Save the shortcut safely
                         let profile_name = &config.active_profile;
-                        if let Some(profile) = config.profiles.get(profile_name).cloned().or_else(|| config.profiles.get("default").cloned()) {
-                            let mut mappings = profile.mappings;
+                        if let Some(profile) = config.profiles.get(profile_name).or_else(|| config.profiles.get("default")) {
+                            let mut mappings = profile.mappings.clone();
                             let action_str = format!("custom:{}", recorded);
                             match &target {
                                 RecordingTarget::Button(b) => {
@@ -1264,7 +1264,7 @@ pub fn show(
 fn show_buttons_tab(
     ui: &mut egui::Ui,
     engine: &Engine,
-    config: &mut Config,
+    config: &Config,
     mouse_texture: &egui::TextureHandle,
     customizing_button: &mut Option<CustomizingButton>,
 ) {
@@ -1280,8 +1280,8 @@ fn show_buttons_tab(
     );
 
     // 2. Fetch active mappings
-    let profile = config.profiles.get(&config.active_profile).cloned().unwrap_or_else(|| {
-        config.profiles.get("default").cloned().unwrap()
+    let profile = config.profiles.get(&config.active_profile).unwrap_or_else(|| {
+        config.profiles.get("default").unwrap()
     });
 
     let middle_val = mapping_to_action(CustomizingButton::Middle, &profile.mappings);
@@ -1380,37 +1380,37 @@ fn show_buttons_tab(
 
         // Determine specific label
         let (base_key, _, _, _, _, _) = get_button_keys(btn);
-        let mapping_str = profile.mappings.get(base_key).cloned().unwrap_or_else(|| "none".to_string());
+        let mapping_str = profile.mappings.get(base_key).map(|s| s.as_str()).unwrap_or("none");
         
         let primary_label = if btn == CustomizingButton::Thumbwheel {
             let opt = get_thumbwheel_option(&profile.mappings);
             if opt == ThumbwheelOption::KeyboardShortcut {
-                let left_val = profile.mappings.get("hscroll_left").cloned().unwrap_or_else(|| "none".to_string());
-                let right_val = profile.mappings.get("hscroll_right").cloned().unwrap_or_else(|| "none".to_string());
+                let left_val = profile.mappings.get("hscroll_left").map(|s| s.as_str()).unwrap_or("none");
+                let right_val = profile.mappings.get("hscroll_right").map(|s| s.as_str()).unwrap_or("none");
                 let left_label = if left_val.starts_with("custom:") {
-                    left_val.strip_prefix("custom:").unwrap().to_uppercase()
+                    std::borrow::Cow::Owned(left_val.strip_prefix("custom:").unwrap().to_uppercase())
                 } else {
-                    "NONE".to_string()
+                    std::borrow::Cow::Borrowed("NONE")
                 };
                 let right_label = if right_val.starts_with("custom:") {
-                    right_val.strip_prefix("custom:").unwrap().to_uppercase()
+                    std::borrow::Cow::Owned(right_val.strip_prefix("custom:").unwrap().to_uppercase())
                 } else {
-                    "NONE".to_string()
+                    std::borrow::Cow::Borrowed("NONE")
                 };
-                format!("{} / {}", left_label, right_label)
+                std::borrow::Cow::Owned(format!("{} / {}", left_label, right_label))
             } else {
-                opt.display_name().to_string()
+                std::borrow::Cow::Borrowed(opt.display_name())
             }
         } else {
             let opt = get_button_option(btn, &profile.mappings);
             if opt == UniversalButtonOption::KeyboardShortcut {
                 if mapping_str.starts_with("custom:") {
-                    mapping_str.strip_prefix("custom:").unwrap().to_uppercase()
+                    std::borrow::Cow::Owned(mapping_str.strip_prefix("custom:").unwrap().to_uppercase())
                 } else {
-                    "NONE".to_string()
+                    std::borrow::Cow::Borrowed("NONE")
                 }
             } else {
-                opt.display_name(btn).to_string()
+                std::borrow::Cow::Borrowed(opt.display_name(btn))
             }
         };
 
@@ -2464,7 +2464,7 @@ pub fn save_thumbwheel_option(opt: ThumbwheelOption, mappings: &mut std::collect
 fn draw_thumbwheel_action_popup(
     ui: &mut egui::Ui,
     _engine: &Engine,
-    config: &mut Config,
+    config: &Config,
     rect: Rect,
     card_rect: Rect,
     customizing_button: &mut Option<CustomizingButton>,
@@ -2494,7 +2494,7 @@ fn draw_thumbwheel_action_popup(
         .rect_stroke(rect, 2.0, Stroke::new(1.0, border));
     theme::draw_tech_corners(ui.painter(), rect, theme::accent_color(ui.ctx()), 6.0);
 
-    let profile = config.profiles.get(&config.active_profile).cloned().unwrap();
+    let profile = config.profiles.get(&config.active_profile).unwrap();
     let current_opt = get_thumbwheel_option(&profile.mappings);
 
     let mut click_occurred = false;
@@ -2631,11 +2631,11 @@ fn draw_thumbwheel_item(
         ui.horizontal(|ui| {
             ui.add_space(28.0);
             
-            let left_val = profile.mappings.get("hscroll_left").cloned().unwrap_or_else(|| "none".to_string());
+            let left_val = profile.mappings.get("hscroll_left").map(|s| s.as_str()).unwrap_or("none");
             let left_text = if left_val.starts_with("custom:") {
-                left_val.strip_prefix("custom:").unwrap().to_uppercase()
+                std::borrow::Cow::Owned(left_val.strip_prefix("custom:").unwrap().to_uppercase())
             } else {
-                "Record Left".to_string()
+                std::borrow::Cow::Borrowed("Record Left")
             };
             
             let btn_left = ui.add(egui::Button::new(
@@ -2650,11 +2650,11 @@ fn draw_thumbwheel_item(
                 clicked = true;
             }
 
-            let right_val = profile.mappings.get("hscroll_right").cloned().unwrap_or_else(|| "none".to_string());
+            let right_val = profile.mappings.get("hscroll_right").map(|s| s.as_str()).unwrap_or("none");
             let right_text = if right_val.starts_with("custom:") {
-                right_val.strip_prefix("custom:").unwrap().to_uppercase()
+                std::borrow::Cow::Owned(right_val.strip_prefix("custom:").unwrap().to_uppercase())
             } else {
-                "Record Right".to_string()
+                std::borrow::Cow::Borrowed("Record Right")
             };
             
             let btn_right = ui.add(egui::Button::new(
@@ -3150,11 +3150,11 @@ fn draw_button_item(
         ui.horizontal(|ui| {
             ui.add_space(28.0);
 
-            let val = profile.mappings.get(base_key).cloned().unwrap_or_else(|| "none".to_string());
+            let val = profile.mappings.get(base_key).map(|s| s.as_str()).unwrap_or("none");
             let keys_text = if val.starts_with("custom:") {
-                val.strip_prefix("custom:").unwrap().to_uppercase()
+                std::borrow::Cow::Owned(val.strip_prefix("custom:").unwrap().to_uppercase())
             } else {
-                "Record Keystroke".to_string()
+                std::borrow::Cow::Borrowed("Record Keystroke")
             };
 
             let btn_rec = ui.add(egui::Button::new(
@@ -3187,7 +3187,7 @@ fn draw_button_action_popup(
     ui: &mut egui::Ui,
     btn: CustomizingButton,
     _engine: &Engine,
-    config: &mut Config,
+    config: &Config,
     rect: Rect,
     card_rect: Rect,
     customizing_button: &mut Option<CustomizingButton>,
@@ -3217,7 +3217,7 @@ fn draw_button_action_popup(
         .rect_stroke(rect, 2.0, Stroke::new(1.0, border));
     theme::draw_tech_corners(ui.painter(), rect, theme::accent_color(ui.ctx()), 6.0);
 
-    let profile = config.profiles.get(&config.active_profile).cloned().unwrap();
+    let profile = config.profiles.get(&config.active_profile).unwrap();
     let current_opt = get_button_option(btn, &profile.mappings);
 
     let mut click_occurred = false;
@@ -3301,7 +3301,7 @@ pub enum PopupView {
 fn draw_record_shortcut_ui(
     ui: &mut egui::Ui,
     engine: &Engine,
-    config: &mut Config,
+    config: &Config,
     btn: CustomizingButton,
     target_key: String,
     display_label: String,
@@ -3469,8 +3469,8 @@ fn draw_record_shortcut_ui(
         let recorded = RECORDED_KEYS.with(|rk| rk.borrow().clone());
         if is_valid_combo(&recorded) {
             let profile_name = &config.active_profile;
-            if let Some(profile) = config.profiles.get(profile_name).cloned().or_else(|| config.profiles.get("default").cloned()) {
-                let mut mappings = profile.mappings;
+            if let Some(profile) = config.profiles.get(profile_name).or_else(|| config.profiles.get("default")) {
+                let mut mappings = profile.mappings.clone();
                 let action_str = format!("custom:{}", recorded);
                 
                 mappings.insert(target_key.clone(), action_str);
@@ -3607,34 +3607,40 @@ const GESTURE_PRESETS: &[GesturePreset] = &[
     },
 ];
 
-fn action_id_to_slot_display_name(action_id: &str) -> String {
+fn action_id_to_slot_display_name(action_id: &str) -> std::borrow::Cow<'_, str> {
     if action_id.starts_with("custom:") {
-        return action_id.strip_prefix("custom:").unwrap().to_uppercase();
+        return std::borrow::Cow::Owned(action_id.strip_prefix("custom:").unwrap().to_uppercase());
     }
     match action_id {
-        "none" => "Do nothing".to_string(),
-        "snap_left" => "Snap left".to_string(),
-        "snap_right" => "Snap right".to_string(),
-        "maximize_window" => "Maximize window".to_string(),
-        "minimize_window" => "Minimize window".to_string(),
-        "alt_tab" => "Switch application".to_string(),
-        "pan_left" | "pan_right" | "pan_up" | "pan_down" | "pan" => "Pan".to_string(),
-        "mouse_middle_click" => "Middle button".to_string(),
-        "rotate_left" | "rotate_right" | "rotate" => "Rotate".to_string(),
-        "zoom_in" => "Zoom in".to_string(),
-        "zoom_out" => "Zoom out".to_string(),
-        "zoom_reset" => "Zoom reset".to_string(),
-        "start_menu" => "Start menu".to_string(),
-        "win_d" => "Show/hide desktop".to_string(),
-        "prev_track" => "Previous".to_string(),
-        "next_track" => "Next".to_string(),
-        "volume_up" => "Volume up".to_string(),
-        "volume_down" => "Volume down".to_string(),
-        "play_pause" => "Play/Pause".to_string(),
-        "space_left" => "Desktop left".to_string(),
-        "space_right" => "Desktop right".to_string(),
-        "task_view" => "Task view".to_string(),
-        _ => action_id.replace('_', " "),
+        "none" => std::borrow::Cow::Borrowed("Do nothing"),
+        "snap_left" => std::borrow::Cow::Borrowed("Snap left"),
+        "snap_right" => std::borrow::Cow::Borrowed("Snap right"),
+        "maximize_window" => std::borrow::Cow::Borrowed("Maximize window"),
+        "minimize_window" => std::borrow::Cow::Borrowed("Minimize window"),
+        "alt_tab" => std::borrow::Cow::Borrowed("Switch application"),
+        "pan_left" | "pan_right" | "pan_up" | "pan_down" | "pan" => std::borrow::Cow::Borrowed("Pan"),
+        "mouse_middle_click" => std::borrow::Cow::Borrowed("Middle button"),
+        "rotate_left" | "rotate_right" | "rotate" => std::borrow::Cow::Borrowed("Rotate"),
+        "zoom_in" => std::borrow::Cow::Borrowed("Zoom in"),
+        "zoom_out" => std::borrow::Cow::Borrowed("Zoom out"),
+        "zoom_reset" => std::borrow::Cow::Borrowed("Zoom reset"),
+        "start_menu" => std::borrow::Cow::Borrowed("Start menu"),
+        "win_d" => std::borrow::Cow::Borrowed("Show/hide desktop"),
+        "prev_track" => std::borrow::Cow::Borrowed("Previous"),
+        "next_track" => std::borrow::Cow::Borrowed("Next"),
+        "volume_up" => std::borrow::Cow::Borrowed("Volume up"),
+        "volume_down" => std::borrow::Cow::Borrowed("Volume down"),
+        "play_pause" => std::borrow::Cow::Borrowed("Play/Pause"),
+        "space_left" => std::borrow::Cow::Borrowed("Desktop left"),
+        "space_right" => std::borrow::Cow::Borrowed("Desktop right"),
+        "task_view" => std::borrow::Cow::Borrowed("Task view"),
+        _ => {
+            if action_id.contains('_') {
+                std::borrow::Cow::Owned(action_id.replace('_', " "))
+            } else {
+                std::borrow::Cow::Borrowed(action_id)
+            }
+        }
     }
 }
 
@@ -3693,7 +3699,7 @@ fn get_generic_action_id(action_id: &str) -> &str {
 fn draw_gesture_config_ui(
     ui: &mut egui::Ui,
     engine: &Engine,
-    config: &mut Config,
+    config: &Config,
     btn: CustomizingButton,
     rect: Rect,
     card_rect: Rect,
@@ -3732,15 +3738,15 @@ fn draw_gesture_config_ui(
         Color32::from_rgb(0, 245, 198), // Teal `#00f5c6`
     );
 
-    let profile = config.profiles.get(&config.active_profile).cloned().unwrap();
+    let profile = config.profiles.get(&config.active_profile).unwrap();
     let (_, _, up_key, down_key, left_key, right_key) = get_button_keys(btn);
     let click_key = get_button_keys(btn).0;
 
-    let cur_left = profile.mappings.get(left_key).cloned().unwrap_or_else(|| "none".to_string());
-    let cur_right = profile.mappings.get(right_key).cloned().unwrap_or_else(|| "none".to_string());
-    let cur_up = profile.mappings.get(up_key).cloned().unwrap_or_else(|| "none".to_string());
-    let cur_down = profile.mappings.get(down_key).cloned().unwrap_or_else(|| "none".to_string());
-    let cur_click = profile.mappings.get(click_key).cloned().unwrap_or_else(|| "none".to_string());
+    let cur_left = profile.mappings.get(left_key).map(|s| s.as_str()).unwrap_or("none");
+    let cur_right = profile.mappings.get(right_key).map(|s| s.as_str()).unwrap_or("none");
+    let cur_up = profile.mappings.get(up_key).map(|s| s.as_str()).unwrap_or("none");
+    let cur_down = profile.mappings.get(down_key).map(|s| s.as_str()).unwrap_or("none");
+    let cur_click = profile.mappings.get(click_key).map(|s| s.as_str()).unwrap_or("none");
 
     // Draw elements inside header_rect using child_ui
     let mut header_ui = ui.new_child(
@@ -3870,11 +3876,11 @@ fn draw_gesture_config_ui(
 
 
     let slots = &[
-        ("left", "HOLD + MOVE LEFT", left_key, &cur_left),
-        ("right", "HOLD + MOVE RIGHT", right_key, &cur_right),
-        ("up", "HOLD + MOVE UP", up_key, &cur_up),
-        ("down", "HOLD + MOVE DOWN", down_key, &cur_down),
-        ("click", "CLICK", click_key, &cur_click),
+        ("left", "HOLD + MOVE LEFT", left_key, cur_left),
+        ("right", "HOLD + MOVE RIGHT", right_key, cur_right),
+        ("up", "HOLD + MOVE UP", up_key, cur_up),
+        ("down", "HOLD + MOVE DOWN", down_key, cur_down),
+        ("click", "CLICK", click_key, cur_click),
     ];
 
     for (i, &(dir, label, key_str, cur_val)) in slots.iter().enumerate() {
