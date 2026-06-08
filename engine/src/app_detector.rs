@@ -7,6 +7,10 @@ use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{AtomEnum, ConnectionExt};
 use x11rb::errors::ReplyError;
 
+static GNOME_EVAL_SUPPORTED: AtomicBool = AtomicBool::new(true);
+static KDOTOOL_SUPPORTED: AtomicBool = AtomicBool::new(true);
+static XDOTOOL_SUPPORTED: AtomicBool = AtomicBool::new(true);
+
 pub struct AppDetector {
     on_change: Arc<dyn Fn(String) + Send + Sync + 'static>,
     interval: Duration,
@@ -126,6 +130,9 @@ fn get_active_app_pid_x11_persistent(
 // Output format: "(true, '12345')\n"
 // ---------------------------------------------------------------------------
 fn get_active_app_pid_gnome_shell() -> Option<u32> {
+    if !GNOME_EVAL_SUPPORTED.load(Ordering::Relaxed) {
+        return None;
+    }
     let output = Command::new("gdbus")
         .args([
             "call",
@@ -139,29 +146,41 @@ fn get_active_app_pid_gnome_shell() -> Option<u32> {
             "global.display.focus_window?.get_pid() ?? -1",
         ])
         .output()
-        .ok()?;
+        .ok();
 
-    if !output.status.success() {
-        return None;
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    // Expect "(true, '12345')" — extract the number between single quotes.
-    let s = stdout.trim();
-    if !s.starts_with("(true,") {
-        return None;
-    }
-    let start = s.find('\'')?;
-    let end = s.rfind('\'')?;
-    if start >= end {
-        return None;
-    }
-    let pid_str = &s[start + 1..end];
-    let pid: i64 = pid_str.trim().parse().ok()?;
-    if pid > 0 {
-        Some(pid as u32)
-    } else {
-        None
+    match output {
+        Some(out) if out.status.success() => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let s = stdout.trim();
+            if !s.starts_with("(true,") {
+                return None;
+            }
+            let start = s.find('\'')?;
+            let end = s.rfind('\'')?;
+            if start >= end {
+                return None;
+            }
+            let pid_str = &s[start + 1..end];
+            let pid: i64 = pid_str.trim().parse().ok()?;
+            if pid > 0 {
+                Some(pid as u32)
+            } else {
+                None
+            }
+        }
+        Some(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            if stderr.contains("doesn't exist") || stderr.contains("unknown method") || stderr.contains("InvalidArgs") {
+                log::info!("[AppDetector] GNOME Shell Eval method is not supported (likely disabled). Disabling GNOME Eval fallback.");
+                GNOME_EVAL_SUPPORTED.store(false, Ordering::Relaxed);
+            }
+            None
+        }
+        None => {
+            log::info!("[AppDetector] gdbus command not found. Disabling GNOME Eval fallback.");
+            GNOME_EVAL_SUPPORTED.store(false, Ordering::Relaxed);
+            None
+        }
     }
 }
 
@@ -169,24 +188,44 @@ fn get_active_app_pid_gnome_shell() -> Option<u32> {
 // xdotool / kdotool subprocess helpers
 // ---------------------------------------------------------------------------
 fn get_pid_from_cmd(cmd_name: &str) -> Option<u32> {
+    if cmd_name == "kdotool" && !KDOTOOL_SUPPORTED.load(Ordering::Relaxed) {
+        return None;
+    }
+    if cmd_name == "xdotool" && !XDOTOOL_SUPPORTED.load(Ordering::Relaxed) {
+        return None;
+    }
+
     let output = Command::new(cmd_name)
         .args(["getactivewindow", "getwindowpid"])
         .output()
-        .ok()?;
+        .ok();
 
-    if output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        if let Ok(pid) = stdout.trim().parse::<u32>() {
-            return Some(pid);
+    match output {
+        Some(out) => {
+            if out.status.success() {
+                let stdout = String::from_utf8_lossy(&out.stdout);
+                if let Ok(pid) = stdout.trim().parse::<u32>() {
+                    return Some(pid);
+                }
+            }
+            None
+        }
+        None => {
+            log::info!("[AppDetector] {} command not found. Disabling fallback.", cmd_name);
+            if cmd_name == "kdotool" {
+                KDOTOOL_SUPPORTED.store(false, Ordering::Relaxed);
+            } else if cmd_name == "xdotool" {
+                XDOTOOL_SUPPORTED.store(false, Ordering::Relaxed);
+            }
+            None
         }
     }
-    None
 }
 
 // ---------------------------------------------------------------------------
 // Fallbacks dispatcher
 // ---------------------------------------------------------------------------
-fn get_active_app_pid_fallbacks() -> Option<u32> {
+fn get_active_app_pid_fallbacks(x11_queried: bool) -> Option<u32> {
     let desktop = std::env::var("XDG_CURRENT_DESKTOP")
         .unwrap_or_default()
         .to_uppercase();
@@ -211,7 +250,8 @@ fn get_active_app_pid_fallbacks() -> Option<u32> {
     }
 
     // 3. xdotool — legacy X11 / XWayland subprocess fallback.
-    if has_display {
+    // Skip if we already queried X11 natively and it returned None.
+    if has_display && !x11_queried {
         if let Some(pid) = get_pid_from_cmd("xdotool") {
             return Some(pid);
         }
@@ -263,7 +303,7 @@ pub fn get_foreground_exe() -> Option<String> {
             }
         }
     }
-    let pid = get_active_app_pid_fallbacks()?;
+    let pid = get_active_app_pid_fallbacks(X11_CONN.with(|cell| cell.borrow().is_some()))?;
     get_exe_for_pid(pid)
 }
 
@@ -324,7 +364,7 @@ impl AppDetector {
                     }
 
                     if pid.is_none() {
-                        pid = get_active_app_pid_fallbacks();
+                        pid = get_active_app_pid_fallbacks(x11_conn.is_some());
                     }
 
                     match pid {
