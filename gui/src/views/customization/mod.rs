@@ -527,11 +527,39 @@ pub fn show(
                     if mods.mac_cmd { parts.push("meta".to_string()); }
 
                     for event in &i.events {
+                        let mut event_parts = parts.clone();
                         let detected_key = match event {
                             egui::Event::Key { key, pressed: true, .. } => Some(*key),
-                            egui::Event::Copy => Some(egui::Key::C),
-                            egui::Event::Cut => Some(egui::Key::X),
-                            egui::Event::Paste(_) => Some(egui::Key::V),
+                            egui::Event::Copy => {
+                                if !event_parts.contains(&"ctrl".to_string()) && !event_parts.contains(&"meta".to_string()) {
+                                    if cfg!(target_os = "macos") || mods.mac_cmd {
+                                        event_parts.push("meta".to_string());
+                                    } else {
+                                        event_parts.push("ctrl".to_string());
+                                    }
+                                }
+                                Some(egui::Key::C)
+                            }
+                            egui::Event::Cut => {
+                                if !event_parts.contains(&"ctrl".to_string()) && !event_parts.contains(&"meta".to_string()) {
+                                    if cfg!(target_os = "macos") || mods.mac_cmd {
+                                        event_parts.push("meta".to_string());
+                                    } else {
+                                        event_parts.push("ctrl".to_string());
+                                    }
+                                }
+                                Some(egui::Key::X)
+                            }
+                            egui::Event::Paste(_) => {
+                                if !event_parts.contains(&"ctrl".to_string()) && !event_parts.contains(&"meta".to_string()) {
+                                    if cfg!(target_os = "macos") || mods.mac_cmd {
+                                        event_parts.push("meta".to_string());
+                                    } else {
+                                        event_parts.push("ctrl".to_string());
+                                    }
+                                }
+                                Some(egui::Key::V)
+                            }
                             _ => None,
                         };
 
@@ -543,8 +571,8 @@ pub fn show(
                             } else {
                                 let name = egui_key_to_string(key);
                                 if !name.is_empty() && name != "ctrl" && name != "shift" && name != "alt" && name != "meta" && name != "tab" {
-                                    parts.push(name);
-                                    new_keys_recorded = Some(parts.join("+"));
+                                    event_parts.push(name);
+                                    new_keys_recorded = Some(event_parts.join("+"));
                                 }
                             }
                         }

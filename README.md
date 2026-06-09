@@ -6,7 +6,7 @@
 
 ## Features
 
-- **Button Remapping** - Map any mouse button to keyboard shortcuts, media keys, browser actions, or custom key sequences.
+- **Button Remapping** - Map any mouse button to keyboard shortcuts, media keys, browser actions, or custom key sequences. Features an interactive recording UI supporting arbitrary key combinations (with fallback injection for system copy/cut/paste events).
 - **Multi-Button Gesture Control** - Hold a button and swipe in a direction (up / down / left / right) to trigger configurable actions. Gestures are supported on the physical gesture button, Middle Click (`middle`), Side Button 1 / Back (`xbutton1`), and Side Button 2 / Forward (`xbutton2`). Includes configurable threshold, deadzone, timeout, and cooldown.
 - **Application Profiles** - Multiple named profiles with automatic process-based switching.
   - **Auto-Switching** - Automatically detects the active foreground app window. Supports native X11 plus compositor/shell-specific fallbacks for GNOME Shell (via D-Bus `gdbus`), KDE Plasma & LXQt (via `kdotool`), Sway (via `swaymsg`), Hyprland (via `hyprctl`), i3 (via `i3-msg`), and legacy/general desktop environments (via `xdotool`).
@@ -28,6 +28,12 @@
 ---
 
 ## Architecture
+
+### High-Level Overview
+
+![Mouser-RS Software Architecture](assets/diagrams/architecture.png)
+
+The project is a Cargo workspace with three crates: the `mouser-rs` binary (entry point, tray, single-instance guard), the `mouser_engine` backend library (HID++, evdev hooks, uinput simulator, gesture engine, AppDetector), and the `mouser_gui` egui frontend.
 
 ```mermaid
 graph TD
@@ -100,7 +106,55 @@ graph TD
     AppDetect -->|Active Window API/IPC| WindowSys
 ```
 
-The project is a Cargo workspace with three crates:
+---
+
+### Engine Module Map
+
+![mouser_engine Module Dependency Map](assets/diagrams/engine_modules.png)
+
+The `mouser_engine` crate is split into four module groups:
+
+- **`engine/`** — Core orchestration: `EngineInner`, profile management, gesture state machine, horizontal scroll accumulator, action dispatcher, hotplug loop, and app-change monitor.
+- **`hidpp/`** — HID++ wire protocol: raw request/response, device path lookup, feature detection, and button diversion control.
+- **`input/`** — evdev interception (mouse hook, keyboard hook) and uinput-based key/click/scroll emulation (simulator + key map).
+- **`detection/`** — Per-compositor active window detection: `thread.rs` worker + dedicated backends for X11, GNOME, KDE/LXQt, Sway, Hyprland, i3, and generic xdotool fallback.
+
+---
+
+### GUI Module Map
+
+![mouser_gui Module Hierarchy](assets/diagrams/gui_modules.png)
+
+The `mouser_gui` crate is organized as:
+
+- **`app/`** — `MouserApp` struct, eframe update loop, texture cache, and toast notification engine.
+- **`views/`** — All rendered panels:
+  - `customization/` — Button remapping tabs, gesture config popups, action list, shortcut recorder, thumbwheel popup, and button/gesture/key mapping helpers.
+  - `settings/` — Language, theme, profile, and update settings panels.
+  - `empty_state/` — Connection prompt and device card when no mouse is detected.
+- **`widgets/`** — Reusable draw primitives: battery indicator, status pill, connection icon, tech-corner decoration, and icon sets.
+- **`theme.rs`** / **`translation.rs`** / **`desktop_apps.rs`** / **`updater.rs`** — Shared services used across all views.
+
+---
+
+### Runtime Event Flow
+
+![Event Flow — Mouse press to desktop action](assets/diagrams/event_flow.png)
+
+How a physical mouse button press becomes a desktop action:
+
+1. **Physical button press** → captured by the **evdev Mouse Hook**
+2. → **GestureState / HScrollAccumulator** — determines if this is a gesture, scroll, or plain click
+3. → **AppDetector** — resolves the active application window and selects the matching profile from `config.json`
+4. → **Action Dispatcher** — looks up the mapped action for the button in the active profile
+5. → **Key Simulator (uinput emit)** — injects the corresponding key combo or mouse event into the OS
+6. → **Desktop action executed** ✓
+
+A parallel path handles DPI / SmartShift changes: `Action Dispatcher` → **HID++ Client** → Logitech device over `/dev/hidraw*`.
+
+---
+
+### Codebase Tree
 
 ```
 mouse/
@@ -143,8 +197,10 @@ mouse/
 | App detection & caching | `AppDetector` queries X11 or compositor/shell-specific fallbacks (GNOME, KDE/LXQt, Sway, Hyprland, i3, or general X11). Missing CLI dependencies (e.g. `gdbus`, `kdotool`, `swaymsg`, `hyprctl`, `i3-msg`, `xdotool`) are cached as disabled upon first failure to eliminate overhead and log spam. |
 | Deadlock-free gestures | Multi-button gestures use a single `GestureState` mutex with lock-free atomic hot-paths and explicit mutex release blocks prior to executing mapped actions. |
 | Non-blocking keyboard hook | Interceptors for Logitech keyboards use `poll` on event file descriptors with timeouts instead of spinning/would-block loops, drastically reducing CPU usage. |
+| Clipboard shortcut recording | System copy, cut, and paste events intercepted by egui are mapped back to their corresponding keys, with platform-specific modifiers (`ctrl` or `meta`) auto-injected if missing to bypass OS-level event stripping. |
 
----
+
+
 
 ## Requirements
 
