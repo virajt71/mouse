@@ -126,7 +126,16 @@ impl KeyboardHook {
                                     for event in events {
                                         let mut should_forward = true;
 
-                                        if event.event_type() == EventType::KEY {
+                                        let is_forwarding = crate::flow::FLOW_MANAGER.is_forwarding_to_remote();
+                                        if is_forwarding {
+                                            if let Some(peer_name) = crate::flow::FLOW_MANAGER.get_active_peer_name() {
+                                                if event.event_type() == EventType::KEY {
+                                                    let evt = crate::flow::network::FlowEvent::Key { code: event.code(), value: event.value() };
+                                                    let _ = crate::flow::network::send_event_to_peer(&peer_name, &evt);
+                                                }
+                                            }
+                                            should_forward = false;
+                                        } else if event.event_type() == EventType::KEY {
                                             let key_code = event.code();
                                             let down = event.value() != 0;
 
@@ -227,6 +236,10 @@ impl KeyboardHook {
 
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::SeqCst)
+    }
+
+    pub fn device_path(&self) -> Option<&str> {
+        self.device_path.as_deref()
     }
 
     pub fn stop(&mut self) {

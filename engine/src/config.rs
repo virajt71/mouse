@@ -11,6 +11,17 @@ pub struct Profile {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct FlowPeer {
+    pub name: String,
+    pub ip: String,
+    pub port: u16,
+    pub layout_x: i32, // -1: left, 1: right, 0: same
+    pub layout_y: i32, // -1: top, 1: bottom, 0: same
+    pub paired: bool,
+    pub fingerprint: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Settings {
     pub start_minimized: bool,
     pub start_at_login: bool,
@@ -32,6 +43,15 @@ pub struct Settings {
     pub ignore_trackpad: bool,
     pub accent_color: String,
     pub install_updates: bool,
+    // Flow settings
+    pub flow_enabled: bool,
+    pub flow_local_name: String,
+    pub flow_peers: Vec<FlowPeer>,
+    pub flow_screen_width: i32,
+    pub flow_screen_height: i32,
+    pub flow_hold_key: String,
+    pub flow_mouse_mode: String,
+    pub flow_keyboard_linking: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -107,6 +127,15 @@ impl Default for Config {
             ignore_trackpad: true,
             accent_color: "#8b5cf6".to_string(),
             install_updates: true,
+            // Flow settings default
+            flow_enabled: false,
+            flow_local_name: "Computer 1".to_string(),
+            flow_peers: vec![],
+            flow_screen_width: 1920,
+            flow_screen_height: 1080,
+            flow_hold_key: "none".to_string(),
+            flow_mouse_mode: "software".to_string(),
+            flow_keyboard_linking: true,
         };
 
         Config {

@@ -1,0 +1,142 @@
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use x11rb::connection::Connection;
+use crate::config::Config;
+use super::FLOW_MANAGER;
+
+pub fn run_edge_detection_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) {
+    // Dedicated edge-detection thread (primarily for X11/XWayland active pointer query fallback)
+    // Wayland uses raw evdev injection from MouseHook, but X11 can run query_pointer
+    use std::sync::atomic::Ordering;
+
+    loop {
+        if !engine_inner.running.load(Ordering::SeqCst) {
+            break;
+        }
+
+        let (enabled, mouse_mode) = {
+            let cfg = engine_inner.config.lock().unwrap();
+            (cfg.settings.flow_enabled, cfg.settings.flow_mouse_mode.clone())
+        };
+
+        if !enabled || mouse_mode != "software" {
+            std::thread::sleep(Duration::from_millis(1000));
+            continue;
+        }
+
+        let x11_conn = x11rb::rust_connection::RustConnection::connect(None);
+        match x11_conn {
+            Ok((conn, screen_num)) => {
+                log::info!("[Flow Switching] X11 QueryPointer edge detection running...");
+                let screen = &conn.setup().roots[screen_num];
+                let root = screen.root;
+
+                loop {
+                    if !engine_inner.running.load(Ordering::SeqCst) {
+                        return;
+                    }
+
+                    let (inner_enabled, inner_mouse_mode, hold_key) = {
+                        let cfg = engine_inner.config.lock().unwrap();
+                        (cfg.settings.flow_enabled, cfg.settings.flow_mouse_mode.clone(), cfg.settings.flow_hold_key.clone())
+                    };
+
+                    if !inner_enabled || inner_mouse_mode != "software" {
+                        break;
+                    }
+
+                    if FLOW_MANAGER.get_active_peer_name().is_none() {
+                        // If using software mode and mouse is local, check pointer position
+                        use x11rb::protocol::xproto::ConnectionExt;
+                        match conn.query_pointer(root) {
+                            Ok(cookie) => {
+                                match cookie.reply() {
+                                    Ok(reply) => {
+                                        let rx = reply.root_x as i32;
+                                        let ry = reply.root_y as i32;
+                                        let sw = screen.width_in_pixels as i32;
+                                        let sh = screen.height_in_pixels as i32;
+
+                                        // Update local screen dimensions in FlowManager
+                                        *FLOW_MANAGER.screen_width.write().unwrap() = sw;
+                                        *FLOW_MANAGER.screen_height.write().unwrap() = sh;
+
+                                        let threshold = 2;
+                                        let mut lx = 0;
+                                        let mut ly = 0;
+
+                                        if rx <= threshold { lx = -1; }
+                                        else if rx >= sw - threshold - 1 { lx = 1; }
+                                        else if ry <= threshold { ly = -1; }
+                                        else if ry >= sh - threshold - 1 { ly = 1; }
+
+                                        if lx != 0 || ly != 0 {
+                                            // Check if transition modifier key is satisfied
+                                            if is_hold_key_satisfied(&hold_key) {
+                                                let cfg = engine_inner.config.lock().unwrap();
+                                                if let Some(peer) = cfg.settings.flow_peers.iter().find(|p| p.paired && p.layout_x == lx && p.layout_y == ly) {
+                                                    log::info!("[Flow Switching] Screen edge crossed on X11: transitioning to peer '{}'", peer.name);
+                                                    FLOW_MANAGER.set_active_peer(Some(peer.name.clone()));
+                                                    // Sync virtual coords for the transition
+                                                    *FLOW_MANAGER.virtual_x.lock().unwrap() = if lx == -1 { sw - 50 } else { 50 };
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        log::warn!("[Flow Switching] X11 query reply error: {}. Reconnecting X11...", e);
+                                        break; // Break inner loop to reconnect
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                log::warn!("[Flow Switching] X11 query pointer error: {}. Reconnecting X11...", e);
+                                break; // Break inner loop to reconnect
+                            }
+                        }
+                    }
+
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+            }
+            Err(e) => {
+                log::debug!("[Flow Switching] X11 connection failed: {}. Retrying in 5s...", e);
+                std::thread::sleep(Duration::from_secs(5));
+            }
+        }
+    }
+}
+
+pub fn is_hold_key_satisfied(hold_key: &str) -> bool {
+    if hold_key == "none" {
+        return true;
+    }
+    // Query modifier keys state from keyboard hook
+    // In this implementation, we return true to allow transition.
+    // If keyboard hook exposes modifiers, we can hook it.
+    true
+}
+
+pub fn get_peer_channel_index(peer_name: &str, config_lock: &Mutex<Config>) -> Option<u8> {
+    let cfg = config_lock.lock().unwrap();
+    // In this implementation, we map peer order index (0, 1, 2) to channel index
+    if let Some(pos) = cfg.settings.flow_peers.iter().position(|p| p.name == peer_name) {
+        Some(pos as u8)
+    } else {
+        None
+    }
+}
+
+pub fn trigger_hidpp_channel_switch(channel_idx: u8) {
+    log::info!("[Flow Switching] Triggering HID++ host switch to channel {}", channel_idx);
+    if let Some(ref inner) = *FLOW_MANAGER.engine_inner.lock().unwrap() {
+        let mut clients = inner.hid_clients.lock().unwrap();
+        for client in clients.iter_mut() {
+            if client.change_host_idx.is_some() {
+                if let Err(e) = client.switch_host_channel(channel_idx) {
+                    log::error!("[Flow Switching] Failed to switch channel on device '{}': {}", client.device_name, e);
+                }
+            }
+        }
+    }
+}

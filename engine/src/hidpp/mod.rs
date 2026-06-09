@@ -22,6 +22,7 @@ pub struct HidppClient {
     pub(crate) dpi_idx: Option<u8>,
     pub(crate) smart_shift_idx: Option<u8>,
     pub(crate) smart_shift_enhanced: bool,
+    pub(crate) change_host_idx: Option<u8>,
     pub(crate) gesture_cid: u16,
     pub(crate) rawxy_enabled: bool,
     pub(crate) held: bool,
@@ -45,6 +46,7 @@ impl HidppClient {
             dpi_idx: None,
             smart_shift_idx: None,
             smart_shift_enhanced: false,
+            change_host_idx: None,
             gesture_cid: 0x00C3,
             rawxy_enabled: false,
             held: false,
@@ -68,6 +70,7 @@ impl HidppClient {
         self.feat_idx = None;
         self.dpi_idx = None;
         self.smart_shift_idx = None;
+        self.change_host_idx = None;
     }
 
     pub fn set_dpi(&self, dpi: u32) -> Result<()> {

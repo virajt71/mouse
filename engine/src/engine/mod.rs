@@ -143,6 +143,8 @@ impl Engine {
             *app_det_lock = Some(app_det);
         }
 
+        crate::flow::FLOW_MANAGER.start(self.inner.clone());
+
         self.spawn_hidpp_thread()?;
         Ok(())
     }
