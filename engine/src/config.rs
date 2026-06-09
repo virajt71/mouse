@@ -19,6 +19,12 @@ pub struct FlowPeer {
     pub layout_y: i32, // -1: top, 1: bottom, 0: same
     pub paired: bool,
     pub fingerprint: String,
+    #[serde(default = "default_true")]
+    pub auto_reconnect: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

@@ -8,6 +8,7 @@ use super::FLOW_MANAGER;
 
 lazy_static::lazy_static! {
     static ref LAST_TEXT: Mutex<String> = Mutex::new(String::new());
+    static ref LAST_IMG_HASH: Mutex<String> = Mutex::new(String::new());
 }
 
 pub fn run_clipboard_loop() {
@@ -30,11 +31,10 @@ pub fn run_clipboard_loop() {
             }
         }
 
-        let clipboard = clipboard_opt.as_mut().unwrap();
-
         // Only monitor and send if local input has focus (i.e. active_peer is None)
         let active_peer = FLOW_MANAGER.get_active_peer_name();
         if active_peer.is_none() {
+            let clipboard = clipboard_opt.as_mut().unwrap();
             match clipboard.get_text() {
                 Ok(text) => {
                     let mut last = LAST_TEXT.lock().unwrap();
@@ -74,15 +74,56 @@ pub fn run_clipboard_loop() {
                         }
                     }
                 }
+                Err(arboard::Error::ContentNotAvailable) => {}
                 Err(e) => {
-                    log::debug!("[Flow Clipboard] Failed to read clipboard: {}. Resetting context...", e);
+                    log::debug!("[Flow Clipboard] Failed to read clipboard text: {}. Resetting context...", e);
                     clipboard_opt = None;
+                }
+            }
+
+            if clipboard_opt.is_some() {
+                let clipboard = clipboard_opt.as_mut().unwrap();
+                match clipboard.get_image() {
+                    Ok(img) => {
+                        use sha2::{Digest, Sha256};
+                        let hash = format!("{:x}", Sha256::digest(img.bytes.as_ref()));
+                        let mut last_hash = LAST_IMG_HASH.lock().unwrap();
+                        if hash != *last_hash && !img.bytes.is_empty() {
+                            *last_hash = hash;
+                            log::debug!("[Flow Clipboard] Local clipboard changed: image size={}x{}", img.width, img.height);
+                            if let Ok(png_bytes) = encode_rgba_to_png(&img) {
+                                let evt = FlowEvent::ClipboardImage(png_bytes);
+                                let conns = super::network::ACTIVE_CONNECTIONS.read().unwrap();
+                                for peer_name in conns.keys() {
+                                    let _ = send_event_to_peer(peer_name, &evt);
+                                }
+                            }
+                        }
+                    }
+                    Err(arboard::Error::ContentNotAvailable) => {}
+                    Err(e) => {
+                        log::debug!("[Flow Clipboard] Failed to read clipboard image: {}. Resetting context...", e);
+                        clipboard_opt = None;
+                    }
                 }
             }
         }
 
         std::thread::sleep(Duration::from_millis(1000));
     }
+}
+
+fn encode_rgba_to_png(img: &arboard::ImageData) -> anyhow::Result<Vec<u8>> {
+    let mut buf = std::io::Cursor::new(Vec::new());
+    image::write_buffer_with_format(
+        &mut buf,
+        img.bytes.as_ref(),
+        img.width as u32,
+        img.height as u32,
+        image::ColorType::Rgba8,
+        image::ImageFormat::Png,
+    )?;
+    Ok(buf.into_inner())
 }
 
 pub fn set_local_clipboard_text(text: String) -> anyhow::Result<()> {
@@ -94,15 +135,22 @@ pub fn set_local_clipboard_text(text: String) -> anyhow::Result<()> {
 }
 
 pub fn set_local_clipboard_image(png_bytes: Vec<u8>) -> anyhow::Result<()> {
-    // Decode image using image crate (already in Cargo.toml dependencies!)
+    // Decode image using image crate
     if let Ok(img) = image::load_from_memory(&png_bytes) {
         let rgba = img.to_rgba8();
         let (width, height) = rgba.dimensions();
         let mut clipboard = Clipboard::new()?;
+        let raw_bytes = rgba.into_raw();
+        
+        // Update local hash tracker to prevent echo loop
+        use sha2::{Digest, Sha256};
+        let hash = format!("{:x}", Sha256::digest(&raw_bytes));
+        *LAST_IMG_HASH.lock().unwrap() = hash;
+
         let img_data = ImageData {
             width: width as usize,
             height: height as usize,
-            bytes: std::borrow::Cow::Owned(rgba.into_raw()),
+            bytes: std::borrow::Cow::Owned(raw_bytes),
         };
         clipboard.set_image(img_data)?;
         log::info!("[Flow Clipboard] Clipboard image synchronized from remote.");

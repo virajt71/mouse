@@ -75,6 +75,21 @@ pub fn run_edge_detection_loop(engine_inner: Arc<crate::engine::inner::EngineInn
                                             if is_hold_key_satisfied(&hold_key) {
                                                 let cfg = engine_inner.config.lock().unwrap();
                                                 if let Some(peer) = cfg.settings.flow_peers.iter().find(|p| p.paired && p.layout_x == lx && p.layout_y == ly) {
+                                                    // If this peer is currently controlling us, return control to them!
+                                                    if let Some(controller) = FLOW_MANAGER.get_current_controller() {
+                                                        if controller == peer.name {
+                                                            log::info!("[Flow Switching] Screen edge crossed on X11: returning to controller '{}'", peer.name);
+                                                            let _ = crate::flow::network::send_event_to_peer(&peer.name, &crate::flow::network::FlowEvent::ReturnToLocal);
+                                                            // Warp cursor away from edge to prevent loop bouncing
+                                                            let rx_target = if lx == -1 { 100 } else if lx == 1 { sw - 100 } else { rx };
+                                                            let ry_target = if ly == -1 { 100 } else if ly == 1 { sh - 100 } else { ry };
+                                                            let _ = std::process::Command::new("xdotool")
+                                                                .args(["mousemove", &format!("{}", rx_target), &format!("{}", ry_target)])
+                                                                .spawn();
+                                                            continue;
+                                                        }
+                                                    }
+
                                                     log::info!("[Flow Switching] Screen edge crossed on X11: transitioning to peer '{}'", peer.name);
                                                     FLOW_MANAGER.set_active_peer(Some(peer.name.clone()));
                                                     // Sync virtual coords for the transition

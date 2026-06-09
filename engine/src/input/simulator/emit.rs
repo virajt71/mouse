@@ -97,4 +97,16 @@ impl KeySimulator {
             }
         });
     }
+
+    pub fn inject_key_up(&self, key: evdev::Key) {
+        self.get_device(|dev_opt| {
+            if let Some(dev) = dev_opt {
+                let events = [
+                    InputEvent::new(EventType::KEY, key.0, 0),
+                    InputEvent::new(EventType::SYNCHRONIZATION, 0, 0),
+                ];
+                let _ = dev.emit(&events);
+            }
+        });
+    }
 }

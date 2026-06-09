@@ -8,6 +8,7 @@ use super::FLOW_MANAGER;
 lazy_static::lazy_static! {
     pub static ref DISCOVERED_PEERS: RwLock<HashMap<String, (String, Instant)>> = RwLock::new(HashMap::new());
     pub static ref ACTIVE_CONNECTIONS: RwLock<HashMap<String, TcpStream>> = RwLock::new(HashMap::new());
+    pub static ref CONNECTING_PEERS: RwLock<std::collections::HashSet<String>> = RwLock::new(std::collections::HashSet::new());
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
@@ -19,6 +20,7 @@ pub enum FlowEvent {
     ClipboardText(String),
     ClipboardImage(Vec<u8>),
     FileTransfer { name: String, content: Vec<u8> },
+    ReturnToLocal,
 }
 
 pub fn run_discovery_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) {
@@ -73,17 +75,21 @@ pub fn run_discovery_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) 
                 if peer_name != local_name {
                     // Register peer IP
                     let peer_ip = src.ip().to_string();
-                    DISCOVERED_PEERS.write().unwrap().insert(peer_name.clone(), (peer_ip, Instant::now()));
+                    DISCOVERED_PEERS.write().unwrap().insert(peer_name.clone(), (peer_ip.clone(), Instant::now()));
 
                     // Respond with identity
                     let reply = format!("MOUSER_IDENTITY:{}", local_name);
                     let _ = socket.send_to(reply.as_bytes(), src);
+
+                    trigger_auto_connect(&peer_name, &peer_ip, &engine_inner);
                 }
             } else if parts[0] == "MOUSER_IDENTITY" && parts.len() > 1 {
                 let peer_name = parts[1].to_string();
                 if peer_name != local_name {
                     let peer_ip = src.ip().to_string();
-                    DISCOVERED_PEERS.write().unwrap().insert(peer_name, (peer_ip, Instant::now()));
+                    DISCOVERED_PEERS.write().unwrap().insert(peer_name.clone(), (peer_ip.clone(), Instant::now()));
+
+                    trigger_auto_connect(&peer_name, &peer_ip, &engine_inner);
                 }
             }
         }
@@ -153,13 +159,120 @@ pub fn run_server_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) {
     }
 }
 
+pub fn connect_to_peer(
+    name: &str,
+    ip: &str,
+    port: u16,
+    engine_inner: Arc<crate::engine::inner::EngineInner>,
+) {
+    // Skip if already connected or connecting
+    {
+        let conns = ACTIVE_CONNECTIONS.read().unwrap();
+        if conns.contains_key(name) { return; }
+    }
+    {
+        let mut connecting = CONNECTING_PEERS.write().unwrap();
+        if !connecting.insert(name.to_string()) {
+            return;
+        }
+    }
+
+    struct Cleanup {
+        name: String,
+    }
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            CONNECTING_PEERS.write().unwrap().remove(&self.name);
+        }
+    }
+    let _cleanup = Cleanup { name: name.to_string() };
+
+    let addr = format!("{}:{}", ip, port);
+    log::info!("[Flow Network] Attempting to connect to peer '{}' at {}", name, addr);
+    let Ok(mut stream) = TcpStream::connect_timeout(
+        &addr.parse().unwrap(),
+        Duration::from_secs(5),
+    ) else { return; };
+
+    // Read challenge
+    let mut reader = BufReader::new(stream.try_clone().unwrap());
+    let mut line = String::new();
+    if reader.read_line(&mut line).is_err() { return; }
+    
+    let salt = line.trim().strip_prefix("MOUSER_CHALLENGE:").unwrap_or("").to_string();
+
+    // Get PIN from config (stored as fingerprint field for now)
+    let pin = {
+        let cfg = engine_inner.config.lock().unwrap();
+        cfg.settings.flow_peers.iter()
+            .find(|p| p.name == name)
+            .map(|p| if p.fingerprint.is_empty() { "123456".to_string() } else { p.fingerprint.clone() })
+            .unwrap_or("123456".to_string())
+    };
+
+    let hash = format!("{:x}", sha2::Sha256::digest(format!("{}{}", salt, pin).as_bytes()));
+    let local_name = engine_inner.config.lock().unwrap().settings.flow_local_name.clone();
+    
+    let _ = stream.write_all(format!("MOUSER_RESPONSE:{}:{}\n", local_name, hash).as_bytes());
+
+    line.clear();
+    if reader.read_line(&mut line).is_err() { return; }
+    if line.trim() != "MOUSER_OK" { return; }
+
+    log::info!("[Flow Network] Connected to peer '{}'", name);
+    {
+        let mut conns = ACTIVE_CONNECTIONS.write().unwrap();
+        conns.insert(name.to_string(), stream.try_clone().unwrap());
+    }
+
+    // Spawn listener thread for the connected peer's events
+    let stream_clone = stream.try_clone().unwrap();
+    let name_clone = name.to_string();
+    let inner_clone = engine_inner.clone();
+    std::thread::spawn(move || {
+        if let Err(e) = process_peer_events(stream_clone, name_clone.clone(), inner_clone) {
+            log::error!("[Flow Network] Error in process_peer_events for '{}': {}", name_clone, e);
+        }
+    });
+}
+
+fn trigger_auto_connect(peer_name: &str, peer_ip: &str, engine_inner: &Arc<crate::engine::inner::EngineInner>) {
+    let (is_paired, auto_reconnect) = {
+        let cfg = engine_inner.config.lock().unwrap();
+        if let Some(p) = cfg.settings.flow_peers.iter().find(|p| p.name == peer_name) {
+            (p.paired, p.auto_reconnect)
+        } else {
+            (false, false)
+        }
+    };
+
+    if is_paired && auto_reconnect {
+        let already_connected = {
+            let conns = ACTIVE_CONNECTIONS.read().unwrap();
+            conns.contains_key(peer_name)
+        };
+        let already_connecting = {
+            let connecting = CONNECTING_PEERS.read().unwrap();
+            connecting.contains(peer_name)
+        };
+
+        if !already_connected && !already_connecting {
+            let ip_clone = peer_ip.to_string();
+            let name_clone = peer_name.to_string();
+            let inner_clone = engine_inner.clone();
+            std::thread::spawn(move || {
+                connect_to_peer(&name_clone, &ip_clone, 50520, inner_clone);
+            });
+        }
+    }
+}
+
 fn handle_client(mut stream: TcpStream, engine_inner: Arc<crate::engine::inner::EngineInner>) -> anyhow::Result<()> {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(30)));
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut line = String::new();
 
     // 1. PIN-based pairing check
-    // In our simplified flow, we send challenge.
     let salt = format!("{:x}", Instant::now().elapsed().as_nanos());
     stream.write_all(format!("MOUSER_CHALLENGE:{}\n", salt).as_bytes())?;
 
@@ -181,16 +294,11 @@ fn handle_client(mut stream: TcpStream, engine_inner: Arc<crate::engine::inner::
     let client_name = response_parts[1].to_string();
     let client_hash = response_parts[2];
 
-    // Verify response hash: sha256 of salt + PIN
-    // In this simulation, we check if the fingerprint or peer settings match.
-    // To allow instant auto-pairing for testing, if the peer name exists in our config as paired,
-    // we bypass. If not, the user must pair.
     let is_paired = {
         let cfg = engine_inner.config.lock().unwrap();
         cfg.settings.flow_peers.iter().any(|p| p.name == client_name && p.paired)
     };
 
-    // Calculate expected hash (if paired, we can use default PIN '123456' or a saved secret)
     let pin = "123456";
     let input_str = format!("{}{}", salt, pin);
     let expected_hash = format!("{:x}", sha2::Sha256::digest(input_str.as_bytes()));
@@ -203,13 +311,18 @@ fn handle_client(mut stream: TcpStream, engine_inner: Arc<crate::engine::inner::
     stream.write_all(b"MOUSER_OK\n")?;
     log::info!("[Flow Network] Peer '{}' authenticated successfully.", client_name);
 
-    // Save connection to active peers
     {
         let mut conns = ACTIVE_CONNECTIONS.write().unwrap();
         conns.insert(client_name.clone(), stream.try_clone()?);
     }
 
-    // Process events
+    process_peer_events(stream, client_name, engine_inner)
+}
+
+fn process_peer_events(stream: TcpStream, client_name: String, engine_inner: Arc<crate::engine::inner::EngineInner>) -> anyhow::Result<()> {
+    let mut reader = BufReader::new(stream.try_clone()?);
+    let mut line = String::new();
+
     loop {
         line.clear();
         if reader.read_line(&mut line)? == 0 {
@@ -219,7 +332,22 @@ fn handle_client(mut stream: TcpStream, engine_inner: Arc<crate::engine::inner::
         if let Ok(event) = serde_json::from_str::<FlowEvent>(&line) {
             match event {
                 FlowEvent::MouseMove { dx, dy } => {
+                    FLOW_MANAGER.set_current_controller(Some(client_name.clone()));
                     if let Some(ref inner) = *FLOW_MANAGER.engine_inner.lock().unwrap() {
+                        let is_paired = {
+                            let cfg = inner.config.lock().unwrap();
+                            cfg.settings.flow_peers.iter().any(|p| p.name == client_name && p.paired)
+                        };
+                        
+                        if is_paired {
+                            if let Some(target) = FLOW_MANAGER.handle_raw_motion(dx, dy, &inner.config) {
+                                if target == client_name {
+                                    log::info!("[Flow Network] Edge transition back to controller '{}'", target);
+                                    let _ = send_event_to_peer(&client_name, &FlowEvent::ReturnToLocal);
+                                }
+                            }
+                        }
+
                         let uinput_arc = inner.key_simulator.device();
                         let mut uinput_guard = uinput_arc.lock().unwrap();
                         if let Some(ref mut uinput_dev) = *uinput_guard {
@@ -233,6 +361,7 @@ fn handle_client(mut stream: TcpStream, engine_inner: Arc<crate::engine::inner::
                     }
                 }
                 FlowEvent::MouseButton { code, value } => {
+                    FLOW_MANAGER.set_current_controller(Some(client_name.clone()));
                     if let Some(ref inner) = *FLOW_MANAGER.engine_inner.lock().unwrap() {
                         let uinput_arc = inner.key_simulator.device();
                         let mut uinput_guard = uinput_arc.lock().unwrap();
@@ -246,6 +375,7 @@ fn handle_client(mut stream: TcpStream, engine_inner: Arc<crate::engine::inner::
                     }
                 }
                 FlowEvent::Key { code, value } => {
+                    FLOW_MANAGER.set_current_controller(Some(client_name.clone()));
                     if let Some(ref inner) = *FLOW_MANAGER.engine_inner.lock().unwrap() {
                         let uinput_arc = inner.key_simulator.device();
                         let mut uinput_guard = uinput_arc.lock().unwrap();
@@ -259,6 +389,7 @@ fn handle_client(mut stream: TcpStream, engine_inner: Arc<crate::engine::inner::
                     }
                 }
                 FlowEvent::MouseScroll { horizontal, delta } => {
+                    FLOW_MANAGER.set_current_controller(Some(client_name.clone()));
                     if let Some(ref inner) = *FLOW_MANAGER.engine_inner.lock().unwrap() {
                         let uinput_arc = inner.key_simulator.device();
                         let mut uinput_guard = uinput_arc.lock().unwrap();
@@ -285,14 +416,43 @@ fn handle_client(mut stream: TcpStream, engine_inner: Arc<crate::engine::inner::
                 FlowEvent::FileTransfer { name, content } => {
                     let _ = super::clipboard::save_flow_file(name, content);
                 }
+                FlowEvent::ReturnToLocal => {
+                    log::info!("[Flow Network] Received ReturnToLocal from peer '{}'", client_name);
+                    
+                    let (lx, ly) = {
+                        let cfg = engine_inner.config.lock().unwrap();
+                        if let Some(peer) = cfg.settings.flow_peers.iter().find(|p| p.name == client_name) {
+                            (peer.layout_x, peer.layout_y)
+                        } else {
+                            (0, 0)
+                        }
+                    };
+                    
+                    FLOW_MANAGER.set_active_peer(None);
+                    
+                    let sw = *FLOW_MANAGER.screen_width.read().unwrap();
+                    let sh = *FLOW_MANAGER.screen_height.read().unwrap();
+                    
+                    let target_x = if lx == 1 { sw - 50 } else if lx == -1 { 50 } else { sw / 2 };
+                    let target_y = if ly == 1 { sh - 50 } else if ly == -1 { 50 } else { sh / 2 };
+                    
+                    *FLOW_MANAGER.virtual_x.lock().unwrap() = target_x;
+                    *FLOW_MANAGER.virtual_y.lock().unwrap() = target_y;
+                    
+                    let _ = std::process::Command::new("xdotool")
+                        .args(["mousemove", &format!("{}", target_x), &format!("{}", target_y)])
+                        .spawn();
+                }
             }
         }
     }
 
-    // Connection closed
     {
         let mut conns = ACTIVE_CONNECTIONS.write().unwrap();
         conns.remove(&client_name);
+    }
+    if FLOW_MANAGER.get_current_controller().as_ref() == Some(&client_name) {
+        FLOW_MANAGER.set_current_controller(None);
     }
     log::info!("[Flow Network] Connection to peer '{}' closed.", client_name);
     Ok(())
@@ -324,6 +484,7 @@ mod tests {
             FlowEvent::ClipboardText("Hello World".to_string()),
             FlowEvent::ClipboardImage(vec![1, 2, 3, 4]),
             FlowEvent::FileTransfer { name: "test.txt".to_string(), content: vec![65, 66, 67] },
+            FlowEvent::ReturnToLocal,
         ];
 
         for event in events {
@@ -356,6 +517,7 @@ mod tests {
                     assert_eq!(n1, n2);
                     assert_eq!(c1, c2);
                 }
+                (FlowEvent::ReturnToLocal, FlowEvent::ReturnToLocal) => {}
                 _ => panic!("Event mismatch after deserialization: expected {:?}, got {:?}", event, deserialized),
             }
         }

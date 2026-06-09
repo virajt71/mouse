@@ -17,6 +17,7 @@ pub struct FlowManager {
     pub screen_height: RwLock<i32>,
     pub is_running: Mutex<bool>,
     pub engine_inner: Mutex<Option<Arc<crate::engine::inner::EngineInner>>>,
+    pub current_controller: RwLock<Option<String>>,
 }
 
 impl FlowManager {
@@ -29,6 +30,7 @@ impl FlowManager {
             screen_height: RwLock::new(1080),
             is_running: Mutex::new(false),
             engine_inner: Mutex::new(None),
+            current_controller: RwLock::new(None),
         }
     }
 
@@ -84,8 +86,35 @@ impl FlowManager {
     }
 
     pub fn set_active_peer(&self, peer: Option<String>) {
+        let was_local = self.active_peer.read().unwrap().is_none();
+        let going_remote = peer.is_some();
+
+        if was_local && going_remote {
+            // Flush modifiers before handing off
+            if let Some(ref inner) = *self.engine_inner.lock().unwrap() {
+                use evdev::Key;
+                let mods = [
+                    Key::KEY_LEFTCTRL, Key::KEY_RIGHTCTRL,
+                    Key::KEY_LEFTSHIFT, Key::KEY_RIGHTSHIFT,
+                    Key::KEY_LEFTALT, Key::KEY_RIGHTALT,
+                    Key::KEY_LEFTMETA, Key::KEY_RIGHTMETA,
+                ];
+                for key in mods {
+                    inner.key_simulator.inject_key_up(key);
+                }
+            }
+        }
+
         let mut active = self.active_peer.write().unwrap();
         *active = peer;
+    }
+
+    pub fn get_current_controller(&self) -> Option<String> {
+        self.current_controller.read().unwrap().clone()
+    }
+
+    pub fn set_current_controller(&self, peer: Option<String>) {
+        *self.current_controller.write().unwrap() = peer;
     }
 
     pub fn handle_raw_motion(&self, dx: i32, dy: i32, config_lock: &Mutex<Config>) -> Option<String> {
