@@ -6,6 +6,8 @@ use std::thread;
 use std::time::Duration;
 use std::collections::HashMap;
 
+use super::simulator::KeySimulator;
+
 pub struct KeyboardHook {
     device_path: Option<String>,
     running: Arc<AtomicBool>,
@@ -63,7 +65,7 @@ impl KeyboardHook {
         dev_path: String,
         mappings: Arc<std::sync::Mutex<HashMap<String, String>>>,
         uinput_device: Arc<std::sync::Mutex<Option<evdev::uinput::VirtualDevice>>>,
-        key_simulator: crate::key_simulator::KeySimulator,
+        key_simulator: KeySimulator,
     ) -> Result<()> {
         if self.running.load(Ordering::SeqCst) {
             return Ok(());
