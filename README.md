@@ -31,7 +31,7 @@
 
 ### High-Level Overview
 
-![Mouser-RS Software Architecture](assets/diagrams/architecture.png)
+![Mouser-RS Software Architecture](diagrams/architecture.png)
 
 The project is a Cargo workspace with three crates: the `mouser-rs` binary (entry point, tray, single-instance guard), the `mouser_engine` backend library (HID++, evdev hooks, uinput simulator, gesture engine, AppDetector), and the `mouser_gui` egui frontend.
 
@@ -110,7 +110,7 @@ graph TD
 
 ### Engine Module Map
 
-![mouser_engine Module Dependency Map](assets/diagrams/engine_modules.png)
+![mouser_engine Module Dependency Map](diagrams/engine_modules.png)
 
 The `mouser_engine` crate is split into four module groups:
 
@@ -123,7 +123,7 @@ The `mouser_engine` crate is split into four module groups:
 
 ### GUI Module Map
 
-![mouser_gui Module Hierarchy](assets/diagrams/gui_modules.png)
+![mouser_gui Module Hierarchy](diagrams/gui_modules.png)
 
 The `mouser_gui` crate is organized as:
 
@@ -139,7 +139,7 @@ The `mouser_gui` crate is organized as:
 
 ### Runtime Event Flow
 
-![Event Flow — Mouse press to desktop action](assets/diagrams/event_flow.png)
+![Event Flow — Mouse press to desktop action](diagrams/event_flow.png)
 
 How a physical mouse button press becomes a desktop action:
 
@@ -158,31 +158,118 @@ A parallel path handles DPI / SmartShift changes: `Action Dispatcher` → **HID+
 
 ```
 mouse/
-├── src/               # Binary entry point (main.rs)
-│   └── main.rs        # CLI args, single-instance guard, engine init, GUI launch, tray
-├── engine/            # mouser_engine - HID++ backend library
+├── src/                    # Binary entry point and daemon runner
+│   ├── main.rs             # CLI parsing, engine initialization, GUI launching
+│   ├── gui.rs              # Bridge interface for GUI execution
+│   ├── signal.rs           # OS interrupt signals (SIGINT/SIGTERM) handler
+│   ├── single_instance.rs  # Unix socket guard to enforce single running instance
+│   └── tray.rs             # Desktop system tray integration and menu management
+├── engine/                 # mouser_engine - HID++ client & input event orchestrator
 │   └── src/
 │       ├── lib.rs          # Module declarations and public API re-exports
-│       ├── engine/         # Engine core orchestration, state, gesture handlers, profiles
-│       ├── hidpp/          # HID++ wire protocol client, device query, and button diversion
-│       ├── input/          # evdev hooks (mouse/keyboard) and uinput simulator
-│       ├── detection/      # Active window foreground detection (X11 & Wayland backends + worker thread)
-│       ├── bluetooth.rs    # BlueZ D-Bus helpers, device discovery
-│       ├── receiver.rs     # Unifying / Bolt USB receiver support
-│       ├── battery.rs      # Battery polling via HID++
-│       ├── cache.rs        # Persistent paired-device cache (survives BT off)
-│       ├── config.rs       # Config / Profile / Settings data structures + JSON persistence
-│       └── worker.rs       # Thread-pool helpers & state updater
-└── gui/               # mouser_gui - egui frontend library
-    └── src/
-        ├── lib.rs          # App structure and main frame entry points
-        ├── app/            # Main update loops, textures, and toast notifications
-        ├── views/          # Specific panel layouts: customization settings, empty connection states, settings panels, navigation top bar
-        ├── widgets/        # Drawing widgets: battery levels, status pills, corner accents, specialized icon grids
-        ├── theme.rs        # Design tokens (colors, typography, spacing, window size)
-        ├── translation.rs  # i18n string lookup
-        ├── desktop_apps.rs # Installed app (.desktop) & running process scanner
-        └── updater.rs      # HTTP update checker & installer
+│       ├── battery.rs      # HID++ battery status polling
+│       ├── bluetooth.rs    # BlueZ D-Bus API client for Bluetooth discovery
+│       ├── cache.rs        # Paired device database (survives disconnection/off state)
+│       ├── config.rs       # Application settings, profiles, and key mappings serializer
+│       ├── receiver.rs     # Logitech Bolt and Unifying receiver enumeration
+│       ├── worker.rs       # Background task executor and state updates broadcaster
+│       ├── engine/         # Core state coordinator
+│       │   ├── mod.rs      # Engine runtime, hotplug loops, and profiles loader
+│       │   ├── action.rs   # Mapping evaluation and desktop key injections
+│       │   ├── app_change.rs# Listeners for foreground application changes
+│       │   ├── gesture.rs  # Gesture processor and swipe angle/threshold calculator
+│       │   ├── hotplug.rs  # Raw device and Bluetooth connection detectors
+│       │   ├── hscroll.rs  # Horizontal wheel acceleration and tilt scroll accumulator
+│       │   ├── inner.rs    # Thread-safe central engine state
+│       │   └── profile.rs  # Active application profile matching rules
+│       ├── hidpp/          # Logitech HID++ protocol implementation
+│       │   ├── mod.rs      # Feature/feature-index mappings and capabilities detection
+│       │   ├── device.rs   # HID raw query runner and event read/write handles
+│       │   ├── diversion.rs# Button routing diversion toggling (HID++ ↔ evdev)
+│       │   └── protocol.rs # HID++ packet structures, headers, and parsing
+│       ├── input/          # Hardware input event hooks
+│       │   ├── mod.rs      # Input layer entry point
+│       │   ├── keyboard_hook.rs# System keyboard interceptor (modifier keys state tracker)
+│       │   ├── mouse_hook.rs   # Mouse hook intercepting physical buttons (evdev)
+│       │   └── simulator/  # Virtual keyboard/mouse injection via uinput
+│       │       ├── mod.rs  # Uinput device builder and descriptor writer
+│       │       ├── actions.rs# Native action emulation (keystrokes and scroll wheel)
+│       │       ├── emit.rs # Low-level uinput file-descriptor writer
+│       │       ├── key_map.rs# Mapping database between key identifiers and keycodes
+│       │       └── mouse_map.rs# Mapping database for mouse buttons to virtual buttons
+│       └── detection/      # Active window/process trackers per compositor
+│           ├── mod.rs      # Orchestrator tracking window Focus change events
+│           ├── thread.rs   # Poll worker querying active environment window
+│           ├── fallbacks.rs# Fallback compositor detection rules
+│           ├── x11.rs      # X11/Xlib active window query client
+│           ├── gnome.rs    # D-Bus client for GNOME Shell active window path
+│           ├── kde.rs      # KDE Plasma query using kdotool
+│           ├── sway.rs     # Sway window tracker using swaymsg
+│           ├── hyprland.rs # Hyprland client using hyprctl
+│           ├── i3.rs       # i3 window query using i3-msg
+│           └── xdotool.rs  # Legacy desktop/window manager fallback client
+├── gui/                    # mouser_gui - egui client for profile and device editing
+│   └── src/
+│       ├── lib.rs          # UI application config and crate entry point
+│       ├── desktop_apps.rs # Desktop files scanner and running process inspector
+│       ├── theme.rs        # Design tokens (harmonies, typography, borders, glassmorphism)
+│       ├── translation.rs  # Translation catalogues and string lookups (i18n)
+│       ├── updater.rs      # Update client (GitHub releases checking/downloader)
+│       ├── app/            # Application state loops and system callbacks
+│       │   ├── mod.rs      # Eframe app wrapper, textures cache, toast notifications
+│       │   ├── texture.rs  # UI images and icons loader
+│       │   ├── toast.rs    # Bottom-right animated alert cards
+│       │   └── update.rs   # Layout renderer (menus, active tab views, connection bars)
+│       ├── views/          # Settings panels layouts
+│       │   ├── mod.rs      # Layout selectors
+│       │   ├── select_connection.rs# Landing state and connection setup page
+│       │   ├── top_bar.rs  # Header actions, device choice dropdown, profiles menu
+│       │   ├── empty_state/# Zero-state placeholders
+│       │   │   ├── mod.rs  # Empty views container
+│       │   │   └── device_card.rs# Card showing connected mouse attributes/specs
+│       │   ├── settings/   # General application parameters
+│       │   │   ├── mod.rs  # Settings categories navigation
+│       │   │   ├── section_language.rs# Localization preferences UI
+│       │   │   ├── section_profiles.rs# Profile management options
+│       │   │   ├── section_theme.rs   # Theme colors and accent configurations
+│       │   │   └── section_updates.rs # Auto-update options UI
+│       │   └── customization/ # Detailed button/gesture customization
+│       │       ├── mod.rs  # Mouse layout visual editor wrapper
+│       │       ├── sidebar.rs# Customizer categories sidebar
+│       │       ├── mappings/# Keys mapping controls
+│       │       │   ├── mod.rs# Mappings collection
+│       │       │   ├── button_keys.rs# Visual button configuration grid
+│       │       │   ├── button_options.rs# Bindable action choice widgets
+│       │       │   └── gesture_presets.rs# Swipe presets template gallery
+│       │       ├── popups/ # Modals and configuration sheets
+│       │       │   ├── mod.rs# Modals manager
+│       │       │   ├── action_list.rs# Searchable list of all triggerable actions
+│       │       │   ├── add_app_modal.rs# Profile creation application launcher list
+│       │       │   ├── gesture_config.rs# Swipe actions configuration dashboard
+│       │       │   ├── record_shortcut.rs# Keyboard record event-capture canvas
+│       │       │   └── thumbwheel.rs# Scroll resolution settings panel
+│       │       └── tabs/   # Customizer tabs
+│       │           ├── mod.rs# Tabs wrapper
+│       │           ├── buttons_tab.rs# Mouse buttons mapping selector
+│       │           ├── flow_tab.rs# Workflows/gestures control panel
+│       │           ├── point_scroll_tab.rs# DPI settings & wheel configurations
+│       │           └── profiles_tab.rs# Process triggers mapping interface
+│       └── widgets/        # Custom styled drawing primitives
+│           ├── mod.rs      # Core widgets exports
+│           ├── battery.rs  # Smart battery charge percentage pill
+│           ├── connection_icon.rs# Bluetooth / wireless dongle status symbol
+│           ├── status_pill.rs# Colored label indicators (active, idle, scanning)
+│           ├── tech_corners.rs# Stylized neon aesthetic corners
+│           └── icons/      # Vector-based graphics draw instructions
+│               ├── mod.rs  # Icons index
+│               ├── connection_icons.rs# BLE and USB connection logos
+│               ├── misc_icons.rs# Navigational and control icons
+│               ├── settings_icons.rs# Preferences menu graphics
+│               └── sidebar_icons.rs# Sidebar tabs indicators
+└── packaging/              # Package distribution resources
+    └── linux/
+        ├── 69-mouser-logitech.rules # Udev configuration for mouse and uinput access
+        └── install-linux-permissions.sh # Rules setup and loading helper script
 ```
 
 ### Key design decisions

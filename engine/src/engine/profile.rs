@@ -126,10 +126,11 @@ impl Engine {
         gesture_threshold: i32,
         gesture_deadzone: i32,
         accent_color: String,
+        hscroll_threshold: i32,
     ) {
         log::info!(
-            "[Engine] Updating global settings: DPI={}, SmartShift mode={}, enabled={}, threshold={}, invert_hscroll={}, invert_vscroll={}, gesture_threshold={}, gesture_deadzone={}, accent_color={}",
-            dpi, smart_shift_mode, smart_shift_enabled, smart_shift_threshold, invert_hscroll, invert_vscroll, gesture_threshold, gesture_deadzone, accent_color
+            "[Engine] Updating global settings: DPI={}, SmartShift mode={}, enabled={}, threshold={}, invert_hscroll={}, invert_vscroll={}, gesture_threshold={}, gesture_deadzone={}, accent_color={}, hscroll_threshold={}",
+            dpi, smart_shift_mode, smart_shift_enabled, smart_shift_threshold, invert_hscroll, invert_vscroll, gesture_threshold, gesture_deadzone, accent_color, hscroll_threshold
         );
 
         {
@@ -143,6 +144,7 @@ impl Engine {
             cfg.settings.gesture_threshold = gesture_threshold;
             cfg.settings.gesture_deadzone = gesture_deadzone;
             cfg.settings.accent_color = accent_color;
+            cfg.settings.hscroll_threshold = hscroll_threshold;
             let _ = cfg.save();
             self.increment_config_generation();
         }
