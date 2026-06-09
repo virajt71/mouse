@@ -7,7 +7,11 @@
 ## Features
 
 - **Button Remapping** - Map any mouse button to keyboard shortcuts, media keys, browser actions, or custom key sequences.
-- **Gesture Control** - Hold a button and swipe in a direction (up / down / left / right) to trigger configurable actions.
+- **Multi-Button Gesture Control** - Hold a button and swipe in a direction (up / down / left / right) to trigger configurable actions. Gestures are supported on the physical gesture button, Middle Click (`middle`), Side Button 1 / Back (`xbutton1`), and Side Button 2 / Forward (`xbutton2`). Includes configurable threshold, deadzone, timeout, and cooldown.
+- **Application Profiles** - Multiple named profiles with automatic process-based switching.
+  - **Auto-Switching** - Automatically detects the active foreground app window. Supports native X11 plus shell-specific fallbacks for GNOME Shell (via D-Bus `gdbus`), KDE (via `kdotool`), and legacy/general desktop environments (via `xdotool`).
+  - **In-App Application Selector** - Scans installed applications (from `.desktop` files in `/usr/share/applications` and `~/.local/share/applications`) and active processes (via `/proc`) to create app-specific profiles in one click.
+  - **Toast Notifications** - Displays modern, animated, and fading toast alerts at the bottom-right corner of the screen when the active profile changes.
 - **DPI Control** - Set and persist DPI directly via the HID++ protocol.
 - **SmartShift** - Toggle and tune Logitech's SmartShift (free-spin ↔ ratchet scroll wheel) threshold.
 - **Horizontal Scroll** - Map horizontal scroll tilt to browser Back / Forward or any key combo. Configurable threshold and inversion.
@@ -15,7 +19,6 @@
 - **Battery Monitor** - Real-time battery level display in the GUI for wireless mice.
 - **Bluetooth & USB Receiver** - Supports devices connected via a Logitech Unifying / Bolt receiver or directly over Bluetooth.
 - **Persistent Device Cache** - Paired devices are remembered across Bluetooth disconnections. Connection state updates live; devices never disappear from the GUI just because BT is off.
-- **Profiles** - Multiple named profiles with per-app automatic switching and a configurable active profile.
 - **System Tray** - Minimize to system tray; restore or quit from the tray menu.
 - **Single Instance** - Launching a second instance brings the existing window to front instead of starting a duplicate process.
 - **Auto-updater** - Built-in update checker with optional automatic install.
@@ -45,14 +48,16 @@ graph TD
         Theme["Theme / Styles"]
         MouseUI["Mouse UI (DPI/SmartShift)"]
         SettingsUI["Settings & Profiles UI"]
+        DesktopApps["DesktopApps (Desktop/Proc Scanner)"]
         Trans["Translation / i18n"]
         
         MouserApp --> Theme
         MouserApp --> MouseUI
         MouserApp --> SettingsUI
         MouserApp --> Trans
+        MouseUI --> DesktopApps
     end
-    class MouserApp,Theme,MouseUI,SettingsUI,Trans gui;
+    class MouserApp,Theme,MouseUI,SettingsUI,DesktopApps,Trans gui;
 
     subgraph Engine ["mouser_engine (HID++ backend)"]
         Core["Engine Core (Event Loop / State)"]
@@ -116,20 +121,21 @@ mouse/
 │       ├── mouse_hook.rs   # evdev mouse event interception
 │       ├── keyboard_hook.rs# evdev keyboard monitoring (modifier state)
 │       ├── key_simulator.rs# uinput virtual keyboard / mouse output
-│       ├── app_detector.rs # Active window / process detection (X11)
+│       ├── app_detector.rs # Active window / process detection (X11 + DBus GNOME/KDE)
 │       ├── battery.rs      # Battery polling via HID++
 │       ├── cache.rs        # Persistent paired-device cache (survives BT off)
 │       ├── updater.rs      # HTTP update check & installer
-│       └── worker.rs       # Thread-pool helpers
+│       └── worker.rs       # Thread-pool helpers & state updater
 └── gui/               # mouser_gui - egui frontend library
     └── src/
-        ├── lib.rs           # MouserApp root, view routing, close behaviour
+        ├── lib.rs           # MouserApp root, view routing, close behaviour, toasts
         ├── theme.rs         # Design tokens (colors, typography, spacing, window size)
         ├── top_bar.rs       # Title-bar / navigation bar component
-        ├── mouse_ui.rs      # Per-device customisation view (buttons, DPI, SmartShift)
+        ├── mouse_ui.rs      # Per-device customisation view, app selector modal
         ├── settings.rs      # Application settings page (scrollable)
         ├── empty_state.rs   # No-device / unpaired state screen
         ├── select_connection.rs # Device picker / connection chooser
+        ├── desktop_apps.rs  # Installed app (.desktop) & running process scanner
         └── translation.rs   # i18n string lookup
 ```
 
@@ -137,11 +143,14 @@ mouse/
 
 | Concern | Approach |
 |---|---|
-| Backend / GUI isolation | `mouser_engine` is a plain library; `mouser_gui` depends on it but never the reverse |
-| Thread safety | `Engine` wraps `Arc<EngineInner>`; all mutable state behind `Mutex` or `AtomicBool` |
-| Config hot-reload | `Engine::reload_config()` picks up a freshly-written `config.json` without restart |
-| Device persistence | `cache.rs` writes paired devices to disk; GUI reads from cache, not from live BT query |
-| Single instance | Unix domain socket at `~/.config/Mouser/mouser.sock`; second launch sends `SHOW` and exits |
+| Backend / GUI isolation | `mouser_engine` is a plain library; `mouser_gui` depends on it but never the reverse. |
+| Thread safety & responsiveness | `Engine` wraps `Arc<EngineInner>`. Mutable state lives in `Mutex` or atomic registers. Locks are aggressively dropped before invoking external commands or executing blocking actions. |
+| Config hot-reload | `Engine::reload_config()` picks up a freshly-written `config.json` without restart. |
+| Device persistence | `cache.rs` writes paired devices to disk; GUI reads from cache, not from live BT query. |
+| Single instance | Unix domain socket at `~/.config/Mouser/mouser.sock`; second launch sends `SHOW` and exits. |
+| App detection & caching | `AppDetector` queries X11, D-Bus (GNOME), or subprocess fallbacks (KDE/General). Missing CLI dependencies (e.g. `gdbus`, `kdotool`, `xdotool`) are cached as disabled upon first failure to eliminate overhead and log spam. |
+| Deadlock-free gestures | Multi-button gestures use a single `GestureState` mutex with lock-free atomic hot-paths and explicit mutex release blocks prior to executing mapped actions. |
+| Non-blocking keyboard hook | Interceptors for Logitech keyboards use `poll` on event file descriptors with timeouts instead of spinning/would-block loops, drastically reducing CPU usage. |
 
 ---
 
@@ -149,7 +158,7 @@ mouse/
 
 | Dependency | Notes |
 |---|---|
-| Linux (X11 / XWayland) | Wayland dynamic window hiding not supported by winit; XWayland is used automatically |
+| Linux (X11 / XWayland) | Wayland dynamic window hiding not supported by winit; XWayland is used automatically. |
 | Rust ≥ 1.75 | Stable toolchain |
 | `libhidapi-dev` | HID++ communication |
 | `libudev-dev` | evdev / uinput |
@@ -227,56 +236,66 @@ Logs are written to the platform log directory (typically `~/.local/share/Mouser
 
 ```jsonc
 {
-  "version": 1,
-  "active_profile": "Default",
+  "version": 11,
+  "active_profile": "default",
   "profiles": {
-    "Default": {
-      "label": "Default",
+    "default": {
+      "label": "Default (All Apps)",
       "apps": [],
       "mappings": {
         "middle": "none",
+        "middle_gesture_enabled": "true",
+        "middle_gesture_left": "none",
+        "middle_gesture_right": "none",
+        "middle_gesture_up": "none",
+        "middle_gesture_down": "none",
+        "gesture": "none",
+        "gesture_enabled": "true",
+        "gesture_left": "none",
+        "gesture_right": "none",
+        "gesture_up": "none",
+        "gesture_down": "none",
         "xbutton1": "alt_tab",
+        "xbutton1_gesture_enabled": "true",
+        "xbutton1_gesture_left": "none",
+        "xbutton1_gesture_right": "none",
+        "xbutton1_gesture_up": "none",
+        "xbutton1_gesture_down": "none",
         "xbutton2": "alt_tab",
+        "xbutton2_gesture_enabled": "true",
+        "xbutton2_gesture_left": "none",
+        "xbutton2_gesture_right": "none",
+        "xbutton2_gesture_up": "none",
+        "xbutton2_gesture_down": "none",
         "hscroll_left": "browser_back",
         "hscroll_right": "browser_forward",
         "mode_shift": "switch_scroll_mode"
-        // … gesture directions per button …
       }
     }
   },
   "settings": {
-    "dpi": 1000,
-    "smart_shift_enabled": true,
-    "smart_shift_threshold": 50,
-    "invert_vscroll": false,
+    "start_minimized": true,
+    "start_at_login": false,
+    "hscroll_threshold": 1,
     "invert_hscroll": false,
-    "hscroll_threshold": 3,
-    "start_minimized": false,
-    "appearance_mode": "dark",
+    "invert_vscroll": false,
+    "dpi": 1000,
+    "smart_shift_mode": "ratchet",
+    "smart_shift_enabled": false,
+    "smart_shift_threshold": 25,
+    "gesture_threshold": 50,
+    "gesture_deadzone": 40,
+    "gesture_timeout_ms": 3000,
+    "gesture_cooldown_ms": 500,
+    "appearance_mode": "system",
+    "debug_mode": false,
+    "device_layout_overrides": {},
     "language": "en",
-    "accent_color": "#00BFA5"
+    "ignore_trackpad": true,
+    "accent_color": "#8b5cf6",
+    "install_updates": true
   }
 }
-```
-
----
-
-## Project Layout At A Glance
-
-```
-mouse/
-├── Cargo.toml              # Workspace root + binary crate manifest
-├── Cargo.lock
-├── src/main.rs             # Binary entry point
-├── engine/                 # mouser_engine library crate
-├── gui/                    # mouser_gui library crate
-├── assets/
-│   ├── fonts/              # Bundled typefaces
-│   └── images/             # UI images / icons
-└── packaging/
-    └── linux/
-        ├── 69-mouser-logitech.rules      # udev rules for hidraw + uinput
-        └── install-linux-permissions.sh  # One-shot permission installer
 ```
 
 ---
