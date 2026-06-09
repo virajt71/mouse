@@ -9,5 +9,6 @@ pub mod receiver;
 pub mod cache;
 pub mod worker;
 pub mod engine;
+pub mod flow;
 
 pub use self::engine::Engine;

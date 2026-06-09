@@ -467,7 +467,7 @@ pub fn show(
             show_point_scroll_tab(&mut canvas_ui, engine, config, mouse_texture);
         }
         SidebarTab::Flow => {
-            show_flow_tab(&mut canvas_ui);
+            show_flow_tab(&mut canvas_ui, engine, config);
         }
         SidebarTab::Settings => {
             show_profiles_settings_tab(&mut canvas_ui, engine, config);

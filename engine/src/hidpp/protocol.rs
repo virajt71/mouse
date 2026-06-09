@@ -13,6 +13,7 @@ pub const FEAT_REPROG_V4: u16 = 0x1B04;
 pub const FEAT_ADJ_DPI: u16 = 0x2201;
 pub const FEAT_SMART_SHIFT: u16 = 0x2110;
 pub const FEAT_SMART_SHIFT_ENHANCED: u16 = 0x2111;
+pub const FEAT_CHANGE_HOST: u16 = 0x0018;
 
 impl HidppClient {
     pub fn tx(&self, feat: u8, func: u8, params: &[u8]) -> Result<()> {
@@ -85,7 +86,7 @@ impl HidppClient {
     pub fn find_feature(&self, feature_id: u16) -> Option<u8> {
         let hi = ((feature_id >> 8) & 0xFF) as u8;
         let lo = (feature_id & 0xFF) as u8;
-        if let Ok(Some(resp)) = self.request(FEAT_IROOT as u8, 0, &[hi, lo, 0x00], 200) {
+        if let Ok(Some(resp)) = self.request(FEAT_IROOT as u8, 0, &[hi, lo, 0x00], 300) {
             if !resp.is_empty() && resp[0] != 0 {
                 return Some(resp[0]);
             }

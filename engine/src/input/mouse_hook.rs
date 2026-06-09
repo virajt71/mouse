@@ -126,19 +126,73 @@ impl MouseHook {
                                     for event in events {
                                         let mut should_forward = true;
 
-                                        match event.event_type() {
-                                            EventType::KEY => {
-                                                let key = Key(event.code());
-                                                let down = event.value() == 1;
+                                        // 1. Process virtual coordinates if it's relative motion
+                                        if event.event_type() == EventType::RELATIVE {
+                                            let code = RelativeAxisType(event.code());
+                                            if code == RelativeAxisType::REL_X || code == RelativeAxisType::REL_Y {
+                                                let dx = if code == RelativeAxisType::REL_X { event.value() } else { 0 };
+                                                let dy = if code == RelativeAxisType::REL_Y { event.value() } else { 0 };
 
-                                                // Side buttons, middle button, etc.
-                                                if key == Key::BTN_SIDE || key == Key::BTN_EXTRA || key == Key::BTN_MIDDLE {
-                                                    let is_blocked = blocked_buttons.lock().unwrap().contains(&key);
-                                                    on_event(MouseHookEvent::Button { key, down });
-                                                    if is_blocked {
-                                                        should_forward = false;
+                                                if let Some(ref inner) = *crate::flow::FLOW_MANAGER.engine_inner.lock().unwrap() {
+                                                    if let Some(target_peer) = crate::flow::FLOW_MANAGER.handle_raw_motion(dx, dy, &inner.config) {
+                                                        log::info!("[MouseHook] Flow transition triggered: peer={}", target_peer);
+                                                        crate::flow::FLOW_MANAGER.set_active_peer(Some(target_peer.clone()));
+
+                                                        let mode = {
+                                                            let cfg = inner.config.lock().unwrap();
+                                                            cfg.settings.flow_mouse_mode.clone()
+                                                        };
+                                                        if mode == "hardware" {
+                                                            if let Some(peer_idx) = crate::flow::switching::get_peer_channel_index(&target_peer, &inner.config) {
+                                                                crate::flow::switching::trigger_hidpp_channel_switch(peer_idx);
+                                                            }
+                                                        }
                                                     }
                                                 }
+                                            }
+                                        }
+
+                                        // 2. Intercept and redirect if forwarding is active
+                                        let is_forwarding = crate::flow::FLOW_MANAGER.is_forwarding_to_remote();
+                                        if is_forwarding {
+                                            if let Some(peer_name) = crate::flow::FLOW_MANAGER.get_active_peer_name() {
+                                                let flow_evt = match event.event_type() {
+                                                    EventType::KEY => Some(crate::flow::network::FlowEvent::MouseButton { code: event.code(), value: event.value() }),
+                                                    EventType::RELATIVE => {
+                                                        let code = RelativeAxisType(event.code());
+                                                        if code == RelativeAxisType::REL_X {
+                                                            Some(crate::flow::network::FlowEvent::MouseMove { dx: event.value(), dy: 0 })
+                                                        } else if code == RelativeAxisType::REL_Y {
+                                                            Some(crate::flow::network::FlowEvent::MouseMove { dx: 0, dy: event.value() })
+                                                        } else if code == RelativeAxisType::REL_WHEEL {
+                                                            Some(crate::flow::network::FlowEvent::MouseScroll { horizontal: false, delta: event.value() })
+                                                        } else if code == RelativeAxisType::REL_HWHEEL {
+                                                            Some(crate::flow::network::FlowEvent::MouseScroll { horizontal: true, delta: event.value() })
+                                                        } else {
+                                                            None
+                                                        }
+                                                    }
+                                                    _ => None,
+                                                };
+                                                if let Some(evt) = flow_evt {
+                                                    let _ = crate::flow::network::send_event_to_peer(&peer_name, &evt);
+                                                }
+                                            }
+                                            should_forward = false;
+                                        } else {
+                                            match event.event_type() {
+                                                EventType::KEY => {
+                                                    let key = Key(event.code());
+                                                    let down = event.value() == 1;
+
+                                                    // Side buttons, middle button, etc.
+                                                    if key == Key::BTN_SIDE || key == Key::BTN_EXTRA || key == Key::BTN_MIDDLE {
+                                                        let is_blocked = blocked_buttons.lock().unwrap().contains(&key);
+                                                        on_event(MouseHookEvent::Button { key, down });
+                                                        if is_blocked {
+                                                            should_forward = false;
+                                                        }
+                                                    }
 
                                                 if should_forward {
                                                     if event.value() != 0 {
@@ -199,6 +253,7 @@ impl MouseHook {
                                                 }
                                             }
                                             _ => {}
+                                        }
                                         }
 
                                         if should_forward {

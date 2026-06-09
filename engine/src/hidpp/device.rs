@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use hidapi::HidApi;
 use super::HidppClient;
-use super::protocol::{LOGI_VID, FEAT_REPROG_V4, FEAT_ADJ_DPI, FEAT_SMART_SHIFT_ENHANCED, FEAT_SMART_SHIFT};
+use super::protocol::{LOGI_VID, FEAT_REPROG_V4, FEAT_ADJ_DPI, FEAT_SMART_SHIFT_ENHANCED, FEAT_SMART_SHIFT, FEAT_CHANGE_HOST};
 
 impl HidppClient {
     pub fn open_device(&mut self) -> Result<()> {
@@ -46,6 +46,7 @@ impl HidppClient {
         self.feat_idx = None;
         self.dpi_idx = None;
         self.smart_shift_idx = None;
+        self.change_host_idx = None;
         self.held = false;
         self.mode_shift_held = false;
 
@@ -80,6 +81,11 @@ impl HidppClient {
             self.smart_shift_idx = Some(ss_fi);
             self.smart_shift_enhanced = false;
             log::info!("[HID++] Found SMART_SHIFT at index 0x{:02X}", ss_fi);
+        }
+
+        self.change_host_idx = self.find_feature(FEAT_CHANGE_HOST);
+        if let Some(ch_fi) = self.change_host_idx {
+            log::info!("[HID++] Found CHANGE_HOST at index 0x{:02X}", ch_fi);
         }
 
         // Program button diversion (only for non-keyboards/devices with gesture support)
@@ -128,6 +134,17 @@ impl HidppClient {
             "mx_mechanical".to_string()
         } else {
             "generic".to_string()
+        }
+    }
+
+    pub fn switch_host_channel(&self, channel_index: u8) -> Result<()> {
+        let idx = self.change_host_idx.ok_or_else(|| anyhow!("ChangeHost feature not supported on this device"))?;
+        let resp = self.request(idx, 1, &[channel_index], 1000)?;
+        if resp.is_some() {
+            log::info!("[HID++] Command to change host to channel {} sent successfully", channel_index);
+            Ok(())
+        } else {
+            Err(anyhow!("Change host command failed"))
         }
     }
 }
