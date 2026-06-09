@@ -9,7 +9,7 @@
 - **Button Remapping** - Map any mouse button to keyboard shortcuts, media keys, browser actions, or custom key sequences.
 - **Multi-Button Gesture Control** - Hold a button and swipe in a direction (up / down / left / right) to trigger configurable actions. Gestures are supported on the physical gesture button, Middle Click (`middle`), Side Button 1 / Back (`xbutton1`), and Side Button 2 / Forward (`xbutton2`). Includes configurable threshold, deadzone, timeout, and cooldown.
 - **Application Profiles** - Multiple named profiles with automatic process-based switching.
-  - **Auto-Switching** - Automatically detects the active foreground app window. Supports native X11 plus shell-specific fallbacks for GNOME Shell (via D-Bus `gdbus`), KDE (via `kdotool`), and legacy/general desktop environments (via `xdotool`).
+  - **Auto-Switching** - Automatically detects the active foreground app window. Supports native X11 plus compositor/shell-specific fallbacks for GNOME Shell (via D-Bus `gdbus`), KDE Plasma & LXQt (via `kdotool`), Sway (via `swaymsg`), Hyprland (via `hyprctl`), i3 (via `i3-msg`), and legacy/general desktop environments (via `xdotool`).
   - **In-App Application Selector** - Scans installed applications (from `.desktop` files in `/usr/share/applications` and `~/.local/share/applications`) and active processes (via `/proc`) to create app-specific profiles in one click.
   - **Toast Notifications** - Displays modern, animated, and fading toast alerts at the bottom-right corner of the screen when the active profile changes.
 - **DPI Control** - Set and persist DPI directly via the HID++ protocol.
@@ -46,47 +46,43 @@ graph TD
     subgraph GUI ["mouser_gui (egui frontend)"]
         MouserApp["MouserApp (Root View)"]
         Theme["Theme / Styles"]
-        MouseUI["Mouse UI (DPI/SmartShift)"]
-        SettingsUI["Settings & Profiles UI"]
+        Views["Views (Customization, Settings, Empty State, Top Bar)"]
+        Widgets["Widgets (Battery, Status, Connection & misc Icons)"]
         DesktopApps["DesktopApps (Desktop/Proc Scanner)"]
         Trans["Translation / i18n"]
         
         MouserApp --> Theme
-        MouserApp --> MouseUI
-        MouserApp --> SettingsUI
+        MouserApp --> Views
         MouserApp --> Trans
-        MouseUI --> DesktopApps
+        Views --> Widgets
+        Views --> DesktopApps
     end
-    class MouserApp,Theme,MouseUI,SettingsUI,DesktopApps,Trans gui;
+    class MouserApp,Theme,Views,Widgets,DesktopApps,Trans gui;
 
     subgraph Engine ["mouser_engine (HID++ backend)"]
-        Core["Engine Core (Event Loop / State)"]
+        Core["Engine Orchestration (State, Gesture, HScroll, Action)"]
         Config["Config (JSON Persistence)"]
-        HIDPP["HID++ Client (DPI / Battery)"]
+        HIDPP["HID++ Client (Protocol, Device lookup, Diversion)"]
         BT["BlueZ Bluetooth Helper"]
         Receiver["Unifying/Bolt USB Receiver"]
-        MouseHook["Mouse Hook (evdev interception)"]
-        KeyHook["Keyboard Hook (modifier tracking)"]
-        Simulator["Key Simulator (uinput output)"]
-        AppDetect["AppDetector (X11 / XWayland / KDE / GNOME)"]
+        Input["Input layer (Mouse/Keyboard Hooks & uinput Simulator)"]
+        AppDetect["AppDetector (X11 / KDE / GNOME / Sway / Hyprland / i3)"]
 
         Core --> Config
         Core --> HIDPP
         Core --> BT
         Core --> Receiver
-        Core --> MouseHook
-        Core --> KeyHook
-        Core --> Simulator
+        Core --> Input
         Core --> AppDetect
     end
-    class Core,Config,HIDPP,BT,Receiver,MouseHook,KeyHook,Simulator,AppDetect engine;
+    class Core,Config,HIDPP,BT,Receiver,Input,AppDetect engine;
 
     subgraph OS ["Linux OS / Hardware Interfaces"]
         DevHID["/dev/hidraw* (Logitech Mice)"]
         DevInput["/dev/input/event* (evdev inputs)"]
         UInput["/dev/uinput (virtual inputs)"]
         BlueZ["BlueZ D-Bus Daemon"]
-        WindowSys["Windowing System (X11/XWayland)"]
+        WindowSys["Windowing System (X11/Wayland/Compositors)"]
     end
     class DevHID,DevInput,UInput,BlueZ,WindowSys os;
 
@@ -99,10 +95,9 @@ graph TD
     HIDPP <-->|Read/Write HID++| DevHID
     Receiver <-->|Register Devices| DevHID
     BT <-->|D-Bus API| BlueZ
-    MouseHook <-->|Intercept evdev| DevInput
-    KeyHook <-->|Monitor modifiers| DevInput
-    Simulator -->|Inject keystrokes| UInput
-    AppDetect -->|Active Window API| WindowSys
+    Input <-->|evdev interception & uinput emulation| DevInput
+    Input -->|Inject keystrokes| UInput
+    AppDetect -->|Active Window API/IPC| WindowSys
 ```
 
 The project is a Cargo workspace with three crates:
@@ -113,30 +108,27 @@ mouse/
 │   └── main.rs        # CLI args, single-instance guard, engine init, GUI launch, tray
 ├── engine/            # mouser_engine - HID++ backend library
 │   └── src/
-│       ├── lib.rs          # Engine struct, background threads, event loop
-│       ├── config.rs       # Config / Profile / Settings data structures + JSON persistence
-│       ├── hidpp.rs        # HID++ protocol implementation (DPI, SmartShift, battery …)
+│       ├── lib.rs          # Module declarations and public API re-exports
+│       ├── engine/         # Engine core orchestration, state, gesture handlers, profiles
+│       ├── hidpp/          # HID++ wire protocol client, device query, and button diversion
+│       ├── input/          # evdev hooks (mouse/keyboard) and uinput simulator
+│       ├── detection/      # Active window foreground detection (X11 & Wayland backends + worker thread)
 │       ├── bluetooth.rs    # BlueZ D-Bus helpers, device discovery
 │       ├── receiver.rs     # Unifying / Bolt USB receiver support
-│       ├── mouse_hook.rs   # evdev mouse event interception
-│       ├── keyboard_hook.rs# evdev keyboard monitoring (modifier state)
-│       ├── key_simulator.rs# uinput virtual keyboard / mouse output
-│       ├── app_detector.rs # Active window / process detection (X11 + DBus GNOME/KDE)
 │       ├── battery.rs      # Battery polling via HID++
 │       ├── cache.rs        # Persistent paired-device cache (survives BT off)
-│       ├── updater.rs      # HTTP update check & installer
+│       ├── config.rs       # Config / Profile / Settings data structures + JSON persistence
 │       └── worker.rs       # Thread-pool helpers & state updater
 └── gui/               # mouser_gui - egui frontend library
     └── src/
-        ├── lib.rs           # MouserApp root, view routing, close behaviour, toasts
-        ├── theme.rs         # Design tokens (colors, typography, spacing, window size)
-        ├── top_bar.rs       # Title-bar / navigation bar component
-        ├── mouse_ui.rs      # Per-device customisation view, app selector modal
-        ├── settings.rs      # Application settings page (scrollable)
-        ├── empty_state.rs   # No-device / unpaired state screen
-        ├── select_connection.rs # Device picker / connection chooser
-        ├── desktop_apps.rs  # Installed app (.desktop) & running process scanner
-        └── translation.rs   # i18n string lookup
+        ├── lib.rs          # App structure and main frame entry points
+        ├── app/            # Main update loops, textures, and toast notifications
+        ├── views/          # Specific panel layouts: customization settings, empty connection states, settings panels, navigation top bar
+        ├── widgets/        # Drawing widgets: battery levels, status pills, corner accents, specialized icon grids
+        ├── theme.rs        # Design tokens (colors, typography, spacing, window size)
+        ├── translation.rs  # i18n string lookup
+        ├── desktop_apps.rs # Installed app (.desktop) & running process scanner
+        └── updater.rs      # HTTP update checker & installer
 ```
 
 ### Key design decisions
@@ -148,7 +140,7 @@ mouse/
 | Config hot-reload | `Engine::reload_config()` picks up a freshly-written `config.json` without restart. |
 | Device persistence | `cache.rs` writes paired devices to disk; GUI reads from cache, not from live BT query. |
 | Single instance | Unix domain socket at `~/.config/Mouser/mouser.sock`; second launch sends `SHOW` and exits. |
-| App detection & caching | `AppDetector` queries X11, D-Bus (GNOME), or subprocess fallbacks (KDE/General). Missing CLI dependencies (e.g. `gdbus`, `kdotool`, `xdotool`) are cached as disabled upon first failure to eliminate overhead and log spam. |
+| App detection & caching | `AppDetector` queries X11 or compositor/shell-specific fallbacks (GNOME, KDE/LXQt, Sway, Hyprland, i3, or general X11). Missing CLI dependencies (e.g. `gdbus`, `kdotool`, `swaymsg`, `hyprctl`, `i3-msg`, `xdotool`) are cached as disabled upon first failure to eliminate overhead and log spam. |
 | Deadlock-free gestures | Multi-button gestures use a single `GestureState` mutex with lock-free atomic hot-paths and explicit mutex release blocks prior to executing mapped actions. |
 | Non-blocking keyboard hook | Interceptors for Logitech keyboards use `poll` on event file descriptors with timeouts instead of spinning/would-block loops, drastically reducing CPU usage. |
 

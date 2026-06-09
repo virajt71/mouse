@@ -47,17 +47,15 @@ pub fn run_gui(engine: Engine, listener: UnixListener) -> Result<(), eframe::Err
             // Spawn single-instance UDS message listener
             let ctx = cc.egui_ctx.clone();
             std::thread::spawn(move || {
-                for stream in listener.incoming() {
-                    if let Ok(mut stream) = stream {
-                        let mut buf = [0; 64];
-                        if let Ok(n) = stream.read(&mut buf) {
-                            let msg = String::from_utf8_lossy(&buf[..n]);
-                            if msg.trim() == "SHOW" {
-                                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-                                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-                                if let Some(monitor) = ctx.input(|i| i.viewport().monitor_size) {
-                                    gui::theme::center_window(&ctx, monitor);
-                                }
+                for mut stream in listener.incoming().flatten() {
+                    let mut buf = [0; 64];
+                    if let Ok(n) = stream.read(&mut buf) {
+                        let msg = String::from_utf8_lossy(&buf[..n]);
+                        if msg.trim() == "SHOW" {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                            if let Some(monitor) = ctx.input(|i| i.viewport().monitor_size) {
+                                gui::theme::center_window(&ctx, monitor);
                             }
                         }
                     }

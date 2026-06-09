@@ -1,0 +1,60 @@
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
+use std::time::Instant;
+use evdev::Key;
+
+use crate::config::Config;
+use crate::input::{KeySimulator, MouseHook, KeyboardHook};
+use crate::detection::AppDetector;
+use crate::hidpp::HidppClient;
+
+pub struct GestureState {
+    pub delta_x: f32,
+    pub delta_y: f32,
+    pub last_move_at: Instant,
+    pub cooldown_until: Instant,
+    pub input_source: Option<String>,
+    pub button: Option<String>,
+}
+
+pub struct EngineInner {
+    pub config: Mutex<Config>,
+    pub config_generation: AtomicU64,
+    pub key_simulator: KeySimulator,
+    pub app_detector: Mutex<Option<AppDetector>>,
+    pub mouse_hook: Mutex<Option<MouseHook>>,
+    pub keyboard_hooks: Mutex<Vec<KeyboardHook>>,
+    pub hid_api: Mutex<Option<hidapi::HidApi>>,
+    pub hid_clients: Mutex<Vec<HidppClient>>,
+    pub selected_device_idx: Mutex<usize>,
+    pub running: AtomicBool,
+    pub current_profile: Mutex<String>,
+    pub active_mappings: Mutex<HashMap<String, String>>,
+    pub active_profile_shared: Arc<Mutex<String>>,
+    pub last_detected_exe: Mutex<String>,
+
+    // Shared state variables with MouseHook
+    pub blocked_buttons_arc: Arc<Mutex<Vec<Key>>>,
+    pub invert_vscroll_arc: Arc<AtomicBool>,
+    pub invert_hscroll_arc: Arc<AtomicBool>,
+    pub block_hscroll_arc: Arc<AtomicBool>,
+    pub gesture_active_arc: Arc<AtomicBool>,
+
+    // Gesture tracking state
+    pub gesture_tracking: AtomicBool,
+    pub gesture_triggered: AtomicBool,
+    pub gesture_state: Mutex<GestureState>,
+
+    // HScroll tracking state
+    pub hscroll_accum_left: Mutex<f32>,
+    pub hscroll_accum_right: Mutex<f32>,
+    pub hscroll_last_fire_left: Mutex<Instant>,
+    pub hscroll_last_fire_right: Mutex<Instant>,
+
+    // Cached gesture settings
+    pub cached_gesture_threshold: AtomicU32,
+    pub cached_gesture_deadzone: AtomicU32,
+    pub cached_gesture_timeout_ms: AtomicU64,
+    pub cached_gesture_cooldown_ms: AtomicU64,
+}

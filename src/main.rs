@@ -78,11 +78,9 @@ fn main() -> Result<(), eframe::Error> {
         // Spawn a thread to consume UDS socket connections
         let socket_path_clone = single_instance::get_socket_path();
         std::thread::spawn(move || {
-            for stream in listener.incoming() {
-                if let Ok(mut stream) = stream {
-                    let mut buf = [0; 64];
-                    let _ = stream.read(&mut buf);
-                }
+            for mut stream in listener.incoming().flatten() {
+                let mut buf = [0; 64];
+                let _ = stream.read(&mut buf);
             }
         });
 

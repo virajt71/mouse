@@ -26,7 +26,7 @@ pub fn scan_desktop_applications() -> Vec<DesktopApp> {
         if let Ok(entries) = fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.extension().map_or(false, |ext| ext == "desktop") {
+                if path.extension().is_some_and(|ext| ext == "desktop") {
                     if let Ok(content) = fs::read_to_string(&path) {
                         if let Some(app) = parse_desktop_file(&content, path.to_string_lossy().into_owned()) {
                             let name_lower = app.name.to_lowercase();
@@ -42,7 +42,7 @@ pub fn scan_desktop_applications() -> Vec<DesktopApp> {
     }
 
     // Sort alphabetically by name
-    apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    apps.sort_by_key(|a| a.name.to_lowercase());
     apps
 }
 
@@ -56,11 +56,7 @@ fn parse_desktop_file(content: &str, path: String) -> Option<DesktopApp> {
     for line in content.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with('[') {
-            if trimmed == "[Desktop Entry]" {
-                is_desktop_entry_section = true;
-            } else {
-                is_desktop_entry_section = false;
-            }
+            is_desktop_entry_section = trimmed == "[Desktop Entry]";
         }
         if !is_desktop_entry_section {
             continue;
@@ -70,25 +66,17 @@ fn parse_desktop_file(content: &str, path: String) -> Option<DesktopApp> {
             let key = trimmed[..pos].trim();
             let value = trimmed[pos + 1..].trim();
             match key {
-                "Name" => {
-                    if name.is_none() {
-                        name = Some(value.to_string());
-                    }
+                "Name" if name.is_none() => {
+                    name = Some(value.to_string());
                 }
-                "Exec" => {
-                    if exec.is_none() {
-                        exec = Some(clean_exec_command(value));
-                    }
+                "Exec" if exec.is_none() => {
+                    exec = Some(clean_exec_command(value));
                 }
-                "Icon" => {
-                    if icon.is_none() {
-                        icon = Some(value.to_string());
-                    }
+                "Icon" if icon.is_none() => {
+                    icon = Some(value.to_string());
                 }
-                "NoDisplay" => {
-                    if value.to_lowercase() == "true" {
-                        no_display = true;
-                    }
+                "NoDisplay" if value.to_lowercase() == "true" => {
+                    no_display = true;
                 }
                 _ => {}
             }
@@ -203,7 +191,7 @@ pub fn scan_running_processes() -> Vec<DesktopApp> {
             }
         }
     }
-    apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    apps.sort_by_key(|a| a.name.to_lowercase());
     apps
 }
 
