@@ -133,18 +133,20 @@ impl MouseHook {
                                                 let dx = if code == RelativeAxisType::REL_X { event.value() } else { 0 };
                                                 let dy = if code == RelativeAxisType::REL_Y { event.value() } else { 0 };
 
-                                                if let Some(ref inner) = *crate::flow::FLOW_MANAGER.engine_inner.lock().unwrap() {
-                                                    if let Some(target_peer) = crate::flow::FLOW_MANAGER.handle_raw_motion(dx, dy, &inner.config) {
-                                                        log::info!("[MouseHook] Flow transition triggered: peer={}", target_peer);
-                                                        crate::flow::FLOW_MANAGER.set_active_peer(Some(target_peer.clone()));
-
-                                                        let mode = {
-                                                            let cfg = inner.config.lock().unwrap();
-                                                            cfg.settings.flow_mouse_mode.clone()
-                                                        };
-                                                        if mode == "hardware" {
-                                                            if let Some(peer_idx) = crate::flow::switching::get_peer_channel_index(&target_peer, &inner.config) {
-                                                                crate::flow::switching::trigger_hidpp_channel_switch(peer_idx);
+                                                // Only accumulate when NOT forwarding (else peer already got it below)
+                                                if !crate::flow::FLOW_MANAGER.is_forwarding_to_remote() {
+                                                    if let Some(ref inner) = *crate::flow::FLOW_MANAGER.engine_inner.lock().unwrap() {
+                                                        let enabled = inner.config.lock().unwrap().settings.flow_enabled;
+                                                        if enabled {
+                                                            if let Some(target) = crate::flow::FLOW_MANAGER.handle_raw_motion(dx, dy, &inner.config) {
+                                                                log::info!("[Flow] Edge transition → {}", target);
+                                                                crate::flow::FLOW_MANAGER.set_active_peer(Some(target.clone()));
+                                                                let mode = inner.config.lock().unwrap().settings.flow_mouse_mode.clone();
+                                                                if mode == "hardware" {
+                                                                    if let Some(idx) = crate::flow::switching::get_peer_channel_index(&target, &inner.config) {
+                                                                        crate::flow::switching::trigger_hidpp_channel_switch(idx);
+                                                                    }
+                                                                }
                                                             }
                                                         }
                                                     }

@@ -302,6 +302,7 @@ pub fn show_flow_tab(
                                             layout_y: 0,
                                             paired: true,
                                             fingerprint: "".to_string(),
+                                            auto_reconnect: true,
                                         });
                                         settings_dirty = true;
                                     }
