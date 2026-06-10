@@ -46,7 +46,7 @@ impl MouserApp {
     pub fn new(ctx: egui::Context, tray_icon: Option<tray_icon::TrayIcon>, engine: mouser_engine::Engine) -> Self {
         let cached = mouser_engine::cache::load_device_cache();
         let config = engine.get_config();
-        let gui_active_profile = config.active_profile.clone();
+        let gui_active_profile = config.active_app_profile.clone();
         let config_gen = engine.config_generation();
         let updater = Updater::new();
 
@@ -120,9 +120,10 @@ impl MouserApp {
         if current_gen != self.last_config_generation {
             let fresh = self.engine.get_config();
             
-            // Reload everything EXCEPT active_profile — GUI pins its own
             self.config.settings = fresh.settings;
-            self.config.profiles = fresh.profiles;
+            self.config.active_group = fresh.active_group;
+            self.config.active_app_profile = fresh.active_app_profile;
+            self.config.profile_groups = fresh.profile_groups;
             self.config.version = fresh.version;
             
             self.last_config_generation = current_gen;

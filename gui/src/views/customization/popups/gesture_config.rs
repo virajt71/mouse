@@ -51,7 +51,7 @@ pub fn draw_gesture_config_ui(
         Color32::from_rgb(0, 245, 198), // Teal `#00f5c6`
     );
 
-    let profile = config.profiles.get(&config.active_profile).unwrap();
+    let profile = config.get_profile(&config.active_app_profile).unwrap();
     let (_, _, up_key, down_key, left_key, right_key) = get_button_keys(btn);
     let click_key = get_button_keys(btn).0;
 
@@ -171,7 +171,7 @@ pub fn draw_gesture_config_ui(
         mps.insert(down_key.to_string(), preset.down.to_string());
         mps.insert(click_key.to_string(), preset.click.to_string());
         let engine_bg = engine.clone();
-        let profile_bg = config.active_profile.clone();
+        let profile_bg = config.active_app_profile.clone();
         std::thread::spawn(move || { engine_bg.update_profile_mappings(&profile_bg, mps); });
     }
 
@@ -336,7 +336,7 @@ pub fn draw_gesture_config_ui(
                 let mut mps = profile.mappings.clone();
                 mps.insert(key_str.to_string(), resolved);
                 let engine_bg = engine.clone();
-                let profile_bg = config.active_profile.clone();
+                let profile_bg = config.active_app_profile.clone();
                 std::thread::spawn(move || { engine_bg.update_profile_mappings(&profile_bg, mps); });
             }
         }

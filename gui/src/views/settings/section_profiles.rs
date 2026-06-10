@@ -15,7 +15,7 @@ pub fn render_section_profiles(ui: &mut egui::Ui, config: &mut Config, engine: &
             ui.add_space(6.0);
             render_spaced_header(
                 ui,
-                "PROFILES",
+                "PROFILE GROUPS",
                 14.0,
                 theme::primary_text(ui.ctx()),
             );
@@ -24,30 +24,27 @@ pub fn render_section_profiles(ui: &mut egui::Ui, config: &mut Config, engine: &
         ui.add_space(14.0);
 
         ui.horizontal(|ui| {
-            ui.label("Selected Profile:");
-            let mut sorted_keys: Vec<String> = config.profiles.keys().cloned().collect();
+            ui.label("Active Profile Group:");
+            let mut sorted_keys: Vec<String> = config.profile_groups.keys().cloned().collect();
             sorted_keys.sort();
 
-            let mut editing_profile = crate::views::customization::SELECTED_EDIT_PROFILE.with(|p| p.borrow().clone());
-            if editing_profile.is_empty() {
-                editing_profile = config.active_profile.clone();
-                crate::views::customization::SELECTED_EDIT_PROFILE.with(|p| *p.borrow_mut() = editing_profile.clone());
-                if let Some(prof) = config.profiles.get(&editing_profile) {
-                    crate::views::customization::APP_BINDINGS_BUFFER.with(|b| *b.borrow_mut() = prof.apps.join(", "));
-                }
+            let mut editing_group = crate::views::customization::SELECTED_EDIT_GROUP.with(|g| g.borrow().clone());
+            if editing_group.is_empty() {
+                editing_group = config.active_group.clone();
+                crate::views::customization::SELECTED_EDIT_GROUP.with(|g| *g.borrow_mut() = editing_group.clone());
             }
 
-            let combo = egui::ComboBox::from_id_salt("settings_editing_profile_combo")
-                .selected_text(RichText::new(&editing_profile).color(theme::primary_text(ui.ctx())));
+            let combo = egui::ComboBox::from_id_salt("settings_editing_group_combo")
+                .selected_text(RichText::new(&editing_group).color(theme::primary_text(ui.ctx())));
             let res = combo.show_ui(ui, |ui| {
                 let mut changed = false;
-                for p_name in &sorted_keys {
-                    let label = if *p_name == config.active_profile {
-                        format!("★ {}", p_name)
+                for g_name in &sorted_keys {
+                    let label = if *g_name == config.active_group {
+                        format!("★ {}", g_name)
                     } else {
-                        p_name.clone()
+                        g_name.clone()
                     };
-                    if ui.selectable_value(&mut editing_profile, p_name.clone(), label).clicked() {
+                    if ui.selectable_value(&mut editing_group, g_name.clone(), label).clicked() {
                         changed = true;
                     }
                 }
@@ -55,17 +52,15 @@ pub fn render_section_profiles(ui: &mut egui::Ui, config: &mut Config, engine: &
             });
 
             if let Some(true) = res.inner {
-                crate::views::customization::SELECTED_EDIT_PROFILE.with(|p| *p.borrow_mut() = editing_profile.clone());
-                if let Some(prof) = config.profiles.get(&editing_profile) {
-                    crate::views::customization::APP_BINDINGS_BUFFER.with(|b| *b.borrow_mut() = prof.apps.join(", "));
-                }
+                crate::views::customization::SELECTED_EDIT_GROUP.with(|g| *g.borrow_mut() = editing_group.clone());
             }
 
             // Button to activate if not active
-            if editing_profile != config.active_profile {
+            if editing_group != config.active_group {
                 if ui.button("Activate").clicked() {
-                    engine.select_profile(&editing_profile);
-                    config.active_profile = editing_profile.clone();
+                    engine.select_profile_group(&editing_group);
+                    config.active_group = editing_group.clone();
+                    config.active_app_profile = "global".to_string();
                 }
             } else {
                 ui.label(RichText::new("Active").size(11.0).color(theme::accent_color(ui.ctx())));
@@ -74,16 +69,16 @@ pub fn render_section_profiles(ui: &mut egui::Ui, config: &mut Config, engine: &
 
         ui.add_space(14.0);
 
-        let editing_profile = crate::views::customization::SELECTED_EDIT_PROFILE.with(|p| p.borrow().clone());
-        if !editing_profile.is_empty() {
-            // Delete profile
-            if editing_profile == "default" {
-                ui.add_enabled(false, egui::Button::new("Delete Profile"));
-                ui.label(RichText::new("The 'default' profile cannot be deleted.").size(10.0).color(theme::muted_text(ui.ctx())));
+        let editing_group = crate::views::customization::SELECTED_EDIT_GROUP.with(|g| g.borrow().clone());
+        if !editing_group.is_empty() {
+            // Delete group
+            if editing_group == "default" {
+                ui.add_enabled(false, egui::Button::new("Delete Group"));
+                ui.label(RichText::new("The 'default' group cannot be deleted.").size(10.0).color(theme::muted_text(ui.ctx())));
             } else {
-                if ui.button(RichText::new("Delete Profile").color(theme::danger_color(ui.ctx()))).clicked() {
-                    engine.delete_profile(&editing_profile);
-                    crate::views::customization::SELECTED_EDIT_PROFILE.with(|p| p.borrow_mut().clear());
+                if ui.button(RichText::new("Delete Profile Group").color(theme::danger_color(ui.ctx()))).clicked() {
+                    engine.delete_profile_group(&editing_group);
+                    crate::views::customization::SELECTED_EDIT_GROUP.with(|g| g.borrow_mut().clear());
                 }
             }
         }
@@ -92,16 +87,16 @@ pub fn render_section_profiles(ui: &mut egui::Ui, config: &mut Config, engine: &
         ui.separator();
         ui.add_space(14.0);
 
-        // Add profile form
-        ui.label("Create New Profile:");
+        // Add group form
+        ui.label("Create New Profile Group:");
         ui.horizontal(|ui| {
-            crate::views::customization::NEW_PROFILE_NAME.with(|name_cell| {
+            crate::views::customization::NEW_GROUP_NAME.with(|name_cell| {
                 let mut name_ref = name_cell.borrow_mut();
                 ui.text_edit_singleline(&mut *name_ref);
-                if ui.button("Add").clicked() {
+                if ui.button("Add Group").clicked() {
                     let clean = name_ref.trim();
                     if !clean.is_empty() {
-                        engine.add_profile(clean);
+                        engine.add_profile_group(clean);
                         name_ref.clear();
                     }
                 }

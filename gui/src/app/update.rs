@@ -47,10 +47,6 @@ impl eframe::App for MouserApp {
             self.battery_pct = update.battery_pct;
             self.has_active_hidpp_battery = Some(update.has_active_hidpp_battery);
 
-            if update.active_profile != self.last_known_profile && !self.last_known_profile.is_empty() {
-                self.toast_message = Some(format!("Profile → {}", update.active_profile));
-                self.toast_shown_at = Some(std::time::Instant::now());
-            }
             self.last_known_profile = update.active_profile.clone();
         }
 

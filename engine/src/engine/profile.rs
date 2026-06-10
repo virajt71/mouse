@@ -9,7 +9,7 @@ impl Engine {
     pub fn refresh_active_profile(&self) {
         let (profile_name, mappings) = {
             let cfg = self.inner.config.lock().unwrap();
-            let target = cfg.active_profile.clone();
+            let target = cfg.active_app_profile.clone();
             let mappings = cfg.get_resolved_mappings(&target);
             self.inner.cached_gesture_threshold.store(cfg.settings.gesture_threshold.max(0) as u32, Ordering::Relaxed);
             self.inner.cached_gesture_deadzone.store(cfg.settings.gesture_deadzone.max(0) as u32, Ordering::Relaxed);
@@ -29,10 +29,10 @@ impl Engine {
     }
 
     pub fn select_profile(&self, name: &str) {
-        log::info!("[Engine] Selecting profile: {}", name);
+        log::info!("[Engine] Selecting active app profile: {}", name);
         {
             let mut cfg = self.inner.config.lock().unwrap();
-            cfg.active_profile = name.to_string();
+            cfg.active_app_profile = name.to_string();
             let _ = cfg.save();
             self.increment_config_generation();
         }
@@ -43,37 +43,43 @@ impl Engine {
         log::info!("[Engine] Adding profile: {}", name);
         {
             let mut cfg = self.inner.config.lock().unwrap();
-            if !cfg.profiles.contains_key(name) {
-                let default_profile = cfg.profiles.get("default").cloned().unwrap_or_else(|| {
-                    crate::config::Profile {
-                        label: name.to_string(),
-                        apps: Vec::new(),
-                        mappings: std::collections::HashMap::new(),
-                    }
-                });
-                let mut new_profile = default_profile;
-                new_profile.label = name.to_string();
-                new_profile.apps = Vec::new();
-                cfg.profiles.insert(name.to_string(), new_profile);
-                let _ = cfg.save();
-                self.increment_config_generation();
+            let active_group = cfg.active_group.clone();
+            if let Some(group) = cfg.profile_groups.get_mut(&active_group) {
+                if !group.profiles.contains_key(name) {
+                    let global_profile = group.profiles.get("global").cloned().unwrap_or_else(|| {
+                        crate::config::Profile {
+                            label: name.to_string(),
+                            apps: Vec::new(),
+                            mappings: std::collections::HashMap::new(),
+                        }
+                    });
+                    let mut new_profile = global_profile;
+                    new_profile.label = name.to_string();
+                    new_profile.apps = Vec::new();
+                    group.profiles.insert(name.to_string(), new_profile);
+                    let _ = cfg.save();
+                    self.increment_config_generation();
+                }
             }
         }
     }
 
     pub fn delete_profile(&self, name: &str) {
         log::info!("[Engine] Deleting profile: {}", name);
-        if name == "default" {
+        if name == "global" {
             return;
         }
         {
             let mut cfg = self.inner.config.lock().unwrap();
-            cfg.profiles.remove(name);
-            if cfg.active_profile == name {
-                cfg.active_profile = "default".to_string();
+            let active_group = cfg.active_group.clone();
+            if let Some(group) = cfg.profile_groups.get_mut(&active_group) {
+                group.profiles.remove(name);
+                if cfg.active_app_profile == name {
+                    cfg.active_app_profile = "global".to_string();
+                }
+                let _ = cfg.save();
+                self.increment_config_generation();
             }
-            let _ = cfg.save();
-            self.increment_config_generation();
         }
         self.refresh_active_profile();
     }
@@ -87,10 +93,13 @@ impl Engine {
             .collect();
         {
             let mut cfg = self.inner.config.lock().unwrap();
-            if let Some(profile) = cfg.profiles.get_mut(profile_name) {
-                profile.apps = apps;
-                let _ = cfg.save();
-                self.increment_config_generation();
+            let active_group = cfg.active_group.clone();
+            if let Some(group) = cfg.profile_groups.get_mut(&active_group) {
+                if let Some(profile) = group.profiles.get_mut(profile_name) {
+                    profile.apps = apps;
+                    let _ = cfg.save();
+                    self.increment_config_generation();
+                }
             }
         }
     }
@@ -99,12 +108,15 @@ impl Engine {
         log::info!("[Engine] Updating mappings for profile {}", profile_name);
         {
             let mut cfg = self.inner.config.lock().unwrap();
-            if let Some(profile) = cfg.profiles.get_mut(profile_name) {
-                for (k, v) in mappings {
-                    profile.mappings.insert(k, v);
+            let active_group = cfg.active_group.clone();
+            if let Some(group) = cfg.profile_groups.get_mut(&active_group) {
+                if let Some(profile) = group.profiles.get_mut(profile_name) {
+                    for (k, v) in mappings {
+                        profile.mappings.insert(k, v);
+                    }
+                    let _ = cfg.save();
+                    self.increment_config_generation();
                 }
-                let _ = cfg.save();
-                self.increment_config_generation();
             }
         }
         log::info!("[Engine] Saved mappings, refreshing active profile...");
@@ -112,6 +124,61 @@ impl Engine {
         log::info!("[Engine] Refreshed active profile, restarting keyboard hooks...");
         let _ = self.restart_keyboard_hooks();
         log::info!("[Engine] Keyboard hooks restarted successfully!");
+    }
+
+    pub fn select_profile_group(&self, name: &str) {
+        log::info!("[Engine] Selecting profile group: {}", name);
+        {
+            let mut cfg = self.inner.config.lock().unwrap();
+            if cfg.profile_groups.contains_key(name) {
+                cfg.active_group = name.to_string();
+                cfg.active_app_profile = "global".to_string();
+                let _ = cfg.save();
+                self.increment_config_generation();
+            }
+        }
+        self.refresh_active_profile();
+    }
+
+    pub fn add_profile_group(&self, name: &str) {
+        log::info!("[Engine] Adding profile group: {}", name);
+        {
+            let mut cfg = self.inner.config.lock().unwrap();
+            if !cfg.profile_groups.contains_key(name) {
+                let mut profiles = std::collections::HashMap::new();
+                let default_mappings = cfg.profile_groups.get("default")
+                    .and_then(|g| g.profiles.get("global"))
+                    .map(|p| p.mappings.clone())
+                    .unwrap_or_else(std::collections::HashMap::new);
+
+                profiles.insert("global".to_string(), crate::config::Profile {
+                    label: "Default (All Apps)".to_string(),
+                    apps: vec![],
+                    mappings: default_mappings,
+                });
+                cfg.profile_groups.insert(name.to_string(), crate::config::ProfileGroup { profiles });
+                let _ = cfg.save();
+                self.increment_config_generation();
+            }
+        }
+    }
+
+    pub fn delete_profile_group(&self, name: &str) {
+        log::info!("[Engine] Deleting profile group: {}", name);
+        if name == "default" {
+            return;
+        }
+        {
+            let mut cfg = self.inner.config.lock().unwrap();
+            cfg.profile_groups.remove(name);
+            if cfg.active_group == name {
+                cfg.active_group = "default".to_string();
+                cfg.active_app_profile = "global".to_string();
+            }
+            let _ = cfg.save();
+            self.increment_config_generation();
+        }
+        self.refresh_active_profile();
     }
 
     #[allow(clippy::too_many_arguments)]

@@ -43,7 +43,7 @@ pub fn draw_button_action_popup(
         .rect_stroke(rect, 2.0, Stroke::new(1.0, border));
     theme::draw_tech_corners(ui.painter(), rect, theme::accent_color(ui.ctx()), 6.0);
 
-    let profile = config.profiles.get(&config.active_profile).unwrap();
+    let profile = config.get_profile(&config.active_app_profile).unwrap();
     let current_opt = get_button_option(btn, &profile.mappings);
 
     let mut click_occurred = false;

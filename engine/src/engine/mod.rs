@@ -31,7 +31,7 @@ impl Engine {
     pub fn new() -> Self {
         let config = Config::load();
         let key_simulator = KeySimulator::new();
-        let current_profile = config.active_profile.clone();
+        let current_profile = config.active_app_profile.clone();
 
         let invert_vscroll = config.settings.invert_vscroll;
         let invert_hscroll = config.settings.invert_hscroll;
