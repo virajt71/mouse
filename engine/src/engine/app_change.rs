@@ -52,13 +52,6 @@ impl Engine {
             drop(current_profile);
             drop(last_exe);
             
-            {
-                let mut cfg = self.inner.config.lock().unwrap();
-                cfg.active_profile = profile_name.clone();
-                let _ = cfg.save();
-                self.increment_config_generation();
-            }
-            
             *self.inner.active_profile_shared.lock().unwrap() = profile_name;
             *self.inner.active_mappings.lock().unwrap() = mappings.clone();
             let (blocked, hscroll_blocked) = compute_blocked_buttons(&mappings);

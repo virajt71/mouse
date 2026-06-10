@@ -61,6 +61,7 @@ pub fn show_profiles_settings_tab(ui: &mut egui::Ui, engine: &Engine, config: &m
                                     // Button to select it as active
                                     if ui.button("Activate").clicked() {
                                         engine.select_profile(&p_name);
+                                        config.active_profile = p_name.clone();
                                     }
                                 }
                             });

@@ -379,6 +379,7 @@ pub fn show(
 
                 if p_res.clicked() && !delete_clicked {
                     engine.select_profile(p_name);
+                    config.active_profile = p_name.clone();
                 }
 
                 ui.add_space(14.0);
@@ -393,6 +394,7 @@ pub fn show(
 
             if grid_res.clicked() {
                 engine.select_profile("default");
+                config.active_profile = "default".to_string();
             }
 
             let gc = grid_rect.center();
@@ -656,5 +658,5 @@ pub fn show(
     }
 
     // ── 7. Linux Application Selector Modal ──────────────────────────────────
-    draw_add_app_modal(ctx, engine);
+    draw_add_app_modal(ctx, engine, config);
 }
