@@ -19,7 +19,7 @@ pub use popups::{
     SHOW_ADD_APP_MODAL, APP_SEARCH_QUERY, FOCUS_REQUESTED,
     SCANNED_APPS,
 };
-pub use tabs::profiles_tab::{NEW_PROFILE_NAME, APP_BINDINGS_BUFFER, SELECTED_EDIT_PROFILE};
+pub use tabs::profiles_tab::{NEW_PROFILE_NAME, APP_BINDINGS_BUFFER, SELECTED_EDIT_PROFILE, SELECTED_EDIT_GROUP, NEW_GROUP_NAME};
 
 #[allow(clippy::too_many_arguments)]
 pub fn show(
@@ -197,16 +197,19 @@ pub fn show(
             // Gap ~14px
             ui.add_space(14.0);
 
-            // Get custom profiles sorted alphabetically
-            let mut custom_profiles: Vec<String> = config.profiles.keys()
-                .filter(|k| *k != "default")
-                .cloned()
-                .collect();
+            // Get custom profiles sorted alphabetically from active group
+            let mut custom_profiles: Vec<String> = Vec::new();
+            if let Some(group) = config.profile_groups.get(&config.active_group) {
+                custom_profiles = group.profiles.keys()
+                    .filter(|k| *k != "global")
+                    .cloned()
+                    .collect();
+            }
             custom_profiles.sort_by_key(|a| a.to_lowercase());
 
             // In right-to-left layout, drawing in reverse order preserves left-to-right alphabetical sequence
             for p_name in custom_profiles.iter().rev() {
-                let is_active = config.active_profile == *p_name;
+                let is_active = config.active_app_profile == *p_name;
                 let is_brave = p_name.to_lowercase().contains("brave");
 
                 let (p_rect, p_res) = ui.allocate_exact_size(vec2(23.0, 23.0), egui::Sense::click());
@@ -377,22 +380,22 @@ pub fn show(
 
                 if p_res.clicked() && !delete_clicked {
                     engine.select_profile(p_name);
-                    config.active_profile = p_name.clone();
+                    config.active_app_profile = p_name.clone();
                 }
 
                 ui.add_space(14.0);
             }
 
             // 1. 2x2 Grid Icon
-            let is_default_active = config.active_profile == "default";
+            let is_default_active = config.active_app_profile == "global";
             let (grid_rect, grid_res) = ui.allocate_exact_size(vec2(23.0, 23.0), egui::Sense::click());
             if grid_res.hovered() {
                 ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
             }
 
             if grid_res.clicked() {
-                engine.select_profile("default");
-                config.active_profile = "default".to_string();
+                engine.select_profile("global");
+                config.active_app_profile = "global".to_string();
             }
 
             let gc = grid_rect.center();
@@ -590,8 +593,8 @@ pub fn show(
                     let recorded = RECORDED_KEYS.with(|rk| rk.borrow().clone());
                     if is_valid_combo(&recorded) {
                         // Save the shortcut safely
-                        let profile_name = &config.active_profile;
-                        if let Some(profile) = config.profiles.get(profile_name).or_else(|| config.profiles.get("default")) {
+                        let profile_name = &config.active_app_profile;
+                        if let Some(profile) = config.get_profile(profile_name).or_else(|| config.get_profile("global")) {
                             let mut mappings = profile.mappings.clone();
                             let action_str = format!("custom:{}", recorded);
                             match &target {

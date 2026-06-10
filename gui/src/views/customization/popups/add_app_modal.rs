@@ -191,7 +191,7 @@ pub fn draw_add_app_modal(ctx: &egui::Context, engine: &Engine, config: &mut mou
                                             engine.update_app_bindings(&app.name, &app.exec);
                                             // 3. Switch to it as the active profile
                                             engine.select_profile(&app.name);
-                                            config.active_profile = app.name.clone();
+                                            config.active_app_profile = app.name.clone();
                                             // 4. Hide modal
                                             SHOW_ADD_APP_MODAL.with(|s| *s.borrow_mut() = false);
                                         }

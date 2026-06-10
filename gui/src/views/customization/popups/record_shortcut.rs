@@ -218,8 +218,8 @@ pub fn draw_record_shortcut_ui(
     } else if enter_pressed {
         let recorded = RECORDED_KEYS.with(|rk| rk.borrow().clone());
         if is_valid_combo(&recorded) {
-            let profile_name = &config.active_profile;
-            if let Some(profile) = config.profiles.get(profile_name).or_else(|| config.profiles.get("default")) {
+            let profile_name = &config.active_app_profile;
+            if let Some(profile) = config.get_profile(profile_name).or_else(|| config.get_profile("global")) {
                 let mut mappings = profile.mappings.clone();
                 let action_str = format!("custom:{}", recorded);
 

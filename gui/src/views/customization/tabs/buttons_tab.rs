@@ -32,8 +32,8 @@ pub fn show_buttons_tab(
     );
 
     // 2. Fetch active mappings
-    let profile = config.profiles.get(&config.active_profile).unwrap_or_else(|| {
-        config.profiles.get("default").unwrap()
+    let profile = config.get_profile(&config.active_app_profile).unwrap_or_else(|| {
+        config.get_profile("global").unwrap()
     });
 
     let middle_val = mapping_to_action(CustomizingButton::Middle, &profile.mappings);
@@ -322,12 +322,12 @@ pub fn show_buttons_tab(
                             // Leave it in ActionList view; inline buttons handle transitions.
                             save_thumbwheel_option(opt, &mut mappings);
                             let engine_bg = engine.clone();
-                            let profile_bg = config.active_profile.clone();
+                            let profile_bg = config.active_app_profile.clone();
                             std::thread::spawn(move || { engine_bg.update_profile_mappings(&profile_bg, mappings); });
                         } else {
                             save_thumbwheel_option(opt, &mut mappings);
                             let engine_bg = engine.clone();
-                            let profile_bg = config.active_profile.clone();
+                            let profile_bg = config.active_app_profile.clone();
                             std::thread::spawn(move || { engine_bg.update_profile_mappings(&profile_bg, mappings); });
                             *customizing_button = None;
                         }
@@ -353,7 +353,7 @@ pub fn show_buttons_tab(
                             // Persist gesture_enabled = "true"
                             save_button_option(btn, opt, &mut mappings);
                             let engine_bg = engine.clone();
-                            let profile_bg = config.active_profile.clone();
+                            let profile_bg = config.active_app_profile.clone();
                             std::thread::spawn(move || { engine_bg.update_profile_mappings(&profile_bg, mappings); });
                             // Then show the gesture configuration panel
                             ui.ctx().data_mut(|d| d.insert_temp(view_state_id, PopupView::GesturesConfig));
@@ -374,7 +374,7 @@ pub fn show_buttons_tab(
                         } else {
                             save_button_option(btn, opt, &mut mappings);
                             let engine_bg = engine.clone();
-                            let profile_bg = config.active_profile.clone();
+                            let profile_bg = config.active_app_profile.clone();
                             std::thread::spawn(move || { engine_bg.update_profile_mappings(&profile_bg, mappings); });
                             *customizing_button = None;
                         }

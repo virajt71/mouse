@@ -61,10 +61,16 @@ pub struct Settings {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ProfileGroup {
+    pub profiles: HashMap<String, Profile>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Config {
     pub version: i32,
-    pub active_profile: String,
-    pub profiles: HashMap<String, Profile>,
+    pub active_group: String,
+    pub active_app_profile: String,
+    pub profile_groups: HashMap<String, ProfileGroup>,
     pub settings: Settings,
 }
 
@@ -103,14 +109,17 @@ impl Default for Config {
         default_mappings.insert("hscroll_right".to_string(), "browser_forward".to_string());
         default_mappings.insert("mode_shift".to_string(), "switch_scroll_mode".to_string());
 
-        let default_profile = Profile {
+        let global_profile = Profile {
             label: "Default (All Apps)".to_string(),
             apps: vec![],
             mappings: default_mappings,
         };
 
         let mut profiles = HashMap::new();
-        profiles.insert("default".to_string(), default_profile);
+        profiles.insert("global".to_string(), global_profile);
+
+        let mut profile_groups = HashMap::new();
+        profile_groups.insert("default".to_string(), ProfileGroup { profiles });
 
         let settings = Settings {
             start_minimized: true,
@@ -145,9 +154,10 @@ impl Default for Config {
         };
 
         Config {
-            version: 11,
-            active_profile: "default".to_string(),
-            profiles,
+            version: 12,
+            active_group: "default".to_string(),
+            active_app_profile: "global".to_string(),
+            profile_groups,
             settings,
         }
     }
@@ -181,7 +191,45 @@ impl Config {
         if path.exists() {
             if let Ok(content) = fs::read_to_string(&path) {
                 if let Ok(cfg) = serde_json::from_str::<Config>(&content) {
-                    return cfg;
+                    if cfg.version == 12 {
+                        return cfg;
+                    }
+                }
+                
+                // Fallback / migration from v11
+                #[derive(serde::Deserialize)]
+                struct OldConfig {
+                    version: i32,
+                    active_profile: String,
+                    profiles: HashMap<String, Profile>,
+                    settings: Settings,
+                }
+
+                if let Ok(old_cfg) = serde_json::from_str::<OldConfig>(&content) {
+                    let mut profile_groups = HashMap::new();
+                    let mut profiles = old_cfg.profiles;
+                    if let Some(default_profile) = profiles.remove("default") {
+                        let mut global_profile = default_profile;
+                        global_profile.label = "Default (All Apps)".to_string();
+                        profiles.insert("global".to_string(), global_profile);
+                    }
+                    profile_groups.insert("default".to_string(), ProfileGroup { profiles });
+
+                    let active_app_profile = if old_cfg.active_profile == "default" {
+                        "global".to_string()
+                    } else {
+                        old_cfg.active_profile
+                    };
+
+                    let new_cfg = Config {
+                        version: 12,
+                        active_group: "default".to_string(),
+                        active_app_profile,
+                        profile_groups,
+                        settings: old_cfg.settings,
+                    };
+                    let _ = new_cfg.save();
+                    return new_cfg;
                 } else {
                     log::warn!("[Config] Failed to parse config.json, using defaults.");
                 }
@@ -200,17 +248,22 @@ impl Config {
         Ok(())
     }
 
+    pub fn get_profile(&self, name: &str) -> Option<&Profile> {
+        self.profile_groups.get(&self.active_group)
+            .and_then(|g| g.profiles.get(name))
+    }
+
     pub fn get_resolved_mappings(&self, profile_name: &str) -> HashMap<String, String> {
         let mut resolved = HashMap::new();
-        // Start with default profile mappings
-        if let Some(default_profile) = self.profiles.get("default") {
-            resolved = default_profile.mappings.clone();
-        }
-        // Override with target profile mappings if target is not "default"
-        if profile_name != "default" {
-            if let Some(target_profile) = self.profiles.get(profile_name) {
-                for (k, v) in &target_profile.mappings {
-                    resolved.insert(k.clone(), v.clone()); // always override, explicit "none" = disabled
+        if let Some(group) = self.profile_groups.get(&self.active_group) {
+            if let Some(global_profile) = group.profiles.get("global") {
+                resolved = global_profile.mappings.clone();
+            }
+            if profile_name != "global" {
+                if let Some(target_profile) = group.profiles.get(profile_name) {
+                    for (k, v) in &target_profile.mappings {
+                        resolved.insert(k.clone(), v.clone());
+                    }
                 }
             }
         }
@@ -218,23 +271,26 @@ impl Config {
     }
 
     pub fn get_active_mappings(&self) -> HashMap<String, String> {
-        self.get_resolved_mappings(&self.active_profile)
+        self.get_resolved_mappings(&self.active_app_profile)
     }
 
     pub fn get_profile_for_app(&self, exe_name: &str) -> String {
         if exe_name.is_empty() {
-            return "default".to_string();
+            return "global".to_string();
         }
         let exe_lower = exe_name.to_lowercase();
-        // Look up which profile has a matching app entry
-        for (pname, pdata) in &self.profiles {
-            for app in &pdata.apps {
-                if app.to_lowercase() == exe_lower {
-                    return pname.clone();
+        if let Some(group) = self.profile_groups.get(&self.active_group) {
+            for (pname, pdata) in &group.profiles {
+                for app in &pdata.apps {
+                    for single_app in app.split(',') {
+                        if single_app.trim().to_lowercase() == exe_lower {
+                            return pname.clone();
+                        }
+                    }
                 }
             }
         }
-        "default".to_string()
+        "global".to_string()
     }
 }
 
@@ -250,11 +306,91 @@ mod tests {
             apps: vec!["brave-browser-stable".to_string(), "brave".to_string()],
             mappings: HashMap::new(),
         };
-        config.profiles.insert("Brave Web Browser".to_string(), custom_profile);
+        if let Some(group) = config.profile_groups.get_mut("default") {
+            group.profiles.insert("Brave Web Browser".to_string(), custom_profile);
+        }
 
         // Verify that both match
         assert_eq!(config.get_profile_for_app("brave-browser-stable"), "Brave Web Browser");
         assert_eq!(config.get_profile_for_app("brave"), "Brave Web Browser");
-        assert_eq!(config.get_profile_for_app("firefox"), "default");
+        assert_eq!(config.get_profile_for_app("firefox"), "global");
+    }
+
+    #[test]
+    fn test_config_migration() {
+        let old_json = r##"{
+          "version": 11,
+          "active_profile": "default",
+          "profiles": {
+            "default": {
+              "label": "Default (All Apps)",
+              "apps": [],
+              "mappings": {
+                "xbutton1": "alt_tab"
+              }
+            },
+            "Brave Web Browser": {
+              "label": "Brave Web Browser",
+              "apps": ["brave-browser-stable"],
+              "mappings": {
+                "xbutton2": "play_pause"
+              }
+            }
+          },
+          "settings": {
+            "start_minimized": true,
+            "start_at_login": false,
+            "hscroll_threshold": 1,
+            "invert_hscroll": false,
+            "invert_vscroll": false,
+            "dpi": 1000,
+            "smart_shift_mode": "ratchet",
+            "smart_shift_enabled": false,
+            "smart_shift_threshold": 25,
+            "gesture_threshold": 50,
+            "gesture_deadzone": 40,
+            "gesture_timeout_ms": 3000,
+            "gesture_cooldown_ms": 500,
+            "appearance_mode": "system",
+            "debug_mode": false,
+            "device_layout_overrides": {},
+            "language": "en",
+            "ignore_trackpad": true,
+            "accent_color": "#8b5cf6",
+            "install_updates": true,
+            "flow_enabled": false,
+            "flow_local_name": "Computer 1",
+            "flow_peers": [],
+            "flow_screen_width": 1920,
+            "flow_screen_height": 1080,
+            "flow_hold_key": "ctrl",
+            "flow_mouse_mode": "software",
+            "flow_keyboard_linking": true
+          }
+        }"##;
+
+        let path = get_config_path();
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::write(&path, old_json);
+
+        // Load the config
+        let config = Config::load();
+
+        // Verify version upgraded to 12
+        assert_eq!(config.version, 12);
+        // Verify active group is default
+        assert_eq!(config.active_group, "default");
+        // Verify active app profile mapped from default to global
+        assert_eq!(config.active_app_profile, "global");
+
+        // Verify default group contains the profiles
+        let group = config.profile_groups.get("default").unwrap();
+        let global_p = group.profiles.get("global").unwrap();
+        assert_eq!(global_p.mappings.get("xbutton1").unwrap(), "alt_tab");
+
+        let brave_p = group.profiles.get("Brave Web Browser").unwrap();
+        assert_eq!(brave_p.mappings.get("xbutton2").unwrap(), "play_pause");
     }
 }
