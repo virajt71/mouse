@@ -123,16 +123,35 @@ pub fn draw_add_app_modal(ctx: &egui::Context, engine: &Engine, config: &mut mou
                                 .show(ui, |ui| {
                                     ui.spacing_mut().item_spacing = egui::vec2(0.0, 4.0);
                                     for app in filtered_apps {
+                                        // Check if already assigned
+                                        let mut assigned_profile = None;
+                                        if let Some(g_data) = config.profile_groups.get(&config.active_group) {
+                                            for (pname, pdata) in &g_data.profiles {
+                                                if pdata.apps.contains(&app.exec) {
+                                                    assigned_profile = Some(pname.clone());
+                                                    break;
+                                                }
+                                            }
+                                        }
+
+                                        let is_assigned = assigned_profile.is_some();
                                         let item_w = ui.available_width();
                                         let item_h = 42.0;
-                                        let (item_rect, item_res) = ui.allocate_exact_size(vec2(item_w, item_h), egui::Sense::click());
 
-                                        if item_res.hovered() {
+                                        let (item_rect, item_res) = if is_assigned {
+                                            ui.allocate_exact_size(vec2(item_w, item_h), egui::Sense::hover())
+                                        } else {
+                                            ui.allocate_exact_size(vec2(item_w, item_h), egui::Sense::click())
+                                        };
+
+                                        if item_res.hovered() && !is_assigned {
                                             ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
                                         }
 
                                         let is_hovered = item_res.hovered();
-                                        let bg_color = if is_hovered {
+                                        let bg_color = if is_assigned {
+                                            Color32::from_rgb(0x12, 0x12, 0x12)
+                                        } else if is_hovered {
                                             Color32::from_rgb(0x22, 0x22, 0x22)
                                         } else {
                                             Color32::from_rgb(0x1c, 0x1c, 0x1c)
@@ -154,37 +173,63 @@ pub fn draw_add_app_modal(ctx: &egui::Context, engine: &Engine, config: &mut mou
                                                 pos2(sc.x - 3.5, sc.y + 5.5),
                                                 pos2(sc.x - 7.0, sc.y + 0.5),
                                             ];
-                                            ui.painter().add(egui::Shape::convex_polygon(shield_pts, Color32::from_rgb(249, 115, 22), Stroke::NONE));
+                                            let shield_color = if is_assigned {
+                                                Color32::from_rgb(180, 80, 15)
+                                            } else {
+                                                Color32::from_rgb(249, 115, 22)
+                                            };
+                                            ui.painter().add(egui::Shape::convex_polygon(shield_pts, shield_color, Stroke::NONE));
                                         } else {
                                             let initial = app.name.chars().next().unwrap_or('?').to_uppercase().to_string();
-                                            ui.painter().circle(icon_center, 9.0, Color32::from_rgb(0x2d, 0x2d, 0x2d), Stroke::new(1.0, Color32::from_rgb(0x44, 0x44, 0x44)));
+                                            let circle_color = if is_assigned {
+                                                Color32::from_rgb(0x1a, 0x1a, 0x1a)
+                                            } else {
+                                                Color32::from_rgb(0x2d, 0x2d, 0x2d)
+                                            };
+                                            let text_color = if is_assigned {
+                                                Color32::from_rgb(0x66, 0x66, 0x66)
+                                            } else {
+                                                Color32::WHITE
+                                            };
+                                            ui.painter().circle(icon_center, 9.0, circle_color, Stroke::new(1.0, Color32::from_rgb(0x44, 0x44, 0x44)));
                                             ui.painter().text(
                                                 pos2(icon_center.x, icon_center.y - 0.5),
                                                 egui::Align2::CENTER_CENTER,
                                                 initial,
                                                 egui::FontId::proportional(9.0),
-                                                Color32::WHITE,
+                                                text_color,
                                             );
                                         }
 
                                         // Text details
+                                        let name_color = if is_assigned {
+                                            Color32::from_rgb(0x88, 0x88, 0x88)
+                                        } else {
+                                            Color32::WHITE
+                                        };
                                         ui.painter().text(
                                             pos2(item_rect.min.x + 45.0, item_rect.center().y - 6.0),
                                             egui::Align2::LEFT_CENTER,
                                             &app.name,
                                             egui::FontId::proportional(12.0),
-                                            Color32::WHITE,
+                                            name_color,
                                         );
+
+                                        let (exec_text, text_color) = if let Some(pname) = &assigned_profile {
+                                            (format!("Mapped to profile: {}", pname), Color32::from_rgb(0xe1, 0x1d, 0x48))
+                                        } else {
+                                            (format!("Executable: {}", app.exec), theme::muted_text(ctx))
+                                        };
 
                                         ui.painter().text(
                                             pos2(item_rect.min.x + 45.0, item_rect.center().y + 8.0),
                                             egui::Align2::LEFT_CENTER,
-                                            format!("Executable: {}", app.exec),
+                                            exec_text,
                                             egui::FontId::proportional(9.5),
-                                            theme::muted_text(ctx),
+                                            text_color,
                                         );
 
-                                        if item_res.clicked() {
+                                        if !is_assigned && item_res.clicked() {
                                             // 1. Add Profile to config
                                             engine.add_profile(&app.name);
                                             // 2. Update its app bindings

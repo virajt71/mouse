@@ -200,39 +200,23 @@ pub fn scan_all_applications() -> Vec<DesktopApp> {
     let running = scan_running_processes();
 
     let mut combined: Vec<DesktopApp> = Vec::new();
-    let mut matched_running = HashSet::new();
+    let mut seen_execs = HashSet::new();
 
-    for mut inst_app in installed {
-        let inst_exec_lower = inst_app.exec.to_lowercase();
-        let mut associated_execs = vec![inst_app.exec.clone()];
-        
-        for run_app in &running {
-            let run_exec_lower = run_app.exec.to_lowercase();
-            // Match logic:
-            // 1. Identical executable
-            // 2. If running process is a substring of the installed app exec command or vice versa
-            let is_match = inst_exec_lower == run_exec_lower || (
-                run_exec_lower.len() >= 3 && (
-                    inst_exec_lower.contains(&run_exec_lower) ||
-                    run_exec_lower.contains(&inst_exec_lower)
-                )
-            );
-
-            if is_match {
-                if !associated_execs.contains(&run_app.exec) {
-                    associated_execs.push(run_app.exec.clone());
-                }
-                matched_running.insert(run_app.exec.clone());
-            }
+    // 1. Add all installed applications first
+    for app in installed {
+        let exec_lower = app.exec.to_lowercase();
+        if !exec_lower.is_empty() && !seen_execs.contains(&exec_lower) {
+            seen_execs.insert(exec_lower);
+            combined.push(app);
         }
-        inst_app.exec = associated_execs.join(",");
-        combined.push(inst_app);
     }
 
-    // Add remaining running processes that didn't match any installed app
-    for run_app in running {
-        if !matched_running.contains(&run_app.exec) {
-            combined.push(run_app);
+    // 2. Add running applications whose executable isn't already seen
+    for app in running {
+        let exec_lower = app.exec.to_lowercase();
+        if !exec_lower.is_empty() && !seen_execs.contains(&exec_lower) {
+            seen_execs.insert(exec_lower);
+            combined.push(app);
         }
     }
 

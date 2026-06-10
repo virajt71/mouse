@@ -8,16 +8,25 @@
 
 - **Button Remapping** - Map any mouse button to keyboard shortcuts, media keys, browser actions, or custom key sequences. Features an interactive recording UI supporting arbitrary key combinations (with fallback injection for system copy/cut/paste events).
 - **Multi-Button Gesture Control** - Hold a button and swipe in a direction (up / down / left / right) to trigger configurable actions. Gestures are supported on the physical gesture button, Middle Click (`middle`), Side Button 1 / Back (`xbutton1`), and Side Button 2 / Forward (`xbutton2`). Includes configurable threshold, deadzone, timeout, and cooldown.
-- **Application Profiles** - Multiple named profiles with automatic process-based switching.
+- **Logitech Flow (Cross-Computer Control)** - Seamlessly control multiple computers with a single mouse and keyboard over your local network.
+  - **Visual Monitor Arrangement** - Configure machine layout in a 3x3 grid (Left, Right, Top, Bottom relative to local computer) via a visual arrangement editor.
+  - **Subnet Auto-Discovery** - Automatically discovers other running instances on the local subnet via UDP broadcast with secure TLS pairing.
+  - **Software or Hardware Switching** - Choose between instant software redirection (simulating virtual inputs on peer machines) or hardware-level channel switching for supported devices.
+  - **Clipboard & File Sync** - Copy text, files, and images on one computer and paste them on another.
+  - **Transition Guarding** - Set a custom hold key (`Ctrl`, `Alt`, `Shift` or `None`) that must be held to transition across screens, preventing accidental switches.
+  - **Wayland Compatibility** - Built-in coordinate mapping settings supporting Wayland screen resolution accumulation.
+- **Application Profiles** - Custom profiles matching specific applications with automatic process-based switching.
+  - **Strict Unique Mappings** - Mappings are defined per unique process executable name to prevent collision or double activation. Real-time validation alerts you if an executable is already mapped.
   - **Auto-Switching** - Automatically detects the active foreground app window. Supports native X11 plus compositor/shell-specific fallbacks for GNOME Shell (via D-Bus `gdbus`), KDE Plasma & LXQt (via `kdotool`), Sway (via `swaymsg`), Hyprland (via `hyprctl`), i3 (via `i3-msg`), and legacy/general desktop environments (via `xdotool`).
-  - **In-App Application Selector** - Scans installed applications (from `.desktop` files in `/usr/share/applications` and `~/.local/share/applications`) and active processes (via `/proc`) to create app-specific profiles in one click.
+  - **In-App Application Selector** - Scans installed applications (from `.desktop` files in `/usr/share/applications` and `~/.local/share/applications`) and active processes (via `/proc`) with an interactive list. Already-mapped applications are visually distinguished and disabled to avoid duplicates.
+  - **Quick Select** - Dropdown selector in the profiles settings panel lists all detected applications for fast association.
   - **Toast Notifications** - Displays modern, animated, and fading toast alerts at the bottom-right corner of the screen when the active profile changes.
 - **DPI Control** - Set and persist DPI directly via the HID++ protocol.
 - **SmartShift** - Toggle and tune Logitech's SmartShift (free-spin ↔ ratchet scroll wheel) threshold.
 - **Horizontal Scroll** - Map horizontal scroll tilt to browser Back / Forward or any key combo. Configurable threshold and inversion.
 - **Vertical Scroll Inversion** - Optionally invert the scroll wheel direction.
 - **Battery Monitor** - Real-time battery level display in the GUI for wireless mice.
-- **Bluetooth & USB Receiver** - Supports devices connected via a Logitech Unifying / Bolt receiver or directly over Bluetooth.
+- **Bluetooth & USB Receiver** - Supports devices connected via a Logitech Unifying / Bolt receiver or directly over Bluetooth. Features sleep/wake reconnection stabilization to ensure reliability when the system resumes.
 - **Persistent Device Cache** - Paired devices are remembered across Bluetooth disconnections. Connection state updates live; devices never disappear from the GUI just because BT is off.
 - **System Tray** - Minimize to system tray; restore or quit from the tray menu.
 - **Single Instance** - Launching a second instance brings the existing window to front instead of starting a duplicate process.
@@ -371,40 +380,45 @@ Logs are written to the platform log directory (typically `~/.local/share/Mouser
 
 ```jsonc
 {
-  "version": 11,
-  "active_profile": "default",
-  "profiles": {
+  "version": 12,
+  "active_group": "default",
+  "active_app_profile": "global",
+  "profile_groups": {
     "default": {
-      "label": "Default (All Apps)",
-      "apps": [],
-      "mappings": {
-        "middle": "none",
-        "middle_gesture_enabled": "true",
-        "middle_gesture_left": "none",
-        "middle_gesture_right": "none",
-        "middle_gesture_up": "none",
-        "middle_gesture_down": "none",
-        "gesture": "none",
-        "gesture_enabled": "true",
-        "gesture_left": "none",
-        "gesture_right": "none",
-        "gesture_up": "none",
-        "gesture_down": "none",
-        "xbutton1": "alt_tab",
-        "xbutton1_gesture_enabled": "true",
-        "xbutton1_gesture_left": "none",
-        "xbutton1_gesture_right": "none",
-        "xbutton1_gesture_up": "none",
-        "xbutton1_gesture_down": "none",
-        "xbutton2": "alt_tab",
-        "xbutton2_gesture_enabled": "true",
-        "xbutton2_gesture_left": "none",
-        "xbutton2_gesture_right": "none",
-        "xbutton2_gesture_up": "none",
-        "xbutton2_gesture_down": "none",
-        "hscroll_left": "browser_back",
-        "hscroll_right": "browser_forward",
-        "mode_shift": "switch_scroll_mode"
+      "profiles": {
+        "global": {
+          "label": "Default (All Apps)",
+          "apps": [],
+          "mappings": {
+            "middle": "none",
+            "middle_gesture_enabled": "true",
+            "middle_gesture_left": "none",
+            "middle_gesture_right": "none",
+            "middle_gesture_up": "none",
+            "middle_gesture_down": "none",
+            "gesture": "none",
+            "gesture_enabled": "true",
+            "gesture_left": "none",
+            "gesture_right": "none",
+            "gesture_up": "none",
+            "gesture_down": "none",
+            "xbutton1": "alt_tab",
+            "xbutton1_gesture_enabled": "true",
+            "xbutton1_gesture_left": "none",
+            "xbutton1_gesture_right": "none",
+            "xbutton1_gesture_up": "none",
+            "xbutton1_gesture_down": "none",
+            "xbutton2": "alt_tab",
+            "xbutton2_gesture_enabled": "true",
+            "xbutton2_gesture_left": "none",
+            "xbutton2_gesture_right": "none",
+            "xbutton2_gesture_up": "none",
+            "xbutton2_gesture_down": "none",
+            "hscroll_left": "browser_back",
+            "hscroll_right": "browser_forward",
+            "mode_shift": "switch_scroll_mode"
+          }
+        }
       }
     }
   },
@@ -428,7 +442,26 @@ Logs are written to the platform log directory (typically `~/.local/share/Mouser
     "language": "en",
     "ignore_trackpad": true,
     "accent_color": "#8b5cf6",
-    "install_updates": true
+    "install_updates": true,
+    "flow_enabled": false,
+    "flow_local_name": "Computer 1",
+    "flow_peers": [
+      {
+        "name": "Computer 2",
+        "ip": "192.168.1.50",
+        "port": 50520,
+        "layout_x": 1,
+        "layout_y": 0,
+        "paired": true,
+        "fingerprint": "a1b2c3d4...",
+        "auto_reconnect": true
+      }
+    ],
+    "flow_screen_width": 1920,
+    "flow_screen_height": 1080,
+    "flow_hold_key": "none",
+    "flow_mouse_mode": "software",
+    "flow_keyboard_linking": true
   }
 }
 ```

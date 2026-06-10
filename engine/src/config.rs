@@ -281,11 +281,9 @@ impl Config {
         let exe_lower = exe_name.to_lowercase();
         if let Some(group) = self.profile_groups.get(&self.active_group) {
             for (pname, pdata) in &group.profiles {
-                for app in &pdata.apps {
-                    for single_app in app.split(',') {
-                        if single_app.trim().to_lowercase() == exe_lower {
-                            return pname.clone();
-                        }
+                if let Some(app) = pdata.apps.first() {
+                    if app.trim().to_lowercase() == exe_lower {
+                        return pname.clone();
                     }
                 }
             }
@@ -299,20 +297,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_profile_lookup_with_multiple_apps() {
+    fn test_profile_lookup_with_unique_app() {
         let mut config = Config::default();
         let custom_profile = Profile {
             label: "Brave Web Browser".to_string(),
-            apps: vec!["brave-browser-stable".to_string(), "brave".to_string()],
+            apps: vec!["brave-browser-stable".to_string()],
             mappings: HashMap::new(),
         };
         if let Some(group) = config.profile_groups.get_mut("default") {
             group.profiles.insert("Brave Web Browser".to_string(), custom_profile);
         }
 
-        // Verify that both match
+        // Verify that it matches
         assert_eq!(config.get_profile_for_app("brave-browser-stable"), "Brave Web Browser");
-        assert_eq!(config.get_profile_for_app("brave"), "Brave Web Browser");
         assert_eq!(config.get_profile_for_app("firefox"), "global");
     }
 

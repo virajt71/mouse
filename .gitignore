@@ -1,5 +1,6 @@
 # Rust build output
 /target
+/graphify-out
 
 # Cargo lock is kept for binaries (remove this line if you want to ignore it)
 # Cargo.lock
