@@ -8,8 +8,6 @@ thread_local! {
     pub static APP_SEARCH_QUERY: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
     pub static SCANNED_APPS: std::cell::RefCell<Option<Vec<crate::desktop_apps::DesktopApp>>> = const { std::cell::RefCell::new(None) };
     pub static FOCUS_REQUESTED: std::cell::RefCell<bool> = const { std::cell::RefCell::new(false) };
-    pub static APP_MODAL_TAB: std::cell::RefCell<u8> = const { std::cell::RefCell::new(0) }; // 0=installed, 1=running
-    pub static SCANNED_RUNNING: std::cell::RefCell<Option<Vec<crate::desktop_apps::DesktopApp>>> = const { std::cell::RefCell::new(None) };
 }
 
 pub fn draw_add_app_modal(ctx: &egui::Context, engine: &Engine, config: &mut mouser_engine::config::Config) {
@@ -73,38 +71,6 @@ pub fn draw_add_app_modal(ctx: &egui::Context, engine: &Engine, config: &mut mou
                         });
                     });
 
-                    // Tab bar
-                    let active_tab = APP_MODAL_TAB.with(|t| *t.borrow());
-                    ui.add_space(8.0);
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing = egui::vec2(16.0, 0.0);
-                        for (tab_label, label_idx) in [("INSTALLED", 0), ("RUNNING", 1)] {
-                            let is_selected = active_tab == label_idx;
-                            let text_color = if is_selected {
-                                theme::accent_color(ctx)
-                            } else {
-                                theme::muted_text(ctx)
-                            };
-                            let text = egui::RichText::new(tab_label)
-                                .color(text_color)
-                                .size(11.0)
-                                .strong();
-                            let btn = ui.link(text);
-                            if btn.clicked() {
-                                APP_MODAL_TAB.with(|t| *t.borrow_mut() = label_idx);
-                                if label_idx == 1 {
-                                    SCANNED_RUNNING.with(|sr| {
-                                        if sr.borrow().is_none() {
-                                            *sr.borrow_mut() = Some(crate::desktop_apps::scan_running_processes());
-                                        }
-                                    });
-                                }
-                            }
-                        }
-                    });
-
-                    ui.add_space(12.0);
-
                     // Search box
                     let mut query = APP_SEARCH_QUERY.with(|q| q.borrow().clone());
                     ui.horizontal(|ui| {
@@ -128,12 +94,7 @@ pub fn draw_add_app_modal(ctx: &egui::Context, engine: &Engine, config: &mut mou
                     ui.add_space(12.0);
 
                     // Get apps and filter
-                    let active_tab = APP_MODAL_TAB.with(|t| *t.borrow());
-                    let scanned_opt = if active_tab == 0 {
-                        SCANNED_APPS.with(|apps| apps.borrow().clone())
-                    } else {
-                        SCANNED_RUNNING.with(|apps| apps.borrow().clone())
-                    };
+                    let scanned_opt = SCANNED_APPS.with(|apps| apps.borrow().clone());
                     if let Some(scanned_apps) = scanned_opt {
                         let query_lower = query.to_lowercase();
                         let filtered_apps: Vec<_> = scanned_apps.into_iter()
@@ -240,11 +201,7 @@ pub fn draw_add_app_modal(ctx: &egui::Context, engine: &Engine, config: &mut mou
                     } else {
                         ui.vertical_centered(|ui| {
                             ui.add_space(40.0);
-                            if active_tab == 0 {
-                                ui.label("Loading applications...");
-                            } else {
-                                ui.label("Scanning running processes...");
-                            }
+                            ui.label("Loading applications...");
                         });
                     }
                 });
