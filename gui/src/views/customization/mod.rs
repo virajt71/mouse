@@ -16,8 +16,8 @@ use tabs::{show_buttons_tab, show_point_scroll_tab, show_flow_tab, show_profiles
 use mappings::{CustomizingButton, get_button_keys, egui_key_to_string, is_valid_combo};
 pub use popups::{
     draw_add_app_modal, RECORDING_TARGET, RECORDED_KEYS, RecordingTarget,
-    SHOW_ADD_APP_MODAL, APP_SEARCH_QUERY, FOCUS_REQUESTED, APP_MODAL_TAB,
-    SCANNED_RUNNING, SCANNED_APPS,
+    SHOW_ADD_APP_MODAL, APP_SEARCH_QUERY, FOCUS_REQUESTED,
+    SCANNED_APPS,
 };
 pub use tabs::profiles_tab::{NEW_PROFILE_NAME, APP_BINDINGS_BUFFER, SELECTED_EDIT_PROFILE};
 
@@ -189,10 +189,8 @@ pub fn show(
                 SHOW_ADD_APP_MODAL.with(|s| *s.borrow_mut() = true);
                 APP_SEARCH_QUERY.with(|q| q.borrow_mut().clear());
                 FOCUS_REQUESTED.with(|f| *f.borrow_mut() = false);
-                APP_MODAL_TAB.with(|t| *t.borrow_mut() = 0);
-                SCANNED_RUNNING.with(|sr| *sr.borrow_mut() = None);
                 SCANNED_APPS.with(|apps| {
-                    *apps.borrow_mut() = Some(crate::desktop_apps::scan_desktop_applications());
+                    *apps.borrow_mut() = Some(crate::desktop_apps::scan_all_applications());
                 });
             }
 

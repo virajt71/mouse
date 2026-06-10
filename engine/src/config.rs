@@ -237,3 +237,24 @@ impl Config {
         "default".to_string()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_profile_lookup_with_multiple_apps() {
+        let mut config = Config::default();
+        let custom_profile = Profile {
+            label: "Brave Web Browser".to_string(),
+            apps: vec!["brave-browser-stable".to_string(), "brave".to_string()],
+            mappings: HashMap::new(),
+        };
+        config.profiles.insert("Brave Web Browser".to_string(), custom_profile);
+
+        // Verify that both match
+        assert_eq!(config.get_profile_for_app("brave-browser-stable"), "Brave Web Browser");
+        assert_eq!(config.get_profile_for_app("brave"), "Brave Web Browser");
+        assert_eq!(config.get_profile_for_app("firefox"), "default");
+    }
+}

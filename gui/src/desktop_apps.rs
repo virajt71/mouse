@@ -195,6 +195,52 @@ pub fn scan_running_processes() -> Vec<DesktopApp> {
     apps
 }
 
+pub fn scan_all_applications() -> Vec<DesktopApp> {
+    let installed = scan_desktop_applications();
+    let running = scan_running_processes();
+
+    let mut combined: Vec<DesktopApp> = Vec::new();
+    let mut matched_running = HashSet::new();
+
+    for mut inst_app in installed {
+        let inst_exec_lower = inst_app.exec.to_lowercase();
+        let mut associated_execs = vec![inst_app.exec.clone()];
+        
+        for run_app in &running {
+            let run_exec_lower = run_app.exec.to_lowercase();
+            // Match logic:
+            // 1. Identical executable
+            // 2. If running process is a substring of the installed app exec command or vice versa
+            let is_match = inst_exec_lower == run_exec_lower || (
+                run_exec_lower.len() >= 3 && (
+                    inst_exec_lower.contains(&run_exec_lower) ||
+                    run_exec_lower.contains(&inst_exec_lower)
+                )
+            );
+
+            if is_match {
+                if !associated_execs.contains(&run_app.exec) {
+                    associated_execs.push(run_app.exec.clone());
+                }
+                matched_running.insert(run_app.exec.clone());
+            }
+        }
+        inst_app.exec = associated_execs.join(",");
+        combined.push(inst_app);
+    }
+
+    // Add remaining running processes that didn't match any installed app
+    for run_app in running {
+        if !matched_running.contains(&run_app.exec) {
+            combined.push(run_app);
+        }
+    }
+
+    // Sort alphabetically by name
+    combined.sort_by_key(|a| a.name.to_lowercase());
+    combined
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -205,5 +251,11 @@ mod tests {
         assert_eq!(clean_exec_command("/usr/bin/brave-browser-stable %U"), "brave-browser-stable");
         assert_eq!(clean_exec_command("env BAMF_DESKTOP_FILE_HINT=foo /usr/bin/spotify"), "spotify");
         assert_eq!(clean_exec_command("\"/opt/My App/bin/myapp\" --some-arg"), "myapp");
+    }
+
+    #[test]
+    fn test_scan_all_applications() {
+        let apps = scan_all_applications();
+        println!("Found {} applications.", apps.len());
     }
 }
