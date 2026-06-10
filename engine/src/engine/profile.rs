@@ -86,17 +86,37 @@ impl Engine {
 
     pub fn update_app_bindings(&self, profile_name: &str, app_bindings: &str) {
         log::info!("[Engine] Updating app bindings for profile {}: {}", profile_name, app_bindings);
-        let apps: Vec<String> = app_bindings
+        let clean_exe = app_bindings
             .split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_string();
+
         {
             let mut cfg = self.inner.config.lock().unwrap();
             let active_group = cfg.active_group.clone();
             if let Some(group) = cfg.profile_groups.get_mut(&active_group) {
+                if !clean_exe.is_empty() {
+                    let mut is_duplicate = false;
+                    for (pname, pdata) in &group.profiles {
+                        if pname != profile_name && pdata.apps.contains(&clean_exe) {
+                            is_duplicate = true;
+                            break;
+                        }
+                    }
+                    if is_duplicate {
+                        log::warn!("[Engine] Rejected mapping executable '{}' to profile '{}' because it is already mapped.", clean_exe, profile_name);
+                        return;
+                    }
+                }
+
                 if let Some(profile) = group.profiles.get_mut(profile_name) {
-                    profile.apps = apps;
+                    if clean_exe.is_empty() {
+                        profile.apps = Vec::new();
+                    } else {
+                        profile.apps = vec![clean_exe];
+                    }
                     let _ = cfg.save();
                     self.increment_config_generation();
                 }
