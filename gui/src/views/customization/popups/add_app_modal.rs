@@ -12,7 +12,7 @@ thread_local! {
     pub static SCANNED_RUNNING: std::cell::RefCell<Option<Vec<crate::desktop_apps::DesktopApp>>> = const { std::cell::RefCell::new(None) };
 }
 
-pub fn draw_add_app_modal(ctx: &egui::Context, engine: &Engine) {
+pub fn draw_add_app_modal(ctx: &egui::Context, engine: &Engine, config: &mut mouser_engine::config::Config) {
     let show_app_modal = SHOW_ADD_APP_MODAL.with(|s| *s.borrow());
     if show_app_modal {
         egui::Area::new(egui::Id::new("add_application_modal"))
@@ -230,6 +230,7 @@ pub fn draw_add_app_modal(ctx: &egui::Context, engine: &Engine) {
                                             engine.update_app_bindings(&app.name, &app.exec);
                                             // 3. Switch to it as the active profile
                                             engine.select_profile(&app.name);
+                                            config.active_profile = app.name.clone();
                                             // 4. Hide modal
                                             SHOW_ADD_APP_MODAL.with(|s| *s.borrow_mut() = false);
                                         }

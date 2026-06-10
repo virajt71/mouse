@@ -65,6 +65,7 @@ pub fn render_section_profiles(ui: &mut egui::Ui, config: &mut Config, engine: &
             if editing_profile != config.active_profile {
                 if ui.button("Activate").clicked() {
                     engine.select_profile(&editing_profile);
+                    config.active_profile = editing_profile.clone();
                 }
             } else {
                 ui.label(RichText::new("Active").size(11.0).color(theme::accent_color(ui.ctx())));
