@@ -10,21 +10,66 @@ pub struct Profile {
     pub mappings: HashMap<String, String>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct FlowPeerEntry {
+    pub name: String,
+    pub address: String,
+    pub position: String, // "left" | "right" | "above" | "below"
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct FlowSettings {
+    pub enabled: bool,
+    pub listen_port: u16,
+    pub cert_path: String,
+    pub peers: Vec<FlowPeerEntry>,
+    pub edge_margin_px: i32,
+    pub edge_dwell_ms: u64,
+    pub switch_delay_ms: u64,
+    pub clipboard_sync: bool,
+    pub normalize_pointer_speed: bool,
+    pub mdns_discovery: bool,
+    pub local_name: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct FlowPeer {
     pub name: String,
     pub ip: String,
     pub port: u16,
-    pub layout_x: i32, // -1: left, 1: right, 0: same
-    pub layout_y: i32, // -1: top, 1: bottom, 0: same
+    pub layout_x: i32,
+    pub layout_y: i32,
     pub paired: bool,
     pub fingerprint: String,
-    #[serde(default = "default_true")]
     pub auto_reconnect: bool,
 }
 
-fn default_true() -> bool {
-    true
+fn default_local_name() -> String {
+    if let Ok(hostname) = std::fs::read_to_string("/proc/sys/kernel/hostname") {
+        hostname.trim().to_string()
+    } else if let Ok(hostname) = std::env::var("HOSTNAME") {
+        hostname
+    } else {
+        "Computer".to_string()
+    }
+}
+
+impl Default for FlowSettings {
+    fn default() -> Self {
+        FlowSettings {
+            enabled: false,
+            listen_port: 24650,
+            cert_path: "~/.config/mouser-rs/flow_cert.pem".to_string(),
+            peers: vec![],
+            edge_margin_px: 2,
+            edge_dwell_ms: 50,
+            switch_delay_ms: 0,
+            clipboard_sync: true,
+            normalize_pointer_speed: true,
+            mdns_discovery: false,
+            local_name: default_local_name(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -72,6 +117,8 @@ pub struct Config {
     pub active_app_profile: String,
     pub profile_groups: HashMap<String, ProfileGroup>,
     pub settings: Settings,
+    #[serde(default)]
+    pub flow: FlowSettings,
 }
 
 impl Default for Config {
@@ -144,7 +191,7 @@ impl Default for Config {
             install_updates: true,
             // Flow settings default
             flow_enabled: false,
-            flow_local_name: "Computer 1".to_string(),
+            flow_local_name: default_local_name(),
             flow_peers: vec![],
             flow_screen_width: 1920,
             flow_screen_height: 1080,
@@ -154,11 +201,12 @@ impl Default for Config {
         };
 
         Config {
-            version: 12,
+            version: 13,
             active_group: "default".to_string(),
             active_app_profile: "global".to_string(),
             profile_groups,
             settings,
+            flow: FlowSettings::default(),
         }
     }
 }
@@ -186,12 +234,36 @@ pub fn get_log_dir() -> PathBuf {
 
 
 impl Config {
-    pub fn load() -> Self {
+    fn load_raw() -> Self {
         let path = get_config_path();
         if path.exists() {
             if let Ok(content) = fs::read_to_string(&path) {
-                if let Ok(cfg) = serde_json::from_str::<Config>(&content) {
+                if let Ok(mut cfg) = serde_json::from_str::<Config>(&content) {
+                    if cfg.version == 13 {
+                        return cfg;
+                    }
                     if cfg.version == 12 {
+                        cfg.version = 13;
+                        cfg.flow.enabled = cfg.settings.flow_enabled;
+                        cfg.flow.local_name = cfg.settings.flow_local_name.clone();
+                        cfg.flow.peers.clear();
+                        for peer in &cfg.settings.flow_peers {
+                            let position = if peer.layout_x == -1 {
+                                "left"
+                            } else if peer.layout_x == 1 {
+                                "right"
+                            } else if peer.layout_y == -1 {
+                                "above"
+                            } else {
+                                "below"
+                            };
+                            cfg.flow.peers.push(FlowPeerEntry {
+                                name: peer.name.clone(),
+                                address: format!("{}:{}", peer.ip, peer.port),
+                                position: position.to_string(),
+                            });
+                        }
+                        let _ = cfg.save();
                         return cfg;
                     }
                 }
@@ -222,11 +294,12 @@ impl Config {
                     };
 
                     let new_cfg = Config {
-                        version: 12,
+                        version: 13,
                         active_group: "default".to_string(),
                         active_app_profile,
                         profile_groups,
                         settings: old_cfg.settings,
+                        flow: FlowSettings::default(),
                     };
                     let _ = new_cfg.save();
                     return new_cfg;
@@ -236,6 +309,18 @@ impl Config {
             }
         }
         Config::default()
+    }
+
+    pub fn load() -> Self {
+        let mut cfg = Self::load_raw();
+        let hostname = default_local_name();
+        if cfg.settings.flow_local_name == "Computer 1" || cfg.settings.flow_local_name == "Computer 2" || cfg.settings.flow_local_name == "Computer" || cfg.settings.flow_local_name.is_empty() {
+            cfg.settings.flow_local_name = hostname.clone();
+        }
+        if cfg.flow.local_name == "Computer 1" || cfg.flow.local_name == "Computer 2" || cfg.flow.local_name == "Computer" || cfg.flow.local_name.is_empty() {
+            cfg.flow.local_name = hostname;
+        }
+        cfg
     }
 
     pub fn save(&self) -> anyhow::Result<()> {
@@ -375,8 +460,8 @@ mod tests {
         // Load the config
         let config = Config::load();
 
-        // Verify version upgraded to 12
-        assert_eq!(config.version, 12);
+        // Verify version upgraded to 13
+        assert_eq!(config.version, 13);
         // Verify active group is default
         assert_eq!(config.active_group, "default");
         // Verify active app profile mapped from default to global

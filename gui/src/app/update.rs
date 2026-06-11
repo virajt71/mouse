@@ -51,8 +51,11 @@ impl eframe::App for MouserApp {
         }
 
         // Evaluate and lock/freeze connection type on device connect
-        let is_device_connected = self.paired_devices.iter().any(|(_, _, is_conn)| *is_conn)
-            || self.has_active_hidpp_battery.unwrap_or(false);
+        let is_device_connected = if !self.paired_devices.is_empty() {
+            self.paired_devices[0].2
+        } else {
+            self.has_active_hidpp_battery.unwrap_or(false)
+        };
 
         if is_device_connected {
             if self.current_connection_type.is_none() {
