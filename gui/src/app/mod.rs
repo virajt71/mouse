@@ -15,6 +15,7 @@ pub struct MouserApp {
     pub(crate) paired_devices: Vec<(String, String, bool)>, // (mac, name, is_connected)
     pub(crate) mouse_texture: Option<egui::TextureHandle>,
     pub(crate) customization_mouse_texture: Option<egui::TextureHandle>,
+    pub(crate) device_textures: std::collections::HashMap<String, egui::TextureHandle>,
     pub(crate) bluetooth_available: bool,
     pub(crate) window_initialized: bool,
     pub config: mouser_engine::config::Config,
@@ -22,6 +23,7 @@ pub struct MouserApp {
     pub updater: Updater,
     pub customizing_button: Option<crate::views::customization::mappings::CustomizingButton>,
     pub customization_tab: crate::views::customization::SidebarTab,
+    pub customizing_device_name: Option<String>,
     pub(crate) last_config_generation: u64,
     pub gui_active_profile: String,
 
@@ -37,6 +39,8 @@ pub struct MouserApp {
     pub(crate) preloaded_mouse_image: Option<egui::ColorImage>,
     pub(crate) preloaded_customization_mouse_image: Option<egui::ColorImage>,
     pub(crate) current_connection_type: Option<String>,
+    pub(crate) device_batteries: std::collections::HashMap<String, String>,
+    pub(crate) device_conn_types: std::collections::HashMap<String, String>,
     pub(crate) toast_message: Option<String>,
     pub(crate) toast_shown_at: Option<std::time::Instant>,
     pub(crate) last_known_profile: String,
@@ -92,6 +96,7 @@ impl MouserApp {
             paired_devices: cached,
             mouse_texture: None,
             customization_mouse_texture: None,
+            device_textures: std::collections::HashMap::new(),
             bluetooth_available: true,
             window_initialized: false,
             config,
@@ -99,6 +104,7 @@ impl MouserApp {
             updater,
             customizing_button: None,
             customization_tab: crate::views::customization::SidebarTab::Buttons,
+            customizing_device_name: None,
             last_config_generation: config_gen,
             rx,
             tx,
@@ -108,6 +114,8 @@ impl MouserApp {
             preloaded_mouse_image: None,
             preloaded_customization_mouse_image: None,
             current_connection_type: None,
+            device_batteries: std::collections::HashMap::new(),
+            device_conn_types: std::collections::HashMap::new(),
             toast_message: None,
             toast_shown_at: None,
             last_known_profile: String::new(),
@@ -128,5 +136,43 @@ impl MouserApp {
             
             self.last_config_generation = current_gen;
         }
+    }
+}
+
+pub fn get_layout_key_from_name(name: &str) -> String {
+    let name = name.to_lowercase();
+    if name.contains("mechanical") || name.contains("mchncl") {
+        return "mx_mechanical".to_string();
+    }
+    if name.contains("master 3s") {
+        "mx_master_3s".to_string()
+    } else if name.contains("master 3") || name.contains("master 4") {
+        "mx_master_3".to_string()
+    } else if name.contains("master 2") || name.contains("master 2s") {
+        "mx_master_2s".to_string()
+    } else if name.contains("master") {
+        "mx_master".to_string()
+    } else if name.contains("anywhere 3s") {
+        "mx_anywhere_3s".to_string()
+    } else if name.contains("anywhere 3") {
+        "mx_anywhere_3".to_string()
+    } else if name.contains("anywhere") {
+        "mx_anywhere".to_string()
+    } else if name.contains("vertical") {
+        "mx_vertical".to_string()
+    } else if name.contains("ergo") {
+        "mx_ergo".to_string()
+    } else if name.contains("mx keys mini") {
+        "mx_keys_mini".to_string()
+    } else if name.contains("mx keys s") {
+        "mx_keys_s".to_string()
+    } else if name.contains("mx keys") {
+        "mx_keys".to_string()
+    } else if name.contains("mx mechanical mini") {
+        "mx_mechanical_mini".to_string()
+    } else if name.contains("mx mechanical") {
+        "mx_mechanical".to_string()
+    } else {
+        "generic".to_string()
     }
 }
