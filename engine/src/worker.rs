@@ -10,6 +10,8 @@ pub struct DeviceStateUpdate {
     pub battery_pct: String,
     pub has_active_hidpp_battery: bool,
     pub active_profile: String,
+    pub device_batteries: std::collections::HashMap<String, String>,
+    pub device_conn_types: std::collections::HashMap<String, String>,
 }
 
 #[allow(dead_code)]
@@ -119,9 +121,42 @@ pub fn spawn_background_worker(
                     }
                 }
 
-                // Query battery level only if there's any active connection or active hidpp battery
+                let hidpp_devices = crate::battery::get_hidpp_devices();
+
+                let mut device_batteries = std::collections::HashMap::new();
+                let mut device_conn_types = std::collections::HashMap::new();
+                let mut updated_paired_devices = paired_devices.clone();
+
+                for (mac, name, connected) in &mut updated_paired_devices {
+                    if let Some(dev_info) = crate::battery::match_device(mac, name, &hidpp_devices) {
+                        *connected = true; // Actively connected via receiver or bluetooth
+                        device_batteries.insert(mac.clone(), dev_info.battery_pct.clone());
+                        let conn = if dev_info.is_bluetooth {
+                            "bluetooth".to_string()
+                        } else if bolt && (name.to_lowercase().contains("mechanical") || name.to_lowercase().contains("keys") || name.to_lowercase().contains("3s") || !unifying) {
+                            "bolt".to_string()
+                        } else if unifying {
+                            "unifying".to_string()
+                        } else {
+                            "bluetooth".to_string()
+                        };
+                        device_conn_types.insert(mac.clone(), conn);
+                    } else {
+                        // Fallback logic
+                        if *connected {
+                            // Checked by bluetoothctl as connected, but no hidpp info
+                            device_batteries.insert(mac.clone(), "80".to_string());
+                            device_conn_types.insert(mac.clone(), "bluetooth".to_string());
+                        } else {
+                            device_batteries.insert(mac.clone(), "0".to_string());
+                            device_conn_types.insert(mac.clone(), "bluetooth".to_string());
+                        }
+                    }
+                }
+
+                // Query general battery level (e.g. for mouse or legacy purposes)
                 let has_active_hidpp = crate::battery::has_active_hidpp_battery();
-                let battery_pct = if paired_devices.iter().any(|(_, _, c)| *c) || has_active_hidpp {
+                let battery_pct = if updated_paired_devices.iter().any(|(_, _, c)| *c) || has_active_hidpp {
                     crate::battery::get_mouse_battery()
                         .map(|(_, pct)| pct)
                         .unwrap_or_else(|| "80".to_string())
@@ -134,10 +169,12 @@ pub fn spawn_background_worker(
                     unifying_receiver_connected: unifying,
                     bolt_receiver_connected: bolt,
                     bluetooth_available: bt_up,
-                    paired_devices: paired_devices.clone(),
+                    paired_devices: updated_paired_devices,
                     battery_pct,
                     has_active_hidpp_battery: has_active_hidpp,
                     active_profile,
+                    device_batteries,
+                    device_conn_types,
                 };
 
                 let _ = tx_state.send(update);

@@ -46,6 +46,8 @@ impl eframe::App for MouserApp {
             self.paired_devices = update.paired_devices;
             self.battery_pct = update.battery_pct;
             self.has_active_hidpp_battery = Some(update.has_active_hidpp_battery);
+            self.device_batteries = update.device_batteries;
+            self.device_conn_types = update.device_conn_types;
 
             self.last_known_profile = update.active_profile.clone();
         }
@@ -129,67 +131,94 @@ impl eframe::App for MouserApp {
                     }
                     match self.active_view {
                         ActiveView::EmptyState => {
-                            if !self.paired_devices.is_empty() {
-                                let (mac, name, is_connected) = self.paired_devices[0].clone();
+                            let mut display_devices = self.paired_devices.clone();
+                            if display_devices.is_empty() && self.has_active_hidpp_battery.unwrap_or(false) {
+                                display_devices.push(("00:00:00:00:00:00".to_string(), "MX Master 3".to_string(), true));
+                            }
 
-                                // Texture may not be ready yet — skip drawing the
-                                // device card on the first frame(s) while decoding.
-                                if let Some(mouse_tex) = self.get_or_load_mouse_texture(ctx) {
-                                    let battery_pct = if is_connected {
-                                        self.battery_pct.clone()
-                                    } else {
-                                        "0".to_string()
-                                    };
+                            if !display_devices.is_empty() {
+                                ui.vertical_centered(|ui| {
+                                    let height = ui.available_height();
+                                    // Spacing at the top to vertically center the row
+                                    let content_height = 360.0;
+                                    let top_padding = ((height - content_height) / 2.0 - 20.0).max(0.0);
+                                    ui.add_space(top_padding);
 
-                                    let conn_type = self.current_connection_type.as_deref().unwrap_or("bluetooth");
-
-                                    match crate::views::empty_state::show_known_device(
-                                        ui,
-                                        &name,
-                                        is_connected,
-                                        &mouse_tex,
-                                        conn_type,
-                                        &battery_pct,
-                                        &self.config.settings.language,
-                                    ) {
-                                        crate::views::empty_state::DeviceCardAction::Unpair => {
-                                            let _ = self.tx.send(
-                                                mouser_engine::worker::BackgroundTxCmd::Unpair(
-                                                    mac.clone(),
-                                                ),
-                                            );
-                                            self.paired_devices
-                                                .retain(|(m, _, _)| m != &mac);
+                                    ui.horizontal(|ui| {
+                                        let gap = 40.0;
+                                        let mut total_width = 0.0;
+                                        for (_, name, _) in &display_devices {
+                                            let layout_key = crate::app::get_layout_key_from_name(name);
+                                            let is_kbd = layout_key.contains("keys") || layout_key.contains("mechanical");
+                                            let card_w = if is_kbd { 480.0 } else { 220.0 };
+                                            total_width += card_w;
                                         }
-                                        crate::views::empty_state::DeviceCardAction::Customize => {
-                                            self.active_view = ActiveView::Customization;
-                                        }
-                                        _ => {}
-                                    }
-                                } else {
-                                    // Images still loading — request repaint so we
-                                    // retry on the next frame.
-                                    ctx.request_repaint();
-                                }
-                            } else if self.has_active_hidpp_battery.unwrap_or(false) {
-                                if let Some(mouse_tex) = self.get_or_load_mouse_texture(ctx) {
-                                    let conn_type = self.current_connection_type.as_deref().unwrap_or("bluetooth");
+                                        total_width += gap * (display_devices.len() - 1) as f32;
 
-                                    if crate::views::empty_state::show_known_device(
-                                        ui,
-                                        "MX Master 3",
-                                        true,
-                                        &mouse_tex,
-                                        conn_type,
-                                        &self.battery_pct,
-                                        &self.config.settings.language,
-                                    ) == crate::views::empty_state::DeviceCardAction::Customize
-                                    {
-                                        self.active_view = ActiveView::Customization;
-                                    }
-                                } else {
-                                    ctx.request_repaint();
-                                }
+                                        let start_space = ((ui.available_width() - total_width) / 2.0).max(0.0);
+                                        ui.add_space(start_space);
+
+                                        let mut action_to_take = None;
+                                        let mut textures_loading = false;
+
+                                        for (mac, name, is_connected) in &display_devices {
+                                            let layout_key = crate::app::get_layout_key_from_name(name);
+                                            if let Some(device_tex) = self.get_or_load_device_texture(ctx, &layout_key) {
+                                                let battery_pct = self.device_batteries.get(mac).cloned().unwrap_or_else(|| {
+                                                    if *is_connected {
+                                                        "80".to_string()
+                                                    } else {
+                                                        "0".to_string()
+                                                    }
+                                                });
+
+                                                let conn_type = self.device_conn_types.get(mac).map(|s| s.as_str()).unwrap_or("bluetooth");
+
+                                                let action = crate::views::empty_state::show_known_device(
+                                                    ui,
+                                                    name,
+                                                    *is_connected,
+                                                    &device_tex,
+                                                    conn_type,
+                                                    &battery_pct,
+                                                    &self.config.settings.language,
+                                                );
+
+                                                if action != crate::views::empty_state::DeviceCardAction::None {
+                                                    action_to_take = Some((mac.clone(), action));
+                                                }
+                                            } else {
+                                                textures_loading = true;
+                                            }
+                                            ui.add_space(gap);
+                                        }
+
+                                        if textures_loading {
+                                            ctx.request_repaint();
+                                        }
+
+                                        if let Some((mac, action)) = action_to_take {
+                                            match action {
+                                                crate::views::empty_state::DeviceCardAction::Unpair => {
+                                                    let _ = self.tx.send(
+                                                        mouser_engine::worker::BackgroundTxCmd::Unpair(
+                                                            mac.clone(),
+                                                        ),
+                                                    );
+                                                    self.paired_devices.retain(|(m, _, _)| m != &mac);
+                                                }
+                                                crate::views::empty_state::DeviceCardAction::Customize => {
+                                                    if let Some((_, name, _)) = display_devices.iter().find(|(m, _, _)| m == &mac) {
+                                                        self.customizing_device_name = Some(name.clone());
+                                                    }
+                                                    self.customization_tab = crate::views::customization::SidebarTab::Buttons;
+                                                    self.active_view = ActiveView::Customization;
+                                                }
+                                                _ => {}
+                                            }
+                                        }
+                                    });
+                                });
                             } else {
                                 crate::views::empty_state::show(ui, &self.config.settings.language);
                             }
@@ -215,23 +244,47 @@ impl eframe::App for MouserApp {
                             );
                         }
                         ActiveView::Customization => {
-                            if let Some(mouse_tex) =
+                            let customizing_device_name = self.customizing_device_name.clone().unwrap_or_else(|| "MX Master 3".to_string());
+                            let layout_key = crate::app::get_layout_key_from_name(&customizing_device_name);
+                            let is_keyboard = layout_key.contains("keys") || layout_key.contains("mechanical");
+
+                            let device_tex_opt = if is_keyboard {
+                                self.get_or_load_device_texture(ctx, &layout_key)
+                            } else {
                                 self.get_or_load_customization_mouse_texture(ctx)
-                            {
-                                let conn_type = self.current_connection_type.as_deref().unwrap_or("bluetooth");
+                                    .or_else(|| self.get_or_load_device_texture(ctx, &layout_key))
+                            };
+
+                            if let Some(device_tex) = device_tex_opt {
+                                let dev_mac = self.paired_devices.iter()
+                                    .find(|(_, name, _)| name == &customizing_device_name)
+                                    .map(|(mac, _, _)| mac.clone())
+                                    .unwrap_or_default();
+
+                                let dev_is_connected = self.paired_devices.iter()
+                                    .find(|(_, name, _)| name == &customizing_device_name)
+                                    .map(|(_, _, conn)| *conn)
+                                    .unwrap_or(false);
+
+                                let battery_pct = self.device_batteries.get(&dev_mac).cloned().unwrap_or_else(|| {
+                                    if dev_is_connected { "80".to_string() } else { "0".to_string() }
+                                });
+
+                                let conn_type = self.device_conn_types.get(&dev_mac).map(|s| s.as_str()).unwrap_or("bluetooth");
 
                                 crate::views::customization::show(
                                     ui,
                                     ctx,
                                     &self.engine,
                                     &mut self.config,
-                                    &mouse_tex,
+                                    &device_tex,
                                     &mut self.active_view,
                                     &mut self.customizing_button,
                                     &mut self.customization_tab,
                                     conn_type,
-                                    &self.battery_pct,
-                                    is_device_connected,
+                                    &battery_pct,
+                                    dev_is_connected,
+                                    &customizing_device_name,
                                 );
                             } else {
                                 ctx.request_repaint();
