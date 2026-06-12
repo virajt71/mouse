@@ -22,7 +22,7 @@ pub fn show_keyboard_keys_tab(
 
     // 1. Draw Keyboard Image
     // Aspect ratio of standard keyboard is ~3.3 : 1
-    let img_size = vec2(700.0, 210.0);
+    let img_size = vec2(800.0, 266.0);
     let keyboard_rect = Rect::from_center_size(center, img_size);
     ui.put(
         keyboard_rect,
@@ -372,192 +372,194 @@ pub fn show_keyboard_backlighting_tab(
 
         // Header with switch and Select Effect sub-tab
         ui.horizontal(|ui| {
-            ui.add_space(20.0);
-            if toggle_switch(ui, &mut enabled).changed() {
-                changed = true;
-            }
-            ui.add_space(8.0);
-            ui.label(
-                RichText::new("BACKLIGHTING")
-                    .color(Color32::WHITE)
-                    .size(12.0)
-                    .strong(),
-            );
 
-            ui.add_space(40.0);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.add_space(20.0); // gap between toggle and SELECT EFFECT
 
-            // SELECT EFFECT label and gear icon (clickable)
-            let (eff_rect, response) = ui.allocate_exact_size(vec2(130.0, 24.0), egui::Sense::click());
-            if response.hovered() {
-                ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
-            }
+                // 2. SELECT EFFECT label and gear icon (clickable)
+                let (eff_rect, response) = ui.allocate_exact_size(vec2(130.0, 24.0), egui::Sense::click());
+                if response.hovered() {
+                    ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
+                }
 
-            let popup_id = egui::Id::new("backlight_effect_popup");
-            let mut popup_open = ui.ctx().data(|d| d.get_temp::<bool>(popup_id).unwrap_or(false));
-            if response.clicked() {
-                popup_open = !popup_open;
-                ui.ctx().data_mut(|d| d.insert_temp(popup_id, popup_open));
-            }
+                let popup_id = egui::Id::new("backlight_effect_popup");
+                let mut popup_open = ui.ctx().data(|d| d.get_temp::<bool>(popup_id).unwrap_or(false));
+                if response.clicked() {
+                    popup_open = !popup_open;
+                    ui.ctx().data_mut(|d| d.insert_temp(popup_id, popup_open));
+                }
 
-            let icon_center = pos2(eff_rect.min.x + 12.0, eff_rect.center().y);
-            let active_color = theme::accent_color(ui.ctx());
-            
-            // Draw gear icon next to SELECT EFFECT
-            let painter = ui.painter();
-            let stroke = Stroke::new(1.2, active_color);
-            painter.circle_stroke(icon_center, 4.0, stroke);
-            for i in 0..8 {
-                let angle = (i as f32 * 45.0).to_radians();
-                let p1 = icon_center + vec2(angle.cos() * 4.0, angle.sin() * 4.0);
-                let p2 = icon_center + vec2(angle.cos() * 6.5, angle.sin() * 6.5);
-                painter.line_segment([p1, p2], stroke);
-            }
-
-            let text_pos = pos2(eff_rect.min.x + 28.0, eff_rect.center().y);
-            painter.text(
-                text_pos,
-                egui::Align2::LEFT_CENTER,
-                "SELECT EFFECT",
-                egui::FontId::proportional(11.5),
-                active_color,
-            );
-
-            // Active tab underline
-            let bar_y = eff_rect.max.y + 4.0;
-            painter.line_segment(
-                [pos2(eff_rect.min.x, bar_y), pos2(eff_rect.max.x, bar_y)],
-                Stroke::new(2.0, active_color),
-            );
-
-            // Draw popup if open
-            if popup_open {
-                let popup_pos = eff_rect.left_bottom() + vec2(0.0, 8.0);
+                let icon_center = pos2(eff_rect.min.x + 12.0, eff_rect.center().y);
+                let active_color = theme::accent_color(ui.ctx());
                 
-                egui::Area::new(egui::Id::new("backlight_popup_area"))
-                    .order(egui::Order::Foreground)
-                    .fixed_pos(popup_pos)
-                    .show(ui.ctx(), |ui| {
-                        // Draw container frame
-                        let frame = egui::Frame::none()
-                            .fill(Color32::from_rgb(0x13, 0x13, 0x13))
-                            .stroke(Stroke::new(1.0, theme::border_color(ui.ctx())))
-                            .rounding(4.0)
-                            .inner_margin(12.0);
+                // Draw gear icon next to SELECT EFFECT
+                let painter = ui.painter();
+                let stroke = Stroke::new(1.2, active_color);
+                painter.circle_stroke(icon_center, 4.0, stroke);
+                for i in 0..8 {
+                    let angle = (i as f32 * 45.0).to_radians();
+                    let p1 = icon_center + vec2(angle.cos() * 4.0, angle.sin() * 4.0);
+                    let p2 = icon_center + vec2(angle.cos() * 6.5, angle.sin() * 6.5);
+                    painter.line_segment([p1, p2], stroke);
+                }
 
-                        let response_frame = frame.show(ui, |ui| {
-                            ui.set_width(260.0);
-                            ui.vertical(|ui| {
-                                ui.add(egui::Label::new(
-                                    RichText::new("Select Backlight Effect")
-                                        .color(Color32::WHITE)
-                                        .size(13.0)
-                                        .strong(),
-                                ));
-                                ui.add_space(6.0);
-                                ui.add(egui::Label::new(
-                                    RichText::new("Backlighting Effects")
-                                        .color(theme::primary_text(ui.ctx()))
-                                        .size(11.0)
-                                        .strong(),
-                                ));
-                                ui.add_space(4.0);
-                                ui.add(egui::Label::new(
-                                    RichText::new("Choose between different backlighting effects for your keyboard by pressing \"Fn + Lightbulb\" keys or choose from the list below")
-                                        .color(theme::muted_text(ui.ctx()))
-                                        .size(10.0)
-                                ));
-                                ui.add_space(10.0);
+                let text_pos = pos2(eff_rect.min.x + 28.0, eff_rect.center().y);
+                painter.text(
+                    text_pos,
+                    egui::Align2::LEFT_CENTER,
+                    "SELECT EFFECT",
+                    egui::FontId::proportional(11.5),
+                    active_color,
+                );
 
-                                // Options list
-                                if draw_custom_radio(ui, &mut selected_effect, "Static", "Static").changed() {
-                                    changed = true;
-                                }
-                                ui.add_space(6.0);
-                                if draw_custom_radio(ui, &mut selected_effect, "Contrast", "Contrast").changed() {
-                                    changed = true;
-                                }
-                                ui.add_space(6.0);
-                                if draw_custom_radio(ui, &mut selected_effect, "Breathing", "Breathing").changed() {
-                                    changed = true;
-                                }
-                                ui.add_space(6.0);
-                                if draw_custom_radio(ui, &mut selected_effect, "Waves", "Waves").changed() {
-                                    changed = true;
-                                }
-                                ui.add_space(6.0);
-                                if draw_custom_radio(ui, &mut selected_effect, "Reaction", "Reaction").changed() {
-                                    changed = true;
-                                }
-                                ui.add_space(6.0);
-                                if draw_custom_radio(ui, &mut selected_effect, "Random", "Random").changed() {
-                                    changed = true;
-                                }
+                // Active tab underline
+                let bar_y = eff_rect.max.y + 4.0;
+                painter.line_segment(
+                    [pos2(eff_rect.min.x, bar_y), pos2(eff_rect.max.x, bar_y)],
+                    Stroke::new(2.0, active_color),
+                );
+
+                // Draw popup if open
+                if popup_open {
+                    let popup_pos = eff_rect.left_bottom() + vec2(0.0, 8.0);
+                    
+                    egui::Area::new(egui::Id::new("backlight_popup_area"))
+                        .order(egui::Order::Foreground)
+                        .fixed_pos(popup_pos)
+                        .show(ui.ctx(), |ui| {
+                            // Draw container frame
+                            let frame = egui::Frame::none()
+                                .fill(Color32::from_rgb(0x13, 0x13, 0x13))
+                                .stroke(Stroke::new(1.0, theme::border_color(ui.ctx())))
+                                .rounding(4.0)
+                                .inner_margin(12.0);
+
+                            let response_frame = frame.show(ui, |ui| {
+                                ui.set_width(260.0);
+                                ui.vertical(|ui| {
+                                    ui.add(egui::Label::new(
+                                        RichText::new("Select Backlight Effect")
+                                            .color(Color32::WHITE)
+                                            .size(13.0)
+                                            .strong(),
+                                    ));
+                                    ui.add_space(6.0);
+                                    ui.add(egui::Label::new(
+                                        RichText::new("Backlighting Effects")
+                                            .color(theme::primary_text(ui.ctx()))
+                                            .size(11.0)
+                                            .strong(),
+                                    ));
+                                    ui.add_space(4.0);
+                                    ui.add(egui::Label::new(
+                                        RichText::new("Choose between different backlighting effects for your keyboard by pressing \"Fn + Lightbulb\" keys or choose from the list below")
+                                            .color(theme::muted_text(ui.ctx()))
+                                            .size(10.0)
+                                    ));
+                                    ui.add_space(10.0);
+
+                                    // Options list
+                                    if draw_custom_radio(ui, &mut selected_effect, "Static", "Static").changed() {
+                                        changed = true;
+                                    }
+                                    ui.add_space(6.0);
+                                    if draw_custom_radio(ui, &mut selected_effect, "Contrast", "Contrast").changed() {
+                                        changed = true;
+                                    }
+                                    ui.add_space(6.0);
+                                    if draw_custom_radio(ui, &mut selected_effect, "Breathing", "Breathing").changed() {
+                                        changed = true;
+                                    }
+                                    ui.add_space(6.0);
+                                    if draw_custom_radio(ui, &mut selected_effect, "Waves", "Waves").changed() {
+                                        changed = true;
+                                    }
+                                    ui.add_space(6.0);
+                                    if draw_custom_radio(ui, &mut selected_effect, "Reaction", "Reaction").changed() {
+                                        changed = true;
+                                    }
+                                    ui.add_space(6.0);
+                                    if draw_custom_radio(ui, &mut selected_effect, "Random", "Random").changed() {
+                                        changed = true;
+                                    }
+                                });
                             });
-                        });
 
-                        // Check click away to close
-                        let interact_pos = ui.input(|i| i.pointer.interact_pos());
-                        if ui.input(|i| i.pointer.any_click()) {
-                            if let Some(pos) = interact_pos {
-                                let clicked_inside_frame = response_frame.response.rect.contains(pos);
-                                let clicked_inside_button = eff_rect.contains(pos);
-                                if !clicked_inside_frame && !clicked_inside_button {
-                                    ui.ctx().data_mut(|d| d.insert_temp(popup_id, false));
+                            // Check click away to close
+                            let interact_pos = ui.input(|i| i.pointer.interact_pos());
+                            if ui.input(|i| i.pointer.any_click()) {
+                                if let Some(pos) = interact_pos {
+                                    let clicked_inside_frame = response_frame.response.rect.contains(pos);
+                                    let clicked_inside_button = eff_rect.contains(pos);
+                                    if !clicked_inside_frame && !clicked_inside_button {
+                                        ui.ctx().data_mut(|d| d.insert_temp(popup_id, false));
+                                    }
                                 }
                             }
-                        }
-                    });
-            }
+                        });
+                }
+
+                ui.add_space(20.0);
+
+                ui.label(
+                    RichText::new("BACKLIGHTING")
+                        .color(Color32::WHITE)
+                        .size(12.0)
+                        .strong(),
+                );
+
+                ui.add_space(8.0);
+
+                // 1. Toggle switch at the right edge
+                if toggle_switch(ui, &mut enabled).changed() {
+                    changed = true;
+                }
+            });
         });
 
         ui.add_space(20.0);
 
         // Main layout container: Keyboard Image
-        ui.horizontal(|ui| {
-            ui.add_space(20.0);
-            ui.vertical(|ui| {
-                ui.add_space(10.0);
-                let img_size = vec2(480.0, 144.0);
-                let (rect, _) = ui.allocate_exact_size(img_size, egui::Sense::hover());
-                ui.painter().image(
-                    keyboard_texture.id(),
-                    rect,
-                    Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
-                    Color32::WHITE,
-                );
+        let max_rect = ui.max_rect();
+        let center = max_rect.center() + vec2(0.0, -10.0);
+        let img_size = vec2(800.0, 266.0);
+        let keyboard_rect = Rect::from_center_size(center, img_size);
 
-                // Highlighted keys outlines on standard keyboard image
-                // 1. Bulb key highlight (to the right of F12)
-                let b_rx = 0.655;
-                let b_ry = 0.11;
-                let b_rw = 0.032;
-                let b_rh = 0.075;
-                let bulb_rect = Rect::from_min_max(
-                    rect.min + vec2(b_rx * rect.width(), b_ry * rect.height()),
-                    rect.min + vec2((b_rx + b_rw) * rect.width(), (b_ry + b_rh) * rect.height()),
-                );
-                ui.painter().rect_stroke(
-                    bulb_rect.expand(1.0),
-                    3.0,
-                    Stroke::new(1.8, Color32::WHITE),
-                );
+        ui.put(
+            keyboard_rect,
+            egui::Image::new(keyboard_texture).fit_to_exact_size(img_size),
+        );
 
-                // 2. Fn key highlight (bottom row)
-                let fn_rx = 0.44;
-                let fn_ry = 0.85;
-                let fn_rw = 0.032;
-                let fn_rh = 0.075;
-                let fn_rect = Rect::from_min_max(
-                    rect.min + vec2(fn_rx * rect.width(), fn_ry * rect.height()),
-                    rect.min + vec2((fn_rx + fn_rw) * rect.width(), (fn_ry + fn_rh) * rect.height()),
-                );
-                ui.painter().rect_stroke(
-                    fn_rect.expand(1.0),
-                    3.0,
-                    Stroke::new(1.8, Color32::WHITE),
-                );
-            });
-        });
+        // Highlighted keys outlines on standard keyboard image
+        // 1. Bulb key highlight (to the right of F12)
+        let b_rx = 0.655;
+        let b_ry = 0.11;
+        let b_rw = 0.032;
+        let b_rh = 0.075;
+        let bulb_rect = Rect::from_min_max(
+            keyboard_rect.min + vec2(b_rx * keyboard_rect.width(), b_ry * keyboard_rect.height()),
+            keyboard_rect.min + vec2((b_rx + b_rw) * keyboard_rect.width(), (b_ry + b_rh) * keyboard_rect.height()),
+        );
+        ui.painter().rect_stroke(
+            bulb_rect.expand(1.0),
+            3.0,
+            Stroke::new(1.8, Color32::WHITE),
+        );
+
+        // 2. Fn key highlight (bottom row)
+        let fn_rx = 0.44;
+        let fn_ry = 0.85;
+        let fn_rw = 0.032;
+        let fn_rh = 0.075;
+        let fn_rect = Rect::from_min_max(
+            keyboard_rect.min + vec2(fn_rx * keyboard_rect.width(), fn_ry * keyboard_rect.height()),
+            keyboard_rect.min + vec2((fn_rx + fn_rw) * keyboard_rect.width(), (fn_ry + fn_rh) * keyboard_rect.height()),
+        );
+        ui.painter().rect_stroke(
+            fn_rect.expand(1.0),
+            3.0,
+            Stroke::new(1.8, Color32::WHITE),
+        );
     });
 
     if changed {

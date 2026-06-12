@@ -51,7 +51,7 @@ pub fn draw_trash_icon(ui: &egui::Ui, center: egui::Pos2, color: egui::Color32) 
     );
     painter.line_segment(
         [
-            center + egui::vec2(4.5, -5.5),
+            center + egui::vec2(5.5, -5.5),
             center + egui::vec2(4.5, 7.0),
         ],
         stroke,

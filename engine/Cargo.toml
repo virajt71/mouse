@@ -16,7 +16,7 @@ x11rb = { version = "0.13", features = ["randr", "xfixes"] }
 dirs = "6.0.0"
 arboard = "3.4.1"
 sha2 = "0.10"
-image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 tokio = { version = "1.38", features = ["full"] }
 rustls = { version = "0.23", features = ["ring"] }
 tokio-rustls = "0.26"
