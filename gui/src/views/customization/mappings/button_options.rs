@@ -1,4 +1,4 @@
-use super::button_keys::{CustomizingButton, get_button_keys};
+use super::button_keys::{get_button_keys, CustomizingButton};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum UniversalButtonOption {
@@ -56,7 +56,10 @@ impl UniversalButtonOption {
     pub fn display_name(self, btn: CustomizingButton) -> &'static str {
         match self {
             Self::Gesture => {
-                if btn == CustomizingButton::Thumb || btn == CustomizingButton::Top || btn == CustomizingButton::Middle {
+                if btn == CustomizingButton::Thumb
+                    || btn == CustomizingButton::Top
+                    || btn == CustomizingButton::Middle
+                {
                     "Gestures"
                 } else {
                     "Gesture"
@@ -155,66 +158,118 @@ impl CustomizingButton {
                 UniversalButtonOption::Gesture,
                 UniversalButtonOption::KeyboardShortcut,
             ],
+            Self::F1
+            | Self::F2
+            | Self::F3
+            | Self::F4
+            | Self::F5
+            | Self::F6
+            | Self::F7
+            | Self::F8
+            | Self::F9
+            | Self::F10
+            | Self::F11
+            | Self::F12
+            | Self::Ins
+            | Self::Home
+            | Self::PgUp
+            | Self::Del
+            | Self::End
+            | Self::PgDn
+            | Self::Calculator
+            | Self::ScreenLock
+            | Self::Search
+            | Self::LockPower => &[
+                UniversalButtonOption::KeyboardShortcut,
+                UniversalButtonOption::DoNothing,
+            ],
             _ => &[],
         }
     }
 
     pub fn other_options(self) -> Vec<UniversalButtonOption> {
-        let recommended = self.recommended_options();
-        let all_options = &[
-            UniversalButtonOption::Gesture,
-            UniversalButtonOption::ActionCenter,
-            UniversalButtonOption::AdvancedClick,
-            UniversalButtonOption::Back,
-            UniversalButtonOption::BrightnessDown,
-            UniversalButtonOption::BrightnessUp,
-            UniversalButtonOption::Calculator,
-            UniversalButtonOption::ChangePointerSpeed,
-            UniversalButtonOption::CloseWindow,
-            UniversalButtonOption::Copy,
-            UniversalButtonOption::Cut,
-            UniversalButtonOption::DesktopLeft,
-            UniversalButtonOption::DesktopRight,
-            UniversalButtonOption::Dictation,
-            UniversalButtonOption::DoNothing,
-            UniversalButtonOption::Emoji,
-            UniversalButtonOption::EmojisMenu,
-            UniversalButtonOption::Forward,
-            UniversalButtonOption::InputLanguage,
-            UniversalButtonOption::Lock,
-            UniversalButtonOption::MaximizeWindow,
-            UniversalButtonOption::MiddleButton,
-            UniversalButtonOption::MinimizeWindow,
-            UniversalButtonOption::MuteUnmuteSpeaker,
-            UniversalButtonOption::NewBrowserTab,
-            UniversalButtonOption::Next,
-            UniversalButtonOption::OpenApplication,
-            UniversalButtonOption::OpenFile,
-            UniversalButtonOption::OpenFolder,
-            UniversalButtonOption::Paste,
-            UniversalButtonOption::PlayPause,
-            UniversalButtonOption::Previous,
-            UniversalButtonOption::PrintScreen,
-            UniversalButtonOption::Redo,
-            UniversalButtonOption::RightCtrl,
-            UniversalButtonOption::ScreenCapture,
-            UniversalButtonOption::ScreenSnip,
-            UniversalButtonOption::ShiftWheelMode,
-            UniversalButtonOption::ShowHideDesktop,
-            UniversalButtonOption::SwitchApplication,
-            UniversalButtonOption::TaskView,
-            UniversalButtonOption::ThisPC,
-            UniversalButtonOption::Undo,
-            UniversalButtonOption::VolumeDown,
-            UniversalButtonOption::VolumeUp,
-            UniversalButtonOption::ZoomIn,
-            UniversalButtonOption::ZoomOut,
-        ];
+        match self {
+            Self::F1
+            | Self::F2
+            | Self::F3
+            | Self::F4
+            | Self::F5
+            | Self::F6
+            | Self::F7
+            | Self::F8
+            | Self::F9
+            | Self::F10
+            | Self::F11
+            | Self::F12
+            | Self::Ins
+            | Self::Home
+            | Self::PgUp
+            | Self::Del
+            | Self::End
+            | Self::PgDn
+            | Self::Calculator
+            | Self::ScreenLock
+            | Self::Search
+            | Self::LockPower => vec![],
+            _ => {
+                let recommended = self.recommended_options();
+                let all_options = &[
+                    UniversalButtonOption::Gesture,
+                    UniversalButtonOption::ActionCenter,
+                    UniversalButtonOption::AdvancedClick,
+                    UniversalButtonOption::Back,
+                    UniversalButtonOption::BrightnessDown,
+                    UniversalButtonOption::BrightnessUp,
+                    UniversalButtonOption::Calculator,
+                    UniversalButtonOption::ChangePointerSpeed,
+                    UniversalButtonOption::CloseWindow,
+                    UniversalButtonOption::Copy,
+                    UniversalButtonOption::Cut,
+                    UniversalButtonOption::DesktopLeft,
+                    UniversalButtonOption::DesktopRight,
+                    UniversalButtonOption::Dictation,
+                    UniversalButtonOption::DoNothing,
+                    UniversalButtonOption::Emoji,
+                    UniversalButtonOption::EmojisMenu,
+                    UniversalButtonOption::Forward,
+                    UniversalButtonOption::InputLanguage,
+                    UniversalButtonOption::Lock,
+                    UniversalButtonOption::MaximizeWindow,
+                    UniversalButtonOption::MiddleButton,
+                    UniversalButtonOption::MinimizeWindow,
+                    UniversalButtonOption::MuteUnmuteSpeaker,
+                    UniversalButtonOption::NewBrowserTab,
+                    UniversalButtonOption::Next,
+                    UniversalButtonOption::OpenApplication,
+                    UniversalButtonOption::OpenFile,
+                    UniversalButtonOption::OpenFolder,
+                    UniversalButtonOption::Paste,
+                    UniversalButtonOption::PlayPause,
+                    UniversalButtonOption::Previous,
+                    UniversalButtonOption::PrintScreen,
+                    UniversalButtonOption::Redo,
+                    UniversalButtonOption::RightCtrl,
+                    UniversalButtonOption::ScreenCapture,
+                    UniversalButtonOption::ScreenSnip,
+                    UniversalButtonOption::ShiftWheelMode,
+                    UniversalButtonOption::ShowHideDesktop,
+                    UniversalButtonOption::SwitchApplication,
+                    UniversalButtonOption::TaskView,
+                    UniversalButtonOption::ThisPC,
+                    UniversalButtonOption::Undo,
+                    UniversalButtonOption::VolumeDown,
+                    UniversalButtonOption::VolumeUp,
+                    UniversalButtonOption::ZoomIn,
+                    UniversalButtonOption::ZoomOut,
+                ];
 
-        all_options.iter()
-            .copied()
-            .filter(|opt| !recommended.contains(opt))
-            .collect()
+                all_options
+                    .iter()
+                    .copied()
+                    .filter(|opt| !recommended.contains(opt))
+                    .collect()
+            }
+        }
     }
 }
 
@@ -224,14 +279,56 @@ pub fn get_button_option(
 ) -> UniversalButtonOption {
     let (base_key, gesture_enabled_key, _) = btn.config_keys();
 
+    match btn {
+        CustomizingButton::F1
+        | CustomizingButton::F2
+        | CustomizingButton::F3
+        | CustomizingButton::F4
+        | CustomizingButton::F5
+        | CustomizingButton::F6
+        | CustomizingButton::F7
+        | CustomizingButton::F8
+        | CustomizingButton::F9
+        | CustomizingButton::F10
+        | CustomizingButton::F11
+        | CustomizingButton::F12
+        | CustomizingButton::Ins
+        | CustomizingButton::Home
+        | CustomizingButton::PgUp
+        | CustomizingButton::Del
+        | CustomizingButton::End
+        | CustomizingButton::PgDn
+        | CustomizingButton::Calculator
+        | CustomizingButton::ScreenLock
+        | CustomizingButton::Search
+        | CustomizingButton::LockPower => {
+            if let Some(val) = mappings.get(base_key) {
+                if val.starts_with("custom:") {
+                    return UniversalButtonOption::KeyboardShortcut;
+                } else if val == "none" {
+                    return UniversalButtonOption::DoNothing;
+                }
+            }
+            return UniversalButtonOption::DoNothing;
+        }
+        _ => {}
+    }
+
     // Primary check: explicit gesture_enabled flag.
-    let gesture_enabled = mappings.get(gesture_enabled_key).map(|s| s == "true").unwrap_or(false);
+    let gesture_enabled = mappings
+        .get(gesture_enabled_key)
+        .map(|s| s == "true")
+        .unwrap_or(false);
     if gesture_enabled {
         return UniversalButtonOption::Gesture;
     }
 
     // Legacy migration: if the base key is "gestures" (old placeholder), treat as gesture mode.
-    if mappings.get(base_key).map(|s| s == "gestures").unwrap_or(false) {
+    if mappings
+        .get(base_key)
+        .map(|s| s == "gestures")
+        .unwrap_or(false)
+    {
         return UniversalButtonOption::Gesture;
     }
 
@@ -239,9 +336,9 @@ pub fn get_button_option(
     // even if gesture_enabled was never explicitly saved as "true" (e.g. old configs).
     {
         let (_, _, up_k, down_k, left_k, right_k) = get_button_keys(btn);
-        let has_gesture = [up_k, down_k, left_k, right_k].iter().any(|k| {
-            mappings.get(*k).map(|v| v != "none").unwrap_or(false)
-        });
+        let has_gesture = [up_k, down_k, left_k, right_k]
+            .iter()
+            .any(|k| mappings.get(*k).map(|v| v != "none").unwrap_or(false));
         if has_gesture {
             return UniversalButtonOption::Gesture;
         }
@@ -316,6 +413,46 @@ pub fn save_button_option(
     mappings: &mut std::collections::HashMap<String, String>,
 ) {
     let (base_key, gesture_enabled_key, _) = btn.config_keys();
+
+    match btn {
+        CustomizingButton::F1
+        | CustomizingButton::F2
+        | CustomizingButton::F3
+        | CustomizingButton::F4
+        | CustomizingButton::F5
+        | CustomizingButton::F6
+        | CustomizingButton::F7
+        | CustomizingButton::F8
+        | CustomizingButton::F9
+        | CustomizingButton::F10
+        | CustomizingButton::F11
+        | CustomizingButton::F12
+        | CustomizingButton::Ins
+        | CustomizingButton::Home
+        | CustomizingButton::PgUp
+        | CustomizingButton::Del
+        | CustomizingButton::End
+        | CustomizingButton::PgDn
+        | CustomizingButton::Calculator
+        | CustomizingButton::ScreenLock
+        | CustomizingButton::Search
+        | CustomizingButton::LockPower => {
+            if opt == UniversalButtonOption::KeyboardShortcut {
+                if !mappings
+                    .get(base_key)
+                    .map(|s| s.starts_with("custom:"))
+                    .unwrap_or(false)
+                {
+                    mappings.insert(base_key.to_string(), "none".to_string());
+                }
+            } else {
+                mappings.insert(base_key.to_string(), "none".to_string());
+            }
+            return;
+        }
+        _ => {}
+    }
+
     if opt == UniversalButtonOption::Gesture {
         mappings.insert(gesture_enabled_key.to_string(), "true".to_string());
         // Preserve the existing click-fallback action (the base key doubles as the
@@ -344,7 +481,11 @@ pub fn save_button_option(
         UniversalButtonOption::PrintScreen => "print_screen",
         UniversalButtonOption::SwitchApplication => "alt_tab",
         UniversalButtonOption::KeyboardShortcut => {
-            if !mappings.get(base_key).map(|s| s.starts_with("custom:")).unwrap_or(false) {
+            if !mappings
+                .get(base_key)
+                .map(|s| s.starts_with("custom:"))
+                .unwrap_or(false)
+            {
                 mappings.insert(base_key.to_string(), "none".to_string());
             }
             return;
@@ -352,7 +493,11 @@ pub fn save_button_option(
         UniversalButtonOption::ActionCenter => "action_center",
         UniversalButtonOption::AdvancedClick => "advanced_click",
         UniversalButtonOption::Back => {
-            if btn == CustomizingButton::Back { "mouse_back_click" } else { "browser_back" }
+            if btn == CustomizingButton::Back {
+                "mouse_back_click"
+            } else {
+                "browser_back"
+            }
         }
         UniversalButtonOption::BrightnessDown => "brightness_down",
         UniversalButtonOption::BrightnessUp => "brightness_up",
@@ -368,7 +513,11 @@ pub fn save_button_option(
         UniversalButtonOption::Emoji => "emoji",
         UniversalButtonOption::EmojisMenu => "emojis_menu",
         UniversalButtonOption::Forward => {
-            if btn == CustomizingButton::Forward { "mouse_forward_click" } else { "browser_forward" }
+            if btn == CustomizingButton::Forward {
+                "mouse_forward_click"
+            } else {
+                "browser_forward"
+            }
         }
         UniversalButtonOption::InputLanguage => "input_language",
         UniversalButtonOption::Lock => "lock",

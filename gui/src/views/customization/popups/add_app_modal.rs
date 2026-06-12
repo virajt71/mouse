@@ -1,7 +1,7 @@
+use crate::theme;
 use eframe::egui;
 use egui::{pos2, vec2, Color32, Rect, RichText, Stroke};
 use mouser_engine::Engine;
-use crate::theme;
 
 thread_local! {
     pub static SHOW_ADD_APP_MODAL: std::cell::RefCell<bool> = const { std::cell::RefCell::new(false) };
@@ -10,7 +10,11 @@ thread_local! {
     pub static FOCUS_REQUESTED: std::cell::RefCell<bool> = const { std::cell::RefCell::new(false) };
 }
 
-pub fn draw_add_app_modal(ctx: &egui::Context, engine: &Engine, config: &mut mouser_engine::config::Config) {
+pub fn draw_add_app_modal(
+    ctx: &egui::Context,
+    engine: &Engine,
+    config: &mut mouser_engine::config::Config,
+) {
     let show_app_modal = SHOW_ADD_APP_MODAL.with(|s| *s.borrow());
     if show_app_modal {
         egui::Area::new(egui::Id::new("add_application_modal"))
@@ -18,23 +22,31 @@ pub fn draw_add_app_modal(ctx: &egui::Context, engine: &Engine, config: &mut mou
             .show(ctx, |ui| {
                 let screen_r = ctx.screen_rect();
                 // Allocate response to make this Area layer active under pointer and block fallthrough
-                let _background_response = ui.allocate_rect(screen_r, egui::Sense::click_and_drag());
+                let _background_response =
+                    ui.allocate_rect(screen_r, egui::Sense::click_and_drag());
                 // Dark overlay
-                ui.painter().rect_filled(screen_r, 0.0, Color32::from_rgba_unmultiplied(0, 0, 0, 180));
+                ui.painter().rect_filled(
+                    screen_r,
+                    0.0,
+                    Color32::from_rgba_unmultiplied(0, 0, 0, 180),
+                );
 
                 let card_w = 480.0;
                 let card_h = 520.0_f32.min(screen_r.height() - 40.0);
                 let card_rect = Rect::from_center_size(screen_r.center(), vec2(card_w, card_h));
 
                 // Draw premium dark container
-                ui.painter().rect_filled(card_rect, 4.0, Color32::from_rgb(0x16, 0x16, 0x16));
-                ui.painter().rect_stroke(card_rect, 4.0, Stroke::new(1.0, Color32::from_rgb(0x2d, 0x2d, 0x2d)));
+                ui.painter()
+                    .rect_filled(card_rect, 4.0, Color32::from_rgb(0x16, 0x16, 0x16));
+                ui.painter().rect_stroke(
+                    card_rect,
+                    4.0,
+                    Stroke::new(1.0, Color32::from_rgb(0x2d, 0x2d, 0x2d)),
+                );
                 theme::draw_tech_corners(ui.painter(), card_rect, theme::accent_color(ctx), 8.0);
 
-                let mut modal_ui = ui.new_child(
-                    egui::UiBuilder::new()
-                        .max_rect(card_rect.shrink(20.0))
-                );
+                let mut modal_ui =
+                    ui.new_child(egui::UiBuilder::new().max_rect(card_rect.shrink(20.0)));
 
                 modal_ui.vertical(|ui| {
                     // Title and Close Button
@@ -43,10 +55,11 @@ pub fn draw_add_app_modal(ctx: &egui::Context, engine: &Engine, config: &mut mou
                             RichText::new("ADD APPLICATION PROFILE")
                                 .color(Color32::WHITE)
                                 .size(13.0)
-                                .strong()
+                                .strong(),
                         );
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            let (close_rect, close_res) = ui.allocate_exact_size(vec2(16.0, 16.0), egui::Sense::click());
+                            let (close_rect, close_res) =
+                                ui.allocate_exact_size(vec2(16.0, 16.0), egui::Sense::click());
                             if close_res.hovered() {
                                 ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
                             }
@@ -79,7 +92,7 @@ pub fn draw_add_app_modal(ctx: &egui::Context, engine: &Engine, config: &mut mou
                             egui::TextEdit::singleline(&mut query)
                                 .hint_text("Search applications...")
                                 .desired_width(ui.available_width() - 4.0)
-                                .margin(egui::vec2(8.0, 6.0))
+                                .margin(egui::vec2(8.0, 6.0)),
                         );
 
                         // Set focus to the search field automatically on popup
@@ -97,10 +110,11 @@ pub fn draw_add_app_modal(ctx: &egui::Context, engine: &Engine, config: &mut mou
                     let scanned_opt = SCANNED_APPS.with(|apps| apps.borrow().clone());
                     if let Some(scanned_apps) = scanned_opt {
                         let query_lower = query.to_lowercase();
-                        let filtered_apps: Vec<_> = scanned_apps.into_iter()
+                        let filtered_apps: Vec<_> = scanned_apps
+                            .into_iter()
                             .filter(|app| {
-                                app.name.to_lowercase().contains(&query_lower) ||
-                                app.exec.to_lowercase().contains(&query_lower)
+                                app.name.to_lowercase().contains(&query_lower)
+                                    || app.exec.to_lowercase().contains(&query_lower)
                             })
                             .collect();
 
@@ -110,7 +124,7 @@ pub fn draw_add_app_modal(ctx: &egui::Context, engine: &Engine, config: &mut mou
                                 ui.label(
                                     RichText::new("No applications found")
                                         .color(theme::muted_text(ctx))
-                                        .size(12.0)
+                                        .size(12.0),
                                 );
                             });
                         } else {
@@ -119,13 +133,17 @@ pub fn draw_add_app_modal(ctx: &egui::Context, engine: &Engine, config: &mut mou
                                 .id_salt("add_app_scroll")
                                 .max_height(list_h)
                                 .auto_shrink([false; 2])
-                                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                                .scroll_bar_visibility(
+                                    egui::scroll_area::ScrollBarVisibility::AlwaysHidden,
+                                )
                                 .show(ui, |ui| {
                                     ui.spacing_mut().item_spacing = egui::vec2(0.0, 4.0);
                                     for app in filtered_apps {
                                         // Check if already assigned
                                         let mut assigned_profile = None;
-                                        if let Some(g_data) = config.profile_groups.get(&config.active_group) {
+                                        if let Some(g_data) =
+                                            config.profile_groups.get(&config.active_group)
+                                        {
                                             for (pname, pdata) in &g_data.profiles {
                                                 if pdata.apps.contains(&app.exec) {
                                                     assigned_profile = Some(pname.clone());
@@ -139,13 +157,21 @@ pub fn draw_add_app_modal(ctx: &egui::Context, engine: &Engine, config: &mut mou
                                         let item_h = 42.0;
 
                                         let (item_rect, item_res) = if is_assigned {
-                                            ui.allocate_exact_size(vec2(item_w, item_h), egui::Sense::hover())
+                                            ui.allocate_exact_size(
+                                                vec2(item_w, item_h),
+                                                egui::Sense::hover(),
+                                            )
                                         } else {
-                                            ui.allocate_exact_size(vec2(item_w, item_h), egui::Sense::click())
+                                            ui.allocate_exact_size(
+                                                vec2(item_w, item_h),
+                                                egui::Sense::click(),
+                                            )
                                         };
 
                                         if item_res.hovered() && !is_assigned {
-                                            ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
+                                            ui.output_mut(|o| {
+                                                o.cursor_icon = egui::CursorIcon::PointingHand
+                                            });
                                         }
 
                                         let is_hovered = item_res.hovered();
@@ -157,11 +183,16 @@ pub fn draw_add_app_modal(ctx: &egui::Context, engine: &Engine, config: &mut mou
                                             Color32::from_rgb(0x1c, 0x1c, 0x1c)
                                         };
                                         ui.painter().rect_filled(item_rect, 2.0, bg_color);
-                                        ui.painter().rect_stroke(item_rect, 2.0, Stroke::new(1.0, Color32::from_rgb(0x2d, 0x2d, 0x2d)));
+                                        ui.painter().rect_stroke(
+                                            item_rect,
+                                            2.0,
+                                            Stroke::new(1.0, Color32::from_rgb(0x2d, 0x2d, 0x2d)),
+                                        );
 
                                         // Draw app icon or fallback badge
                                         let is_brave = app.name.to_lowercase().contains("brave");
-                                        let icon_center = pos2(item_rect.min.x + 24.0, item_rect.center().y);
+                                        let icon_center =
+                                            pos2(item_rect.min.x + 24.0, item_rect.center().y);
                                         if is_brave {
                                             let sc = icon_center;
                                             let shield_pts = vec![
@@ -178,9 +209,19 @@ pub fn draw_add_app_modal(ctx: &egui::Context, engine: &Engine, config: &mut mou
                                             } else {
                                                 Color32::from_rgb(249, 115, 22)
                                             };
-                                            ui.painter().add(egui::Shape::convex_polygon(shield_pts, shield_color, Stroke::NONE));
+                                            ui.painter().add(egui::Shape::convex_polygon(
+                                                shield_pts,
+                                                shield_color,
+                                                Stroke::NONE,
+                                            ));
                                         } else {
-                                            let initial = app.name.chars().next().unwrap_or('?').to_uppercase().to_string();
+                                            let initial = app
+                                                .name
+                                                .chars()
+                                                .next()
+                                                .unwrap_or('?')
+                                                .to_uppercase()
+                                                .to_string();
                                             let circle_color = if is_assigned {
                                                 Color32::from_rgb(0x1a, 0x1a, 0x1a)
                                             } else {
@@ -191,7 +232,15 @@ pub fn draw_add_app_modal(ctx: &egui::Context, engine: &Engine, config: &mut mou
                                             } else {
                                                 Color32::WHITE
                                             };
-                                            ui.painter().circle(icon_center, 9.0, circle_color, Stroke::new(1.0, Color32::from_rgb(0x44, 0x44, 0x44)));
+                                            ui.painter().circle(
+                                                icon_center,
+                                                9.0,
+                                                circle_color,
+                                                Stroke::new(
+                                                    1.0,
+                                                    Color32::from_rgb(0x44, 0x44, 0x44),
+                                                ),
+                                            );
                                             ui.painter().text(
                                                 pos2(icon_center.x, icon_center.y - 0.5),
                                                 egui::Align2::CENTER_CENTER,
@@ -208,21 +257,34 @@ pub fn draw_add_app_modal(ctx: &egui::Context, engine: &Engine, config: &mut mou
                                             Color32::WHITE
                                         };
                                         ui.painter().text(
-                                            pos2(item_rect.min.x + 45.0, item_rect.center().y - 6.0),
+                                            pos2(
+                                                item_rect.min.x + 45.0,
+                                                item_rect.center().y - 6.0,
+                                            ),
                                             egui::Align2::LEFT_CENTER,
                                             &app.name,
                                             egui::FontId::proportional(12.0),
                                             name_color,
                                         );
 
-                                        let (exec_text, text_color) = if let Some(pname) = &assigned_profile {
-                                            (format!("Mapped to profile: {}", pname), Color32::from_rgb(0xe1, 0x1d, 0x48))
-                                        } else {
-                                            (format!("Executable: {}", app.exec), theme::muted_text(ctx))
-                                        };
+                                        let (exec_text, text_color) =
+                                            if let Some(pname) = &assigned_profile {
+                                                (
+                                                    format!("Mapped to profile: {}", pname),
+                                                    Color32::from_rgb(0xe1, 0x1d, 0x48),
+                                                )
+                                            } else {
+                                                (
+                                                    format!("Executable: {}", app.exec),
+                                                    theme::muted_text(ctx),
+                                                )
+                                            };
 
                                         ui.painter().text(
-                                            pos2(item_rect.min.x + 45.0, item_rect.center().y + 8.0),
+                                            pos2(
+                                                item_rect.min.x + 45.0,
+                                                item_rect.center().y + 8.0,
+                                            ),
                                             egui::Align2::LEFT_CENTER,
                                             exec_text,
                                             egui::FontId::proportional(9.5),

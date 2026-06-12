@@ -1,10 +1,10 @@
 use evdev::Key;
-use std::time::{Duration, Instant};
 use std::sync::atomic::Ordering;
+use std::time::{Duration, Instant};
 
-use crate::input::{MouseHookEvent, is_mouse_button_action, get_mouse_button_key};
-use crate::hidpp::HidppEvent;
 use super::Engine;
+use crate::hidpp::HidppEvent;
+use crate::input::{get_mouse_button_key, is_mouse_button_action, MouseHookEvent};
 
 impl Engine {
     pub fn handle_mouse_hook_event(&self, event: MouseHookEvent) {
@@ -22,16 +22,24 @@ impl Engine {
 
                 let gestures_enabled = {
                     let active = self.inner.active_mappings.lock().unwrap();
-                    let enabled_key = if btn_key == "middle" { "middle_gesture_enabled" }
-                                     else if btn_key == "xbutton1" { "xbutton1_gesture_enabled" }
-                                     else { "xbutton2_gesture_enabled" };
+                    let enabled_key = if btn_key == "middle" {
+                        "middle_gesture_enabled"
+                    } else if btn_key == "xbutton1" {
+                        "xbutton1_gesture_enabled"
+                    } else {
+                        "xbutton2_gesture_enabled"
+                    };
 
                     let explicit = active.get(enabled_key).map(|s| s.as_str());
                     match explicit {
                         Some("false") => {
-                            let prefix = if btn_key == "middle" { "middle_gesture_" }
-                                         else if btn_key == "xbutton1" { "xbutton1_gesture_" }
-                                         else { "xbutton2_gesture_" };
+                            let prefix = if btn_key == "middle" {
+                                "middle_gesture_"
+                            } else if btn_key == "xbutton1" {
+                                "xbutton1_gesture_"
+                            } else {
+                                "xbutton2_gesture_"
+                            };
                             ["left", "right", "up", "down"].iter().any(|dir| {
                                 let k = format!("{}{}", prefix, dir);
                                 active.get(&k).map(|v| v != "none").unwrap_or(false)
@@ -114,10 +122,14 @@ impl Engine {
                 let (enabled, mapping) = {
                     let active = self.inner.active_mappings.lock().unwrap();
                     let enabled = match active.get("gesture_enabled").map(|s| s.as_str()) {
-                        Some("false") => {
-                            ["gesture_left", "gesture_right", "gesture_up", "gesture_down"]
-                                .iter().any(|k| active.get(*k).map(|v| v != "none").unwrap_or(false))
-                        }
+                        Some("false") => [
+                            "gesture_left",
+                            "gesture_right",
+                            "gesture_up",
+                            "gesture_down",
+                        ]
+                        .iter()
+                        .any(|k| active.get(*k).map(|v| v != "none").unwrap_or(false)),
                         _ => true,
                     };
                     let mapping = active.get("gesture").cloned();
@@ -129,11 +141,17 @@ impl Engine {
                     if action_id != "none" {
                         if is_mouse_button_action(action_id) {
                             if let Some(sim_key) = get_mouse_button_key(action_id) {
-                                log::info!("[Engine] Pressing mouse button for gesture action: {:?}", sim_key);
+                                log::info!(
+                                    "[Engine] Pressing mouse button for gesture action: {:?}",
+                                    sim_key
+                                );
                                 self.inner.key_simulator.inject_mouse_down(sim_key);
                             }
                         } else {
-                            log::info!("[Engine] Executing gesture simple click action: {}", action_id);
+                            log::info!(
+                                "[Engine] Executing gesture simple click action: {}",
+                                action_id
+                            );
                             self.execute_engine_action(action_id);
                         }
                     }
@@ -143,10 +161,14 @@ impl Engine {
                 let (enabled, mapping) = {
                     let active = self.inner.active_mappings.lock().unwrap();
                     let enabled = match active.get("gesture_enabled").map(|s| s.as_str()) {
-                        Some("false") => {
-                            ["gesture_left", "gesture_right", "gesture_up", "gesture_down"]
-                                .iter().any(|k| active.get(*k).map(|v| v != "none").unwrap_or(false))
-                        }
+                        Some("false") => [
+                            "gesture_left",
+                            "gesture_right",
+                            "gesture_up",
+                            "gesture_down",
+                        ]
+                        .iter()
+                        .any(|k| active.get(*k).map(|v| v != "none").unwrap_or(false)),
                         _ => true,
                     };
                     let mapping = active.get("gesture").cloned();
@@ -157,7 +179,10 @@ impl Engine {
                 } else if let Some(ref action_id) = mapping {
                     if action_id != "none" && is_mouse_button_action(action_id) {
                         if let Some(sim_key) = get_mouse_button_key(action_id) {
-                            log::info!("[Engine] Releasing mouse button for gesture action: {:?}", sim_key);
+                            log::info!(
+                                "[Engine] Releasing mouse button for gesture action: {:?}",
+                                sim_key
+                            );
                             self.inner.key_simulator.inject_mouse_up(sim_key);
                         }
                     }
@@ -168,18 +193,18 @@ impl Engine {
                     let btn_key = self.inner.gesture_state.lock().unwrap().button.clone();
                     let active = self.inner.active_mappings.lock().unwrap();
                     let enabled_key = match btn_key.as_deref() {
-                        Some("middle")   => "middle_gesture_enabled",
+                        Some("middle") => "middle_gesture_enabled",
                         Some("xbutton1") => "xbutton1_gesture_enabled",
                         Some("xbutton2") => "xbutton2_gesture_enabled",
-                        _               => "gesture_enabled",
+                        _ => "gesture_enabled",
                     };
                     match active.get(enabled_key).map(|s| s.as_str()) {
                         Some("false") => {
                             let prefix = match btn_key.as_deref() {
-                                Some("middle")   => "middle_gesture_",
+                                Some("middle") => "middle_gesture_",
                                 Some("xbutton1") => "xbutton1_gesture_",
                                 Some("xbutton2") => "xbutton2_gesture_",
-                                _               => "gesture_",
+                                _ => "gesture_",
                             };
                             ["left", "right", "up", "down"].iter().any(|dir| {
                                 let k = format!("{}{}", prefix, dir);
@@ -192,13 +217,20 @@ impl Engine {
                 if enabled {
                     self.handle_gesture_move(dx, dy, "hid_rawxy");
                 } else {
-                    self.inner.key_simulator.inject_relative_move(dx as i32, dy as i32);
+                    self.inner
+                        .key_simulator
+                        .inject_relative_move(dx as i32, dy as i32);
                 }
             }
             HidppEvent::ModeShiftDown => {
                 log::debug!("[Engine] HID ModeShift button down");
-                let mapping = self.inner.active_mappings.lock().unwrap()
-                    .get("mode_shift").cloned();
+                let mapping = self
+                    .inner
+                    .active_mappings
+                    .lock()
+                    .unwrap()
+                    .get("mode_shift")
+                    .cloned();
                 if let Some(ref action_id) = mapping {
                     self.execute_engine_action(action_id);
                 }
@@ -234,13 +266,25 @@ impl Engine {
         if !triggered {
             let btn_key = {
                 let state = self.inner.gesture_state.lock().unwrap();
-                state.button.clone().unwrap_or_else(|| "gesture".to_string())
+                state
+                    .button
+                    .clone()
+                    .unwrap_or_else(|| "gesture".to_string())
             };
 
-            let mapping = self.inner.active_mappings.lock().unwrap()
-                .get(&btn_key).cloned();
+            let mapping = self
+                .inner
+                .active_mappings
+                .lock()
+                .unwrap()
+                .get(&btn_key)
+                .cloned();
             if let Some(ref action_id) = mapping {
-                log::info!("[Engine] Executing {} click fallback action: {}", btn_key, action_id);
+                log::info!(
+                    "[Engine] Executing {} click fallback action: {}",
+                    btn_key,
+                    action_id
+                );
                 self.execute_engine_action(action_id);
             }
         }
@@ -254,8 +298,13 @@ impl Engine {
     pub fn handle_gesture_move(&self, dx: i16, dy: i16, source: &str) {
         let threshold = self.inner.cached_gesture_threshold.load(Ordering::Relaxed) as f32;
         let deadzone = self.inner.cached_gesture_deadzone.load(Ordering::Relaxed) as f32;
-        let timeout = Duration::from_millis(self.inner.cached_gesture_timeout_ms.load(Ordering::Relaxed));
-        let cooldown = Duration::from_millis(self.inner.cached_gesture_cooldown_ms.load(Ordering::Relaxed));
+        let timeout =
+            Duration::from_millis(self.inner.cached_gesture_timeout_ms.load(Ordering::Relaxed));
+        let cooldown = Duration::from_millis(
+            self.inner
+                .cached_gesture_cooldown_ms
+                .load(Ordering::Relaxed),
+        );
 
         let now = Instant::now();
 
@@ -337,7 +386,10 @@ impl Engine {
             self.inner.gesture_triggered.store(true, Ordering::SeqCst);
             state.cooldown_until = now + cooldown;
 
-            let btn_key = state.button.clone().unwrap_or_else(|| "gesture".to_string());
+            let btn_key = state
+                .button
+                .clone()
+                .unwrap_or_else(|| "gesture".to_string());
 
             drop(state);
 
@@ -347,10 +399,19 @@ impl Engine {
                 format!("{}_{}", btn_key, action_key)
             };
 
-            log::info!("[Engine] Gesture detected for {}: {}", btn_key, resolved_action_key);
+            log::info!(
+                "[Engine] Gesture detected for {}: {}",
+                btn_key,
+                resolved_action_key
+            );
 
-            let mapping = self.inner.active_mappings.lock().unwrap()
-                .get(&resolved_action_key).cloned();
+            let mapping = self
+                .inner
+                .active_mappings
+                .lock()
+                .unwrap()
+                .get(&resolved_action_key)
+                .cloned();
             if let Some(ref action_id) = mapping {
                 self.execute_engine_action(action_id);
             }

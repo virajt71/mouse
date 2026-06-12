@@ -1,6 +1,6 @@
+use super::sway::find_focused_pid_sway;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
-use super::sway::find_focused_pid_sway;
 
 pub static I3_MSG_SUPPORTED: AtomicBool = AtomicBool::new(true);
 
@@ -15,8 +15,7 @@ pub fn get_active_app_pid_i3() -> Option<u32> {
 
     match output {
         Some(out) if out.status.success() => {
-            let json: serde_json::Value =
-                serde_json::from_slice(&out.stdout).ok()?;
+            let json: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
             find_focused_pid_sway(&json)
         }
         Some(_) => None,

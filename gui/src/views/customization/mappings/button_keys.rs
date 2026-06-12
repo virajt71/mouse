@@ -8,17 +8,67 @@ pub enum CustomizingButton {
     Back,
     Thumbwheel,
     Thumb,
+    // Keyboard Keys
+    F1,
+    F2,
+    F3,
+    F4,
+    F5,
+    F6,
+    F7,
+    F8,
+    F9,
+    F10,
+    F11,
+    F12,
+    Ins,
+    Home,
+    PgUp,
+    Del,
+    End,
+    PgDn,
+    Calculator,
+    ScreenLock,
+    Search,
+    LockPower,
 }
 
 impl CustomizingButton {
     pub fn config_keys(self) -> (&'static str, &'static str, &'static str) {
         match self {
             Self::Thumb => ("gesture", "gesture_enabled", "none"),
-            Self::Forward => ("xbutton2", "xbutton2_gesture_enabled", "mouse_forward_click"),
+            Self::Forward => (
+                "xbutton2",
+                "xbutton2_gesture_enabled",
+                "mouse_forward_click",
+            ),
             Self::Back => ("xbutton1", "xbutton1_gesture_enabled", "mouse_back_click"),
             Self::Top => ("mode_shift", "top_gesture_enabled", "switch_scroll_mode"),
             Self::Middle => ("middle", "middle_gesture_enabled", "mouse_middle_click"),
-            _ => ("", "", ""),
+            Self::Thumbwheel => ("hscroll", "hscroll_gesture_enabled", "none"),
+            // Keyboard keys:
+            Self::F1 => ("f1", "", ""),
+            Self::F2 => ("f2", "", ""),
+            Self::F3 => ("f3", "", ""),
+            Self::F4 => ("f4", "", ""),
+            Self::F5 => ("f5", "", ""),
+            Self::F6 => ("f6", "", ""),
+            Self::F7 => ("f7", "", ""),
+            Self::F8 => ("f8", "", ""),
+            Self::F9 => ("f9", "", ""),
+            Self::F10 => ("f10", "", ""),
+            Self::F11 => ("f11", "", ""),
+            Self::F12 => ("f12", "", ""),
+            Self::Ins => ("insert", "", ""),
+            Self::Home => ("home", "", ""),
+            Self::PgUp => ("pageup", "", ""),
+            Self::Del => ("delete", "", ""),
+            Self::End => ("end", "", ""),
+            Self::PgDn => ("pagedown", "", ""),
+            Self::Calculator => ("calculator", "", ""),
+            Self::ScreenLock => ("screenlock", "", ""),
+            Self::Search => ("search", "", ""),
+            Self::LockPower => ("lockpower", "", ""),
         }
     }
 }
@@ -50,7 +100,16 @@ impl ButtonAction {
     }
 }
 
-pub fn get_button_keys(btn: CustomizingButton) -> (&'static str, &'static str, &'static str, &'static str, &'static str, &'static str) {
+pub fn get_button_keys(
+    btn: CustomizingButton,
+) -> (
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+) {
     match btn {
         CustomizingButton::Middle => (
             "middle",
@@ -100,38 +159,104 @@ pub fn get_button_keys(btn: CustomizingButton) -> (&'static str, &'static str, &
             "hscroll_gesture_left",
             "hscroll_gesture_right",
         ),
+        // Keyboard keys:
+        CustomizingButton::F1 => ("f1", "", "", "", "", ""),
+        CustomizingButton::F2 => ("f2", "", "", "", "", ""),
+        CustomizingButton::F3 => ("f3", "", "", "", "", ""),
+        CustomizingButton::F4 => ("f4", "", "", "", "", ""),
+        CustomizingButton::F5 => ("f5", "", "", "", "", ""),
+        CustomizingButton::F6 => ("f6", "", "", "", "", ""),
+        CustomizingButton::F7 => ("f7", "", "", "", "", ""),
+        CustomizingButton::F8 => ("f8", "", "", "", "", ""),
+        CustomizingButton::F9 => ("f9", "", "", "", "", ""),
+        CustomizingButton::F10 => ("f10", "", "", "", "", ""),
+        CustomizingButton::F11 => ("f11", "", "", "", "", ""),
+        CustomizingButton::F12 => ("f12", "", "", "", "", ""),
+        CustomizingButton::Ins => ("insert", "", "", "", "", ""),
+        CustomizingButton::Home => ("home", "", "", "", "", ""),
+        CustomizingButton::PgUp => ("pageup", "", "", "", "", ""),
+        CustomizingButton::Del => ("delete", "", "", "", "", ""),
+        CustomizingButton::End => ("end", "", "", "", "", ""),
+        CustomizingButton::PgDn => ("pagedown", "", "", "", "", ""),
+        CustomizingButton::Calculator => ("calculator", "", "", "", "", ""),
+        CustomizingButton::ScreenLock => ("screenlock", "", "", "", "", ""),
+        CustomizingButton::Search => ("search", "", "", "", "", ""),
+        CustomizingButton::LockPower => ("lockpower", "", "", "", "", ""),
     }
 }
 
-pub fn mapping_to_action(btn: CustomizingButton, mappings: &std::collections::HashMap<String, String>) -> ButtonAction {
-    let (base_key, gesture_enabled_key, _, _, _, _) = get_button_keys(btn);
-    let val = mappings.get(base_key).map(|s| s.as_str()).unwrap_or("none");
-    let gesture_enabled = mappings.get(gesture_enabled_key).map(|s| s == "true").unwrap_or(false);
+pub fn mapping_to_action(
+    btn: CustomizingButton,
+    mappings: &std::collections::HashMap<String, String>,
+) -> ButtonAction {
+    match btn {
+        CustomizingButton::F1
+        | CustomizingButton::F2
+        | CustomizingButton::F3
+        | CustomizingButton::F4
+        | CustomizingButton::F5
+        | CustomizingButton::F6
+        | CustomizingButton::F7
+        | CustomizingButton::F8
+        | CustomizingButton::F9
+        | CustomizingButton::F10
+        | CustomizingButton::F11
+        | CustomizingButton::F12
+        | CustomizingButton::Ins
+        | CustomizingButton::Home
+        | CustomizingButton::PgUp
+        | CustomizingButton::Del
+        | CustomizingButton::End
+        | CustomizingButton::PgDn
+        | CustomizingButton::Calculator
+        | CustomizingButton::ScreenLock
+        | CustomizingButton::Search
+        | CustomizingButton::LockPower => {
+            let (base_key, _, _, _, _, _) = get_button_keys(btn);
+            let val = mappings.get(base_key).map(|s| s.as_str()).unwrap_or("none");
+            if val == "none" {
+                ButtonAction::Disabled
+            } else if val.starts_with("custom:") {
+                ButtonAction::Keystroke
+            } else {
+                ButtonAction::Disabled
+            }
+        }
+        _ => {
+            let (base_key, gesture_enabled_key, _, _, _, _) = get_button_keys(btn);
+            let val = mappings.get(base_key).map(|s| s.as_str()).unwrap_or("none");
+            let gesture_enabled = mappings
+                .get(gesture_enabled_key)
+                .map(|s| s == "true")
+                .unwrap_or(false);
 
-    // Check gesture mode via explicit flag, legacy placeholder, or any configured direction.
-    let is_gesture = gesture_enabled
-        || val == "gestures"
-        || {
-            let (_, _, up_k, down_k, left_k, right_k) = get_button_keys(btn);
-            [up_k, down_k, left_k, right_k].iter().any(|k| {
-                mappings.get(*k).map(|v| v.as_str() != "none").unwrap_or(false)
-            })
-        };
+            // Check gesture mode via explicit flag, legacy placeholder, or any configured direction.
+            let is_gesture = gesture_enabled || val == "gestures" || {
+                let (_, _, up_k, down_k, left_k, right_k) = get_button_keys(btn);
+                [up_k, down_k, left_k, right_k].iter().any(|k| {
+                    mappings
+                        .get(*k)
+                        .map(|v| v.as_str() != "none")
+                        .unwrap_or(false)
+                })
+            };
 
-    if is_gesture {
-        ButtonAction::Gestures
-    } else if val == "none" {
-        ButtonAction::Disabled
-    } else if val.starts_with("custom:") {
-        ButtonAction::Keystroke
-    } else {
-        match val {
-            "mouse_middle_click" => ButtonAction::MiddleClick,
-            "switch_scroll_mode" => ButtonAction::ModeShift,
-            "mouse_forward_click" => ButtonAction::Forward,
-            "mouse_back_click" => ButtonAction::Back,
-            "hscroll" => ButtonAction::HorizontalScroll,
-            _ => ButtonAction::Disabled,
+            if is_gesture {
+                ButtonAction::Gestures
+            } else if val == "none" {
+                ButtonAction::Disabled
+            } else if val.starts_with("custom:") {
+                ButtonAction::Keystroke
+            } else {
+                match val {
+                    "mouse_middle_click" => ButtonAction::MiddleClick,
+                    "switch_scroll_mode" => ButtonAction::ModeShift,
+                    "mouse_forward_click" => ButtonAction::Forward,
+                    "mouse_back_click" => ButtonAction::Back,
+                    "hscroll" => ButtonAction::HorizontalScroll,
+                    _ => ButtonAction::Disabled,
+                }
+            }
         }
     }
 }
@@ -210,7 +335,8 @@ pub fn is_valid_combo(combo: &str) -> bool {
     }
     let parts: Vec<String> = combo.split('+').map(|s| s.trim().to_lowercase()).collect();
     for part in parts {
-        if part != "ctrl" && part != "shift" && part != "alt" && part != "meta" && !part.is_empty() {
+        if part != "ctrl" && part != "shift" && part != "alt" && part != "meta" && !part.is_empty()
+        {
             return true;
         }
     }

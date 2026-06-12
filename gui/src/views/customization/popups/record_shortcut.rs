@@ -1,12 +1,12 @@
-use eframe::egui;
-use egui::{pos2, vec2, Color32, Rect, RichText, Stroke};
-use mouser_engine::Engine;
-use mouser_engine::config::Config;
+use super::PopupView;
 use crate::theme;
 use crate::views::customization::mappings::{
-    CustomizingButton, get_button_keys, egui_key_to_string, is_valid_combo,
+    egui_key_to_string, get_button_keys, is_valid_combo, CustomizingButton,
 };
-use super::PopupView;
+use eframe::egui;
+use egui::{pos2, vec2, Color32, Rect, RichText, Stroke};
+use mouser_engine::config::Config;
+use mouser_engine::Engine;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RecordingTarget {
@@ -60,7 +60,12 @@ pub fn draw_record_shortcut_ui(
     let header_rect = Rect::from_min_max(rect.min, pos2(rect.max.x, rect.min.y + header_h));
     ui.painter().rect_filled(
         header_rect,
-        egui::Rounding { nw: 2.0, ne: 2.0, sw: 0.0, se: 0.0 },
+        egui::Rounding {
+            nw: 2.0,
+            ne: 2.0,
+            sw: 0.0,
+            se: 0.0,
+        },
         Color32::from_rgb(0, 245, 198), // Teal `#00f5c6`
     );
 
@@ -73,21 +78,30 @@ pub fn draw_record_shortcut_ui(
     let view_state_id = ui.id().with(format!("popup_view_for_{:?}", btn));
 
     // Back Button (←)
-    let (back_rect, back_res) = header_ui.allocate_exact_size(vec2(20.0, 20.0), egui::Sense::click());
+    let (back_rect, back_res) =
+        header_ui.allocate_exact_size(vec2(20.0, 20.0), egui::Sense::click());
     let back_hover_color = if back_res.hovered() {
         header_ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
         Color32::from_rgba_unmultiplied(0, 0, 0, 20)
     } else {
         Color32::TRANSPARENT
     };
-    header_ui.painter().rect_filled(back_rect, 4.0, back_hover_color);
+    header_ui
+        .painter()
+        .rect_filled(back_rect, 4.0, back_hover_color);
 
     let stroke = egui::Stroke::new(1.5, Color32::BLACK);
     let cx = back_rect.center().x;
     let cy = back_rect.center().y;
-    header_ui.painter().line_segment([pos2(cx - 5.0, cy), pos2(cx + 5.0, cy)], stroke);
-    header_ui.painter().line_segment([pos2(cx - 5.0, cy), pos2(cx - 1.0, cy - 4.0)], stroke);
-    header_ui.painter().line_segment([pos2(cx - 5.0, cy), pos2(cx - 1.0, cy + 4.0)], stroke);
+    header_ui
+        .painter()
+        .line_segment([pos2(cx - 5.0, cy), pos2(cx + 5.0, cy)], stroke);
+    header_ui
+        .painter()
+        .line_segment([pos2(cx - 5.0, cy), pos2(cx - 1.0, cy - 4.0)], stroke);
+    header_ui
+        .painter()
+        .line_segment([pos2(cx - 5.0, cy), pos2(cx - 1.0, cy + 4.0)], stroke);
 
     let mut click_occurred = false;
 
@@ -98,7 +112,8 @@ pub fn draw_record_shortcut_ui(
         } else {
             PopupView::ActionList
         };
-        ui.ctx().data_mut(|d| d.insert_temp(view_state_id, next_view));
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(view_state_id, next_view));
         RECORDED_KEYS.with(|rk| rk.borrow_mut().clear());
         click_occurred = true;
     }
@@ -145,17 +160,29 @@ pub fn draw_record_shortcut_ui(
         let mods = i.modifiers;
         let has_modifiers = mods.ctrl || mods.shift || mods.alt || mods.mac_cmd;
         let mut parts = Vec::new();
-        if mods.ctrl { parts.push("ctrl".to_string()); }
-        if mods.shift { parts.push("shift".to_string()); }
-        if mods.alt { parts.push("alt".to_string()); }
-        if mods.mac_cmd { parts.push("meta".to_string()); }
+        if mods.ctrl {
+            parts.push("ctrl".to_string());
+        }
+        if mods.shift {
+            parts.push("shift".to_string());
+        }
+        if mods.alt {
+            parts.push("alt".to_string());
+        }
+        if mods.mac_cmd {
+            parts.push("meta".to_string());
+        }
 
         for event in &i.events {
             let mut event_parts = parts.clone();
             let detected_key = match event {
-                egui::Event::Key { key, pressed: true, .. } => Some(*key),
+                egui::Event::Key {
+                    key, pressed: true, ..
+                } => Some(*key),
                 egui::Event::Copy => {
-                    if !event_parts.contains(&"ctrl".to_string()) && !event_parts.contains(&"meta".to_string()) {
+                    if !event_parts.contains(&"ctrl".to_string())
+                        && !event_parts.contains(&"meta".to_string())
+                    {
                         if cfg!(target_os = "macos") || mods.mac_cmd {
                             event_parts.push("meta".to_string());
                         } else {
@@ -165,7 +192,9 @@ pub fn draw_record_shortcut_ui(
                     Some(egui::Key::C)
                 }
                 egui::Event::Cut => {
-                    if !event_parts.contains(&"ctrl".to_string()) && !event_parts.contains(&"meta".to_string()) {
+                    if !event_parts.contains(&"ctrl".to_string())
+                        && !event_parts.contains(&"meta".to_string())
+                    {
                         if cfg!(target_os = "macos") || mods.mac_cmd {
                             event_parts.push("meta".to_string());
                         } else {
@@ -175,7 +204,9 @@ pub fn draw_record_shortcut_ui(
                     Some(egui::Key::X)
                 }
                 egui::Event::Paste(_) => {
-                    if !event_parts.contains(&"ctrl".to_string()) && !event_parts.contains(&"meta".to_string()) {
+                    if !event_parts.contains(&"ctrl".to_string())
+                        && !event_parts.contains(&"meta".to_string())
+                    {
                         if cfg!(target_os = "macos") || mods.mac_cmd {
                             event_parts.push("meta".to_string());
                         } else {
@@ -194,7 +225,13 @@ pub fn draw_record_shortcut_ui(
                     enter_pressed = true;
                 } else {
                     let name = egui_key_to_string(key);
-                    if !name.is_empty() && name != "ctrl" && name != "shift" && name != "alt" && name != "meta" && name != "tab" {
+                    if !name.is_empty()
+                        && name != "ctrl"
+                        && name != "shift"
+                        && name != "alt"
+                        && name != "meta"
+                        && name != "tab"
+                    {
                         event_parts.push(name);
                         new_keys_recorded = Some(event_parts.join("+"));
                     }
@@ -213,20 +250,29 @@ pub fn draw_record_shortcut_ui(
         } else {
             PopupView::ActionList
         };
-        ui.ctx().data_mut(|d| d.insert_temp(view_state_id, next_view));
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(view_state_id, next_view));
         RECORDED_KEYS.with(|rk| rk.borrow_mut().clear());
     } else if enter_pressed {
         let recorded = RECORDED_KEYS.with(|rk| rk.borrow().clone());
         if is_valid_combo(&recorded) {
             let profile_name = &config.active_app_profile;
-            if let Some(profile) = config.get_profile(profile_name).or_else(|| config.get_profile("global")) {
+            if let Some(profile) = config
+                .get_profile(profile_name)
+                .or_else(|| config.get_profile("global"))
+            {
                 let mut mappings = profile.mappings.clone();
                 let action_str = format!("custom:{}", recorded);
 
                 mappings.insert(target_key.clone(), action_str);
 
-                if !target_key.contains("_gesture_") && !target_key.starts_with("gesture_") && target_key != "hscroll_left" && target_key != "hscroll_right" {
-                    let (_, gesture_enabled_key, up_k, down_k, left_k, right_k) = get_button_keys(btn);
+                if !target_key.contains("_gesture_")
+                    && !target_key.starts_with("gesture_")
+                    && target_key != "hscroll_left"
+                    && target_key != "hscroll_right"
+                {
+                    let (_, gesture_enabled_key, up_k, down_k, left_k, right_k) =
+                        get_button_keys(btn);
                     mappings.insert(gesture_enabled_key.to_string(), "false".to_string());
                     for dir_key in [up_k, down_k, left_k, right_k] {
                         mappings.insert(dir_key.to_string(), "none".to_string());
@@ -245,7 +291,8 @@ pub fn draw_record_shortcut_ui(
         } else {
             PopupView::ActionList
         };
-        ui.ctx().data_mut(|d| d.insert_temp(view_state_id, next_view));
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(view_state_id, next_view));
         RECORDED_KEYS.with(|rk| rk.borrow_mut().clear());
     }
 
@@ -267,9 +314,15 @@ pub fn draw_record_shortcut_ui(
 
     // Keystroke combo preview box inside popup content
     let preview_w = content_ui.available_width() - 16.0;
-    let (preview_rect, _) = content_ui.allocate_exact_size(vec2(preview_w, 36.0), egui::Sense::hover());
-    ui.painter().rect_filled(preview_rect, 2.0, theme::elevated_color(ui.ctx()));
-    ui.painter().rect_stroke(preview_rect, 2.0, Stroke::new(1.0, theme::border_color(ui.ctx())));
+    let (preview_rect, _) =
+        content_ui.allocate_exact_size(vec2(preview_w, 36.0), egui::Sense::hover());
+    ui.painter()
+        .rect_filled(preview_rect, 2.0, theme::elevated_color(ui.ctx()));
+    ui.painter().rect_stroke(
+        preview_rect,
+        2.0,
+        Stroke::new(1.0, theme::border_color(ui.ctx())),
+    );
     ui.painter().text(
         preview_rect.center(),
         egui::Align2::CENTER_CENTER,

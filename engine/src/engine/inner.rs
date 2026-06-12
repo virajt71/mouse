@@ -1,13 +1,13 @@
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
-use std::time::Instant;
 use evdev::Key;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use crate::config::Config;
-use crate::input::{KeySimulator, MouseHook, KeyboardHook};
 use crate::detection::AppDetector;
 use crate::hidpp::HidppClient;
+use crate::input::{KeySimulator, KeyboardHook, MouseHook};
 
 pub struct GestureState {
     pub delta_x: f32,
@@ -57,4 +57,7 @@ pub struct EngineInner {
     pub cached_gesture_deadzone: AtomicU32,
     pub cached_gesture_timeout_ms: AtomicU64,
     pub cached_gesture_cooldown_ms: AtomicU64,
+
+    pub config_change_listener: Mutex<Option<Box<dyn Fn() + Send + Sync + 'static>>>,
 }
+

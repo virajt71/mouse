@@ -1,9 +1,9 @@
 use std::sync::atomic::Ordering;
 use std::thread;
 
-use crate::config::Config;
-use super::Engine;
 use super::app_change::compute_blocked_buttons;
+use super::Engine;
+use crate::config::Config;
 
 impl Engine {
     pub fn refresh_active_profile(&self) {
@@ -11,10 +11,20 @@ impl Engine {
             let cfg = self.inner.config.lock().unwrap();
             let target = cfg.active_app_profile.clone();
             let mappings = cfg.get_resolved_mappings(&target);
-            self.inner.cached_gesture_threshold.store(cfg.settings.gesture_threshold.max(0) as u32, Ordering::Relaxed);
-            self.inner.cached_gesture_deadzone.store(cfg.settings.gesture_deadzone.max(0) as u32, Ordering::Relaxed);
-            self.inner.cached_gesture_timeout_ms.store(cfg.settings.gesture_timeout_ms, Ordering::Relaxed);
-            self.inner.cached_gesture_cooldown_ms.store(cfg.settings.gesture_cooldown_ms, Ordering::Relaxed);
+            self.inner.cached_gesture_threshold.store(
+                cfg.settings.gesture_threshold.max(0) as u32,
+                Ordering::Relaxed,
+            );
+            self.inner.cached_gesture_deadzone.store(
+                cfg.settings.gesture_deadzone.max(0) as u32,
+                Ordering::Relaxed,
+            );
+            self.inner
+                .cached_gesture_timeout_ms
+                .store(cfg.settings.gesture_timeout_ms, Ordering::Relaxed);
+            self.inner
+                .cached_gesture_cooldown_ms
+                .store(cfg.settings.gesture_cooldown_ms, Ordering::Relaxed);
             (target, mappings)
         };
 
@@ -25,7 +35,9 @@ impl Engine {
         let (blocked, hscroll_blocked) = compute_blocked_buttons(&mappings);
 
         *self.inner.blocked_buttons_arc.lock().unwrap() = blocked;
-        self.inner.block_hscroll_arc.store(hscroll_blocked, Ordering::SeqCst);
+        self.inner
+            .block_hscroll_arc
+            .store(hscroll_blocked, Ordering::SeqCst);
     }
 
     pub fn select_profile(&self, name: &str) {
@@ -46,13 +58,14 @@ impl Engine {
             let active_group = cfg.active_group.clone();
             if let Some(group) = cfg.profile_groups.get_mut(&active_group) {
                 if !group.profiles.contains_key(name) {
-                    let global_profile = group.profiles.get("global").cloned().unwrap_or_else(|| {
-                        crate::config::Profile {
-                            label: name.to_string(),
-                            apps: Vec::new(),
-                            mappings: std::collections::HashMap::new(),
-                        }
-                    });
+                    let global_profile =
+                        group.profiles.get("global").cloned().unwrap_or_else(|| {
+                            crate::config::Profile {
+                                label: name.to_string(),
+                                apps: Vec::new(),
+                                mappings: std::collections::HashMap::new(),
+                            }
+                        });
                     let mut new_profile = global_profile;
                     new_profile.label = name.to_string();
                     new_profile.apps = Vec::new();
@@ -85,7 +98,11 @@ impl Engine {
     }
 
     pub fn update_app_bindings(&self, profile_name: &str, app_bindings: &str) {
-        log::info!("[Engine] Updating app bindings for profile {}: {}", profile_name, app_bindings);
+        log::info!(
+            "[Engine] Updating app bindings for profile {}: {}",
+            profile_name,
+            app_bindings
+        );
         let clean_exe = app_bindings
             .split(',')
             .next()
@@ -124,7 +141,11 @@ impl Engine {
         }
     }
 
-    pub fn update_profile_mappings(&self, profile_name: &str, mappings: std::collections::HashMap<String, String>) {
+    pub fn update_profile_mappings(
+        &self,
+        profile_name: &str,
+        mappings: std::collections::HashMap<String, String>,
+    ) {
         log::info!("[Engine] Updating mappings for profile {}", profile_name);
         {
             let mut cfg = self.inner.config.lock().unwrap();
@@ -141,9 +162,75 @@ impl Engine {
         }
         log::info!("[Engine] Saved mappings, refreshing active profile...");
         self.refresh_active_profile();
+
+        // Apply backlight effect/enabled to keyboard if they changed
+        let (backlight_effect, backlight_enabled) = {
+            let cfg = self.inner.config.lock().unwrap();
+            let active_profile = cfg.active_app_profile.clone();
+            if let Some(profile) = cfg.get_profile(&active_profile) {
+                let effect = profile.mappings.get("backlight_effect").cloned();
+                let enabled = profile.mappings.get("backlight_enabled").cloned();
+                (effect, enabled)
+            } else {
+                (None, None)
+            }
+        };
+
+        let inner_clone = self.inner.clone();
+        thread::spawn(move || {
+            let mut clients = inner_clone.hid_clients.lock().unwrap();
+            for client in clients.iter_mut() {
+                if client.is_connected() {
+                    let layout = client.get_layout_key();
+                    if layout.starts_with("mx_keys") || layout.starts_with("mx_mechanical") {
+                        if let Some(ref enabled_str) = backlight_enabled {
+                            let enabled = enabled_str == "true";
+                            let _ = client.set_backlight_enabled(enabled);
+                        }
+                        if let Some(ref effect) = backlight_effect {
+                            let _ = client.set_backlight_effect(effect);
+                        }
+                    }
+                }
+            }
+        });
+
         log::info!("[Engine] Refreshed active profile, restarting keyboard hooks...");
         let _ = self.restart_keyboard_hooks();
         log::info!("[Engine] Keyboard hooks restarted successfully!");
+    }
+
+    pub fn cycle_backlight_effect(&self) {
+        log::info!("[Engine] Cycle backlight effect triggered by Fn+Lightbulb");
+        let active_profile = self.inner.active_profile_shared.lock().unwrap().clone();
+        
+        let mut new_effect = String::from("Static");
+        let mut new_enabled = String::from("true");
+        let mut mappings = std::collections::HashMap::new();
+
+        {
+            let cfg = self.inner.config.lock().unwrap();
+            if let Some(profile) = cfg.get_profile(&active_profile) {
+                let current_effect = profile.mappings.get("backlight_effect").map(|s| s.as_str()).unwrap_or("Static");
+                let current_enabled = profile.mappings.get("backlight_enabled").map(|s| s.as_str()).unwrap_or("true");
+                new_enabled = current_enabled.to_string();
+
+                let effects = ["Static", "Contrast", "Breathing", "Waves", "Reaction", "Random"];
+                let current_idx = effects.iter().position(|&x| x == current_effect).unwrap_or(0);
+                let next_idx = (current_idx + 1) % effects.len();
+                new_effect = effects[next_idx].to_string();
+
+                mappings = profile.mappings.clone();
+            }
+        }
+
+        mappings.insert("backlight_effect".to_string(), new_effect.clone());
+        mappings.insert("backlight_enabled".to_string(), new_enabled.clone());
+
+        // Update profile mappings and save/refresh/increment config generation
+        self.update_profile_mappings(&active_profile, mappings);
+
+        log::info!("[Engine] Cycled backlight effect to: {}", new_effect);
     }
 
     pub fn select_profile_group(&self, name: &str) {
@@ -166,17 +253,23 @@ impl Engine {
             let mut cfg = self.inner.config.lock().unwrap();
             if !cfg.profile_groups.contains_key(name) {
                 let mut profiles = std::collections::HashMap::new();
-                let default_mappings = cfg.profile_groups.get("default")
+                let default_mappings = cfg
+                    .profile_groups
+                    .get("default")
                     .and_then(|g| g.profiles.get("global"))
                     .map(|p| p.mappings.clone())
                     .unwrap_or_else(std::collections::HashMap::new);
 
-                profiles.insert("global".to_string(), crate::config::Profile {
-                    label: "Default (All Apps)".to_string(),
-                    apps: vec![],
-                    mappings: default_mappings,
-                });
-                cfg.profile_groups.insert(name.to_string(), crate::config::ProfileGroup { profiles });
+                profiles.insert(
+                    "global".to_string(),
+                    crate::config::Profile {
+                        label: "Default (All Apps)".to_string(),
+                        apps: vec![],
+                        mappings: default_mappings,
+                    },
+                );
+                cfg.profile_groups
+                    .insert(name.to_string(), crate::config::ProfileGroup { profiles });
                 let _ = cfg.save();
                 self.increment_config_generation();
             }
@@ -236,30 +329,65 @@ impl Engine {
             self.increment_config_generation();
         }
 
-        self.inner.invert_vscroll_arc.store(invert_vscroll, Ordering::SeqCst);
-        self.inner.invert_hscroll_arc.store(invert_hscroll, Ordering::SeqCst);
-        self.inner.cached_gesture_threshold.store(gesture_threshold.max(0) as u32, Ordering::Relaxed);
-        self.inner.cached_gesture_deadzone.store(gesture_deadzone.max(0) as u32, Ordering::Relaxed);
+        self.inner
+            .invert_vscroll_arc
+            .store(invert_vscroll, Ordering::SeqCst);
+        self.inner
+            .invert_hscroll_arc
+            .store(invert_hscroll, Ordering::SeqCst);
+        self.inner
+            .cached_gesture_threshold
+            .store(gesture_threshold.max(0) as u32, Ordering::Relaxed);
+        self.inner
+            .cached_gesture_deadzone
+            .store(gesture_deadzone.max(0) as u32, Ordering::Relaxed);
 
         let inner_clone = self.inner.clone();
         thread::spawn(move || {
             let mut clients = inner_clone.hid_clients.lock().unwrap();
             for client in clients.iter_mut() {
                 if client.is_connected()
-                    && (client.get_layout_key().starts_with("mx_master") || client.get_layout_key().starts_with("mx_anywhere")) {
-                        let _ = client.set_dpi(dpi);
-                        let _ = client.set_smart_shift(&smart_shift_mode, smart_shift_enabled, smart_shift_threshold);
-                    }
+                    && (client.get_layout_key().starts_with("mx_master")
+                        || client.get_layout_key().starts_with("mx_anywhere"))
+                {
+                    let _ = client.set_dpi(dpi);
+                    let _ = client.set_smart_shift(
+                        &smart_shift_mode,
+                        smart_shift_enabled,
+                        smart_shift_threshold,
+                    );
+                }
             }
         });
     }
 
+    pub fn update_keyboard_layout(&self, layout: &str) {
+        log::info!("[Engine] Updating keyboard layout to: {}", layout);
+        {
+            let mut cfg = self.inner.config.lock().unwrap();
+            cfg.settings.device_layout_overrides.insert(
+                "keyboard_layout".to_string(),
+                serde_json::Value::String(layout.to_string()),
+            );
+            let _ = cfg.save();
+            self.increment_config_generation();
+        }
+        self.inner.key_simulator.set_keyboard_layout(layout);
+    }
+
     pub fn reload_config(&self) {
         log::info!("[Engine] Reloading config from disk");
-        let (dpi, ss_mode, ss_enabled, ss_threshold, invert_hscroll, invert_vscroll) = {
+        let (dpi, ss_mode, ss_enabled, ss_threshold, invert_hscroll, invert_vscroll, layout) = {
             let mut cfg = self.inner.config.lock().unwrap();
             *cfg = Config::load();
             self.increment_config_generation();
+            let layout = cfg
+                .settings
+                .device_layout_overrides
+                .get("keyboard_layout")
+                .and_then(|v| v.as_str())
+                .unwrap_or("ANSI (US)")
+                .to_string();
             (
                 cfg.settings.dpi as u32,
                 cfg.settings.smart_shift_mode.clone(),
@@ -267,11 +395,18 @@ impl Engine {
                 cfg.settings.smart_shift_threshold as u8,
                 cfg.settings.invert_hscroll,
                 cfg.settings.invert_vscroll,
+                layout,
             )
         };
 
-        self.inner.invert_vscroll_arc.store(invert_vscroll, Ordering::SeqCst);
-        self.inner.invert_hscroll_arc.store(invert_hscroll, Ordering::SeqCst);
+        self.inner.key_simulator.set_keyboard_layout(&layout);
+
+        self.inner
+            .invert_vscroll_arc
+            .store(invert_vscroll, Ordering::SeqCst);
+        self.inner
+            .invert_hscroll_arc
+            .store(invert_hscroll, Ordering::SeqCst);
 
         self.refresh_active_profile();
         let _ = self.restart_keyboard_hooks();
@@ -281,10 +416,12 @@ impl Engine {
             let mut clients = inner_clone.hid_clients.lock().unwrap();
             for client in clients.iter_mut() {
                 if client.is_connected()
-                    && (client.get_layout_key().starts_with("mx_master") || client.get_layout_key().starts_with("mx_anywhere")) {
-                        let _ = client.set_dpi(dpi);
-                        let _ = client.set_smart_shift(&ss_mode, ss_enabled, ss_threshold);
-                    }
+                    && (client.get_layout_key().starts_with("mx_master")
+                        || client.get_layout_key().starts_with("mx_anywhere"))
+                {
+                    let _ = client.set_dpi(dpi);
+                    let _ = client.set_smart_shift(&ss_mode, ss_enabled, ss_threshold);
+                }
             }
         });
     }

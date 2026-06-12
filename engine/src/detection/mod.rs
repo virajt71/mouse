@@ -1,17 +1,17 @@
-pub mod x11;
+pub mod fallbacks;
 pub mod gnome;
-pub mod kde;
-pub mod xdotool;
-pub mod sway;
 pub mod hyprland;
 pub mod i3;
-pub mod fallbacks;
+pub mod kde;
+pub mod sway;
 pub mod thread;
+pub mod x11;
+pub mod xdotool;
 
 pub use self::thread::AppDetector;
 
-use self::x11::get_active_app_pid_x11_persistent;
 use self::fallbacks::get_active_app_pid_fallbacks;
+use self::x11::get_active_app_pid_x11_persistent;
 
 pub fn get_exe_for_pid(pid: u32) -> Option<String> {
     let path = format!("/proc/{}/exe", pid);

@@ -1,13 +1,18 @@
+use super::{render_spaced_header, section_card};
+use crate::theme;
+use crate::translation::tr;
+use crate::widgets::{draw_rgb_palette_icon, draw_tech_corners};
 use eframe::egui;
-use egui::{vec2, Color32, Rect, Stroke, pos2};
+use egui::{pos2, vec2, Color32, Rect, Stroke};
 use mouser_engine::config::Config;
 use mouser_engine::Engine;
-use crate::translation::tr;
-use crate::theme;
-use crate::widgets::{draw_rgb_palette_icon, draw_tech_corners};
-use super::{section_card, render_spaced_header};
 
-pub fn render_section_theme(ui: &mut egui::Ui, _ctx: &egui::Context, config: &mut Config, engine: &Engine) {
+pub fn render_section_theme(
+    ui: &mut egui::Ui,
+    _ctx: &egui::Context,
+    config: &mut Config,
+    engine: &Engine,
+) {
     section_card(ui, |ui| {
         // ── Section header ──
         ui.horizontal(|ui| {

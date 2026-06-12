@@ -231,8 +231,6 @@ pub fn get_log_dir() -> PathBuf {
     path
 }
 
-
-
 impl Config {
     fn load_raw() -> Self {
         let path = get_config_path();
@@ -267,7 +265,7 @@ impl Config {
                         return cfg;
                     }
                 }
-                
+
                 // Fallback / migration from v11
                 #[derive(serde::Deserialize)]
                 struct OldConfig {
@@ -314,10 +312,18 @@ impl Config {
     pub fn load() -> Self {
         let mut cfg = Self::load_raw();
         let hostname = default_local_name();
-        if cfg.settings.flow_local_name == "Computer 1" || cfg.settings.flow_local_name == "Computer 2" || cfg.settings.flow_local_name == "Computer" || cfg.settings.flow_local_name.is_empty() {
+        if cfg.settings.flow_local_name == "Computer 1"
+            || cfg.settings.flow_local_name == "Computer 2"
+            || cfg.settings.flow_local_name == "Computer"
+            || cfg.settings.flow_local_name.is_empty()
+        {
             cfg.settings.flow_local_name = hostname.clone();
         }
-        if cfg.flow.local_name == "Computer 1" || cfg.flow.local_name == "Computer 2" || cfg.flow.local_name == "Computer" || cfg.flow.local_name.is_empty() {
+        if cfg.flow.local_name == "Computer 1"
+            || cfg.flow.local_name == "Computer 2"
+            || cfg.flow.local_name == "Computer"
+            || cfg.flow.local_name.is_empty()
+        {
             cfg.flow.local_name = hostname;
         }
         cfg
@@ -334,7 +340,8 @@ impl Config {
     }
 
     pub fn get_profile(&self, name: &str) -> Option<&Profile> {
-        self.profile_groups.get(&self.active_group)
+        self.profile_groups
+            .get(&self.active_group)
             .and_then(|g| g.profiles.get(name))
     }
 
@@ -390,11 +397,16 @@ mod tests {
             mappings: HashMap::new(),
         };
         if let Some(group) = config.profile_groups.get_mut("default") {
-            group.profiles.insert("Brave Web Browser".to_string(), custom_profile);
+            group
+                .profiles
+                .insert("Brave Web Browser".to_string(), custom_profile);
         }
 
         // Verify that it matches
-        assert_eq!(config.get_profile_for_app("brave-browser-stable"), "Brave Web Browser");
+        assert_eq!(
+            config.get_profile_for_app("brave-browser-stable"),
+            "Brave Web Browser"
+        );
         assert_eq!(config.get_profile_for_app("firefox"), "global");
     }
 

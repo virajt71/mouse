@@ -1,8 +1,8 @@
+use crate::theme;
 use eframe::egui;
 use egui::{pos2, vec2, Color32, Rect, RichText, Stroke};
-use mouser_engine::Engine;
 use mouser_engine::config::{Config, FlowPeer};
-use crate::theme;
+use mouser_engine::Engine;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FlowUiView {
@@ -32,11 +32,7 @@ enum NotFoundResult {
     Cancel,
 }
 
-pub fn show_flow_tab(
-    ui: &mut egui::Ui,
-    engine: &Engine,
-    config: &mut Config,
-) {
+pub fn show_flow_tab(ui: &mut egui::Ui, engine: &Engine, config: &mut Config) {
     let mut settings_dirty = false;
 
     let view_id = ui.make_persistent_id("flow_ui_view");
@@ -65,11 +61,9 @@ pub fn show_flow_tab(
             FlowUiView::Searching => {
                 let start_time_id = ui.make_persistent_id("searching_start_time");
                 let current_time = ui.ctx().input(|i| i.time);
-                
-                let start_time = ui.data_mut(|d| {
-                    *d.get_temp_mut_or_default::<f64>(start_time_id)
-                });
-                
+
+                let start_time = ui.data_mut(|d| *d.get_temp_mut_or_default::<f64>(start_time_id));
+
                 let start_time = if start_time == 0.0 {
                     ui.data_mut(|d| d.insert_temp(start_time_id, current_time));
                     current_time
@@ -77,10 +71,13 @@ pub fn show_flow_tab(
                     start_time
                 };
 
-                let discovered = mouser_engine::flow::network::DISCOVERED_PEERS.read().unwrap();
+                let discovered = mouser_engine::flow::network::DISCOVERED_PEERS
+                    .read()
+                    .unwrap();
 
-                let cancel_clicked = show_flow_searching_screen(ui, &config.settings.flow_local_name);
-                
+                let cancel_clicked =
+                    show_flow_searching_screen(ui, &config.settings.flow_local_name);
+
                 if cancel_clicked {
                     ui.data_mut(|d| d.remove_temp::<f64>(start_time_id));
                     ui.data_mut(|d| d.insert_temp(view_id, FlowUiView::SetupWizard));
@@ -160,7 +157,11 @@ fn draw_welcome_illustration(ui: &mut egui::Ui) {
 
     let screen_frame_rect = Rect::from_center_size(left_center + vec2(0.0, 2.0), vec2(90.0, 56.0));
     painter.rect_filled(screen_frame_rect, 4.0, Color32::from_rgb(0x1E, 0x20, 0x2C));
-    painter.rect_stroke(screen_frame_rect, 4.0, Stroke::new(1.0, Color32::from_gray(80)));
+    painter.rect_stroke(
+        screen_frame_rect,
+        4.0,
+        Stroke::new(1.0, Color32::from_gray(80)),
+    );
 
     let display_rect = Rect::from_center_size(left_center + vec2(0.0, 1.0), vec2(84.0, 48.0));
     painter.rect_filled(display_rect, 2.0, Color32::from_rgb(0x3F, 0x00, 0xB5));
@@ -180,14 +181,26 @@ fn draw_welcome_illustration(ui: &mut egui::Ui) {
     let kb_rect_r = Rect::from_center_size(right_center + vec2(0.0, 28.0), vec2(100.0, 4.0));
     painter.rect_filled(kb_rect_r, 1.0, Color32::from_rgb(0x3B, 0x3E, 0x52));
 
-    let screen_frame_rect_r = Rect::from_center_size(right_center + vec2(0.0, 2.0), vec2(90.0, 56.0));
-    painter.rect_filled(screen_frame_rect_r, 4.0, Color32::from_rgb(0x1E, 0x20, 0x2C));
-    painter.rect_stroke(screen_frame_rect_r, 4.0, Stroke::new(1.0, Color32::from_gray(80)));
+    let screen_frame_rect_r =
+        Rect::from_center_size(right_center + vec2(0.0, 2.0), vec2(90.0, 56.0));
+    painter.rect_filled(
+        screen_frame_rect_r,
+        4.0,
+        Color32::from_rgb(0x1E, 0x20, 0x2C),
+    );
+    painter.rect_stroke(
+        screen_frame_rect_r,
+        4.0,
+        Stroke::new(1.0, Color32::from_gray(80)),
+    );
 
     let display_rect_r = Rect::from_center_size(right_center + vec2(0.0, 1.0), vec2(84.0, 48.0));
     painter.rect_filled(display_rect_r, 2.0, Color32::from_rgb(0x0C, 0x1B, 0x3A));
     painter.rect_filled(
-        Rect::from_min_max(display_rect_r.left_top() + vec2(42.0, 0.0), display_rect_r.right_bottom()),
+        Rect::from_min_max(
+            display_rect_r.left_top() + vec2(42.0, 0.0),
+            display_rect_r.right_bottom(),
+        ),
         0.0,
         Color32::from_rgb(0xFF, 0x3B, 0x5C),
     );
@@ -203,9 +216,27 @@ fn draw_welcome_illustration(ui: &mut egui::Ui) {
     painter.rect_filled(pot_rect, 1.0, Color32::from_rgb(0x9E, 0x9E, 0x9E));
     let leaf_color = Color32::from_rgb(0x00, 0xE3, 0xC5);
     let sway = (time * 2.2).sin() * 1.2;
-    painter.line_segment([plant_center + vec2(0.0, 3.0), plant_center + vec2(-4.0 + sway as f32, -6.0)], Stroke::new(2.5, leaf_color));
-    painter.line_segment([plant_center + vec2(0.0, 3.0), plant_center + vec2(4.0 + sway as f32, -6.0)], Stroke::new(2.5, leaf_color));
-    painter.line_segment([plant_center + vec2(0.0, 3.0), plant_center + vec2(sway as f32 * 0.5, -9.0)], Stroke::new(2.5, leaf_color));
+    painter.line_segment(
+        [
+            plant_center + vec2(0.0, 3.0),
+            plant_center + vec2(-4.0 + sway as f32, -6.0),
+        ],
+        Stroke::new(2.5, leaf_color),
+    );
+    painter.line_segment(
+        [
+            plant_center + vec2(0.0, 3.0),
+            plant_center + vec2(4.0 + sway as f32, -6.0),
+        ],
+        Stroke::new(2.5, leaf_color),
+    );
+    painter.line_segment(
+        [
+            plant_center + vec2(0.0, 3.0),
+            plant_center + vec2(sway as f32 * 0.5, -9.0),
+        ],
+        Stroke::new(2.5, leaf_color),
+    );
 
     // 5. Star Cursor Glow
     let star_center = display_rect_r.center() + vec2(-10.0, 5.0);
@@ -216,7 +247,10 @@ fn draw_welcome_illustration(ui: &mut egui::Ui) {
         let length = 6.0 * pulse_scale;
         let dx = angle.cos() * length as f32;
         let dy = angle.sin() * length as f32;
-        painter.line_segment([star_center, star_center + vec2(dx, dy)], Stroke::new(1.5, star_color));
+        painter.line_segment(
+            [star_center, star_center + vec2(dx, dy)],
+            Stroke::new(1.5, star_color),
+        );
     }
     let pointer_points = vec![
         star_center + vec2(4.0, 4.0),
@@ -236,15 +270,29 @@ fn draw_welcome_illustration(ui: &mut egui::Ui) {
     // 6. Floating particles
     let float_y = (time * 1.5).sin() * 3.0;
     let float_x = (time * 1.2).cos() * 2.0;
-    painter.circle_filled(ring_center + vec2(-110.0, -35.0 + float_y as f32), 3.5, Color32::from_rgb(0xFF, 0x4A, 0x4A));
-    painter.circle_filled(ring_center + vec2(-35.0 + float_x as f32, -65.0), 3.0, Color32::from_rgb(0xFF, 0xB7, 0x4D));
-    painter.circle_filled(ring_center + vec2(45.0, 55.0 - float_y as f32), 2.5, Color32::from_rgb(0x00, 0xE3, 0xC5));
-    painter.circle_filled(ring_center + vec2(110.0 + float_x as f32, 15.0 + float_y as f32), 4.0, Color32::from_rgb(0xF8, 0xBB, 0xD0));
+    painter.circle_filled(
+        ring_center + vec2(-110.0, -35.0 + float_y as f32),
+        3.5,
+        Color32::from_rgb(0xFF, 0x4A, 0x4A),
+    );
+    painter.circle_filled(
+        ring_center + vec2(-35.0 + float_x as f32, -65.0),
+        3.0,
+        Color32::from_rgb(0xFF, 0xB7, 0x4D),
+    );
+    painter.circle_filled(
+        ring_center + vec2(45.0, 55.0 - float_y as f32),
+        2.5,
+        Color32::from_rgb(0x00, 0xE3, 0xC5),
+    );
+    painter.circle_filled(
+        ring_center + vec2(110.0 + float_x as f32, 15.0 + float_y as f32),
+        4.0,
+        Color32::from_rgb(0xF8, 0xBB, 0xD0),
+    );
 }
 
-fn show_flow_welcome_screen(
-    ui: &mut egui::Ui,
-) -> bool {
+fn show_flow_welcome_screen(ui: &mut egui::Ui) -> bool {
     let mut setup_flow_clicked = false;
     ui.vertical_centered(|ui| {
         ui.add_space(40.0);
@@ -359,8 +407,16 @@ fn draw_setup_cards(ui: &mut egui::Ui, local_name: &str) {
     );
 
     let pill_rect = Rect::from_center_size(left_center + vec2(0.0, 18.0), vec2(56.0, 20.0));
-    painter.rect_filled(pill_rect, 3.0, Color32::from_rgba_unmultiplied(0, 227, 197, 20));
-    painter.rect_stroke(pill_rect, 3.0, Stroke::new(1.0, Color32::from_rgb(0x00, 0xE3, 0xC5)));
+    painter.rect_filled(
+        pill_rect,
+        3.0,
+        Color32::from_rgba_unmultiplied(0, 227, 197, 20),
+    );
+    painter.rect_stroke(
+        pill_rect,
+        3.0,
+        Stroke::new(1.0, Color32::from_rgb(0x00, 0xE3, 0xC5)),
+    );
     painter.text(
         pill_rect.center(),
         egui::Align2::CENTER_CENTER,
@@ -370,7 +426,11 @@ fn draw_setup_cards(ui: &mut egui::Ui, local_name: &str) {
     );
 
     // 3. Draw Right Card (Other computer(s))
-    painter.rect_filled(right_rect, 6.0, Color32::from_rgba_unmultiplied(40, 40, 40, 120));
+    painter.rect_filled(
+        right_rect,
+        6.0,
+        Color32::from_rgba_unmultiplied(40, 40, 40, 120),
+    );
     painter.rect_stroke(right_rect, 6.0, Stroke::new(1.0, Color32::from_gray(45)));
 
     painter.text(
@@ -420,10 +480,7 @@ fn draw_setup_cards(ui: &mut egui::Ui, local_name: &str) {
     }
 }
 
-fn show_flow_setup_wizard(
-    ui: &mut egui::Ui,
-    local_name: &str,
-) -> SetupWizardResult {
+fn show_flow_setup_wizard(ui: &mut egui::Ui, local_name: &str) -> SetupWizardResult {
     let mut wizard_result = SetupWizardResult::None;
     ui.vertical_centered(|ui| {
         ui.add_space(40.0);
@@ -444,7 +501,7 @@ fn show_flow_setup_wizard(
         ui.set_max_width(520.0);
         let mut job = egui::text::LayoutJob::default();
         job.halign = egui::Align::Center;
-        
+
         job.append(
             "Follow the above 3 steps on other computers to connect to them via Flow. ",
             0.0,
@@ -452,9 +509,9 @@ fn show_flow_setup_wizard(
                 font_id: egui::FontId::proportional(13.0),
                 color: theme::secondary_text(ui.ctx()),
                 ..Default::default()
-            }
+            },
         );
-        
+
         job.append(
             "Need help?",
             0.0,
@@ -462,9 +519,9 @@ fn show_flow_setup_wizard(
                 font_id: egui::FontId::proportional(13.0),
                 color: Color32::from_rgb(0x00, 0xE3, 0xC5),
                 ..Default::default()
-            }
+            },
         );
-        
+
         let label_res = ui.add(egui::Label::new(job).wrap().sense(egui::Sense::click()));
         if label_res.clicked() {
             // Open help
@@ -480,16 +537,17 @@ fn show_flow_setup_wizard(
         let fill_color_c = theme::lerp_color(
             Color32::from_rgb(0x00, 0xF3, 0xC5),
             Color32::from_rgb(0x33, 0xFF, 0xD7),
-            t_c
+            t_c,
         );
-        let stroke_color_c = theme::lerp_color(
-            Color32::TRANSPARENT,
-            Color32::WHITE,
-            t_c
-        );
-        ui.painter().rect_filled(btn_continue_res.rect, 4.0, fill_color_c);
+        let stroke_color_c = theme::lerp_color(Color32::TRANSPARENT, Color32::WHITE, t_c);
+        ui.painter()
+            .rect_filled(btn_continue_res.rect, 4.0, fill_color_c);
         if t_c > 0.0 {
-            ui.painter().rect_stroke(btn_continue_res.rect, 4.0, Stroke::new(1.0 * t_c, stroke_color_c));
+            ui.painter().rect_stroke(
+                btn_continue_res.rect,
+                4.0,
+                Stroke::new(1.0 * t_c, stroke_color_c),
+            );
         }
         ui.painter().text(
             btn_continue_res.rect.center(),
@@ -513,15 +571,17 @@ fn show_flow_setup_wizard(
         let fill_color_can = theme::lerp_color(
             Color32::from_rgb(0x0B, 0x0B, 0x0B),
             Color32::from_rgb(0x18, 0x18, 0x18),
-            t_can
+            t_can,
         );
         let stroke_color_can = theme::lerp_color(
             Color32::from_gray(80),
             Color32::from_rgb(0x00, 0xF3, 0xC5),
-            t_can
+            t_can,
         );
-        ui.painter().rect_filled(btn_cancel_res.rect, 4.0, fill_color_can);
-        ui.painter().rect_stroke(btn_cancel_res.rect, 4.0, Stroke::new(1.2, stroke_color_can));
+        ui.painter()
+            .rect_filled(btn_cancel_res.rect, 4.0, fill_color_can);
+        ui.painter()
+            .rect_stroke(btn_cancel_res.rect, 4.0, Stroke::new(1.2, stroke_color_can));
         ui.painter().text(
             btn_cancel_res.rect.center(),
             egui::Align2::CENTER_CENTER,
@@ -565,7 +625,11 @@ fn draw_searching_cards(ui: &mut egui::Ui, local_name: &str) {
 
     // 2. Draw Left Card (Local Computer)
     painter.rect_filled(left_rect, 6.0, Color32::from_rgb(0x06, 0x06, 0x06));
-    painter.rect_stroke(left_rect, 6.0, Stroke::new(1.0, Color32::from_rgb(0x2A, 0x2A, 0x2B)));
+    painter.rect_stroke(
+        left_rect,
+        6.0,
+        Stroke::new(1.0, Color32::from_rgb(0x2A, 0x2A, 0x2B)),
+    );
 
     painter.text(
         left_center - vec2(0.0, 10.0),
@@ -577,7 +641,11 @@ fn draw_searching_cards(ui: &mut egui::Ui, local_name: &str) {
 
     let pill_rect = Rect::from_center_size(left_center + vec2(0.0, 22.0), vec2(58.0, 20.0));
     painter.rect_filled(pill_rect, 3.0, Color32::from_rgb(0x06, 0x06, 0x06));
-    painter.rect_stroke(pill_rect, 3.0, Stroke::new(1.0, Color32::from_rgb(0x00, 0xE3, 0xC5)));
+    painter.rect_stroke(
+        pill_rect,
+        3.0,
+        Stroke::new(1.0, Color32::from_rgb(0x00, 0xE3, 0xC5)),
+    );
     painter.text(
         pill_rect.center(),
         egui::Align2::CENTER_CENTER,
@@ -588,33 +656,38 @@ fn draw_searching_cards(ui: &mut egui::Ui, local_name: &str) {
 
     // 3. Draw Right Card (Searching Card with rotating spinner)
     painter.rect_filled(right_rect, 6.0, Color32::from_rgb(0x06, 0x06, 0x06));
-    painter.rect_stroke(right_rect, 6.0, Stroke::new(1.0, Color32::from_rgb(0x2A, 0x2A, 0x2B)));
+    painter.rect_stroke(
+        right_rect,
+        6.0,
+        Stroke::new(1.0, Color32::from_rgb(0x2A, 0x2A, 0x2B)),
+    );
 
     // Draw circular rotating spinner with a fading tail
     let spinner_radius = 20.0;
     let num_spinner_segments = 40;
     let arc_length = 1.5 * std::f32::consts::PI; // 270 degrees
     let base_angle = (time * 6.0) as f32; // speed of rotation
-    
+
     for i in 0..num_spinner_segments {
         let fraction = i as f32 / (num_spinner_segments as f32);
         let angle = base_angle + fraction * arc_length;
-        
+
         let alpha_u8 = (fraction * 255.0) as u8;
         let color = Color32::from_rgba_unmultiplied(0, 227, 197, alpha_u8);
-        
+
         let next_angle = base_angle + ((i + 1) as f32 / (num_spinner_segments as f32)) * arc_length;
         let start = right_center + vec2(angle.cos() * spinner_radius, angle.sin() * spinner_radius);
-        let end = right_center + vec2(next_angle.cos() * spinner_radius, next_angle.sin() * spinner_radius);
-        
+        let end = right_center
+            + vec2(
+                next_angle.cos() * spinner_radius,
+                next_angle.sin() * spinner_radius,
+            );
+
         painter.line_segment([start, end], Stroke::new(2.5, color));
     }
 }
 
-fn show_flow_searching_screen(
-    ui: &mut egui::Ui,
-    local_name: &str,
-) -> bool {
+fn show_flow_searching_screen(ui: &mut egui::Ui, local_name: &str) -> bool {
     let mut cancel_clicked = false;
     ui.vertical_centered(|ui| {
         ui.add_space(40.0);
@@ -645,17 +718,19 @@ fn show_flow_searching_screen(
         let btn_cancel_res = ui.allocate_response(vec2(140.0, 46.0), egui::Sense::click());
         let is_hovered_can = btn_cancel_res.hovered();
         let t_can = ui.ctx().animate_bool(btn_cancel_id, is_hovered_can);
-        
+
         let fill_color_can = Color32::from_rgb(0x06, 0x06, 0x06);
         let stroke_color_can = theme::lerp_color(
             Color32::from_rgb(0x2A, 0x2A, 0x2B),
             Color32::from_rgb(0x00, 0xE3, 0xC5),
-            t_can
+            t_can,
         );
-        
-        ui.painter().rect_filled(btn_cancel_res.rect, 6.0, fill_color_can);
-        ui.painter().rect_stroke(btn_cancel_res.rect, 6.0, Stroke::new(1.0, stroke_color_can));
-        
+
+        ui.painter()
+            .rect_filled(btn_cancel_res.rect, 6.0, fill_color_can);
+        ui.painter()
+            .rect_stroke(btn_cancel_res.rect, 6.0, Stroke::new(1.0, stroke_color_can));
+
         ui.painter().text(
             btn_cancel_res.rect.center(),
             egui::Align2::CENTER_CENTER,
@@ -697,7 +772,11 @@ fn draw_not_found_cards(ui: &mut egui::Ui, local_name: &str) {
 
     // 2. Draw Left Card (Local Computer)
     painter.rect_filled(left_rect, 6.0, Color32::from_rgb(0x06, 0x06, 0x06));
-    painter.rect_stroke(left_rect, 6.0, Stroke::new(1.0, Color32::from_rgb(0x2A, 0x2A, 0x2B)));
+    painter.rect_stroke(
+        left_rect,
+        6.0,
+        Stroke::new(1.0, Color32::from_rgb(0x2A, 0x2A, 0x2B)),
+    );
 
     painter.text(
         left_center - vec2(0.0, 10.0),
@@ -709,7 +788,11 @@ fn draw_not_found_cards(ui: &mut egui::Ui, local_name: &str) {
 
     let pill_rect = Rect::from_center_size(left_center + vec2(0.0, 22.0), vec2(58.0, 20.0));
     painter.rect_filled(pill_rect, 3.0, Color32::from_rgb(0x06, 0x06, 0x06));
-    painter.rect_stroke(pill_rect, 3.0, Stroke::new(1.0, Color32::from_rgb(0x00, 0xE3, 0xC5)));
+    painter.rect_stroke(
+        pill_rect,
+        3.0,
+        Stroke::new(1.0, Color32::from_rgb(0x00, 0xE3, 0xC5)),
+    );
     painter.text(
         pill_rect.center(),
         egui::Align2::CENTER_CENTER,
@@ -720,7 +803,11 @@ fn draw_not_found_cards(ui: &mut egui::Ui, local_name: &str) {
 
     // 3. Draw Right Card (Not Found Card with orange/amber outline)
     painter.rect_filled(right_rect, 6.0, Color32::from_rgb(0x06, 0x06, 0x06));
-    painter.rect_stroke(right_rect, 6.0, Stroke::new(1.2, Color32::from_rgb(0xE5, 0x8C, 0x0D)));
+    painter.rect_stroke(
+        right_rect,
+        6.0,
+        Stroke::new(1.2, Color32::from_rgb(0xE5, 0x8C, 0x0D)),
+    );
 
     // Draw orange circular filled warning icon with exclamation point
     let warning_center = right_center - vec2(0.0, 10.0);
@@ -784,10 +871,7 @@ fn draw_not_found_cards(ui: &mut egui::Ui, local_name: &str) {
     }
 }
 
-fn show_flow_not_found_screen(
-    ui: &mut egui::Ui,
-    local_name: &str,
-) -> NotFoundResult {
+fn show_flow_not_found_screen(ui: &mut egui::Ui, local_name: &str) -> NotFoundResult {
     let mut result = NotFoundResult::None;
     ui.vertical_centered(|ui| {
         ui.add_space(40.0);

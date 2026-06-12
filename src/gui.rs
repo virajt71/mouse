@@ -1,9 +1,9 @@
-use eframe::egui;
-use std::os::unix::net::UnixListener;
-use std::io::Read;
-use engine::Engine;
 use crate::single_instance::get_socket_path;
 use crate::tray::setup_tray;
+use eframe::egui;
+use engine::Engine;
+use std::io::Read;
+use std::os::unix::net::UnixListener;
 
 pub fn run_gui(engine: Engine, listener: UnixListener) -> Result<(), eframe::Error> {
     // Under WSL2, Mesa's hardware acceleration can fail with Zink driver/EGL errors.
@@ -68,7 +68,8 @@ pub fn run_gui(engine: Engine, listener: UnixListener) -> Result<(), eframe::Err
                 engine.clone(),
             )))
         }),
-    ).map(|_| {
+    )
+    .map(|_| {
         engine_for_close.stop();
         let _ = std::fs::remove_file(get_socket_path());
     })

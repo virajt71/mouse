@@ -1,5 +1,5 @@
-use crate::ActiveView;
 use crate::theme;
+use crate::ActiveView;
 use eframe::egui;
 
 pub fn show(
@@ -230,12 +230,10 @@ pub fn show(
                 "unifying" => {
                     text_ui.add(
                         egui::Label::new(
-                            egui::RichText::new(crate::translation::tr(
-                                "unifying", lang,
-                            ))
-                            .color(theme::primary_text(ui.ctx()))
-                            .size(15.0)
-                            .strong(),
+                            egui::RichText::new(crate::translation::tr("unifying", lang))
+                                .color(theme::primary_text(ui.ctx()))
+                                .size(15.0)
+                                .strong(),
                         )
                         .selectable(false),
                     );
@@ -270,13 +268,10 @@ pub fn show(
                 "bluetooth" => {
                     text_ui.add(
                         egui::Label::new(
-                            egui::RichText::new(crate::translation::tr(
-                                "bluetooth",
-                                lang,
-                            ))
-                            .color(theme::primary_text(ui.ctx()))
-                            .size(15.0)
-                            .strong(),
+                            egui::RichText::new(crate::translation::tr("bluetooth", lang))
+                                .color(theme::primary_text(ui.ctx()))
+                                .size(15.0)
+                                .strong(),
                         )
                         .selectable(false),
                     );

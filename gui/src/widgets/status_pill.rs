@@ -1,7 +1,7 @@
-use eframe::egui;
-use egui::{pos2, vec2, Rect, Stroke};
 use crate::theme;
 use crate::widgets::{draw_battery_widget, draw_connection_icon_mini};
+use eframe::egui;
+use egui::{pos2, vec2, Rect, Stroke};
 
 pub fn draw_status_pill(
     ui: &mut egui::Ui,
@@ -76,7 +76,7 @@ pub fn draw_status_pill(
         painter.line_segment(
             [
                 pos2(div_x, cy - (if is_sidebar { 9.0 } else { 12.0 })),
-                pos2(div_x, cy + (if is_sidebar { 9.0 } else { 12.0 }))
+                pos2(div_x, cy + (if is_sidebar { 9.0 } else { 12.0 })),
             ],
             Stroke::new(1.0, theme::divider_color(ctx)),
         );

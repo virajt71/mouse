@@ -1,13 +1,18 @@
+use super::protocol::{
+    FEAT_ADJ_DPI, FEAT_CHANGE_HOST, FEAT_REPROG_V4, FEAT_SMART_SHIFT, FEAT_SMART_SHIFT_ENHANCED,
+    LOGI_VID,
+};
+use super::HidppClient;
 use anyhow::{anyhow, Result};
 use hidapi::HidApi;
-use super::HidppClient;
-use super::protocol::{LOGI_VID, FEAT_REPROG_V4, FEAT_ADJ_DPI, FEAT_SMART_SHIFT_ENHANCED, FEAT_SMART_SHIFT, FEAT_CHANGE_HOST};
 
 impl HidppClient {
     pub fn open_device(&mut self) -> Result<()> {
         let api = HidApi::new()?;
         let devices = self.list_hidpp_devices(&api);
-        let info = devices.first().ok_or_else(|| anyhow!("No Logitech HID++ device found"))?;
+        let info = devices
+            .first()
+            .ok_or_else(|| anyhow!("No Logitech HID++ device found"))?;
         self.open_path(&api, info.path())
     }
 
@@ -16,7 +21,10 @@ impl HidppClient {
         for device in api.device_list() {
             if device.vendor_id() == LOGI_VID {
                 let usage_page = device.usage_page();
-                if usage_page >= 0xFF00 || device.product_id() == 0xC548 || device.product_id() == 0xC52B {
+                if usage_page >= 0xFF00
+                    || device.product_id() == 0xC548
+                    || device.product_id() == 0xC52B
+                {
                     list.push(device.clone());
                 }
             }
@@ -25,7 +33,9 @@ impl HidppClient {
     }
 
     pub fn open_path(&mut self, api: &HidApi, path: &std::ffi::CStr) -> Result<()> {
-        let info = api.device_list().find(|d| d.path() == path)
+        let info = api
+            .device_list()
+            .find(|d| d.path() == path)
             .ok_or_else(|| anyhow!("Device path not found"))?;
 
         let product_id = info.product_id();
@@ -56,7 +66,11 @@ impl HidppClient {
             self.dev_idx = idx;
             if let Some(feat_idx) = self.find_feature(FEAT_REPROG_V4) {
                 self.feat_idx = Some(feat_idx);
-                log::info!("[HID++] Found REPROG_V4 at index 0x{:02X} for dev_idx 0x{:02X}", feat_idx, idx);
+                log::info!(
+                    "[HID++] Found REPROG_V4 at index 0x{:02X} for dev_idx 0x{:02X}",
+                    feat_idx,
+                    idx
+                );
                 found = true;
                 break;
             }
@@ -76,7 +90,10 @@ impl HidppClient {
         if let Some(ss_fi) = self.find_feature(FEAT_SMART_SHIFT_ENHANCED) {
             self.smart_shift_idx = Some(ss_fi);
             self.smart_shift_enhanced = true;
-            log::info!("[HID++] Found SMART_SHIFT_ENHANCED at index 0x{:02X}", ss_fi);
+            log::info!(
+                "[HID++] Found SMART_SHIFT_ENHANCED at index 0x{:02X}",
+                ss_fi
+            );
         } else if let Some(ss_fi) = self.find_feature(FEAT_SMART_SHIFT) {
             self.smart_shift_idx = Some(ss_fi);
             self.smart_shift_enhanced = false;
@@ -138,10 +155,15 @@ impl HidppClient {
     }
 
     pub fn switch_host_channel(&self, channel_index: u8) -> Result<()> {
-        let idx = self.change_host_idx.ok_or_else(|| anyhow!("ChangeHost feature not supported on this device"))?;
+        let idx = self
+            .change_host_idx
+            .ok_or_else(|| anyhow!("ChangeHost feature not supported on this device"))?;
         let resp = self.request(idx, 1, &[channel_index], 1000)?;
         if resp.is_some() {
-            log::info!("[HID++] Command to change host to channel {} sent successfully", channel_index);
+            log::info!(
+                "[HID++] Command to change host to channel {} sent successfully",
+                channel_index
+            );
             Ok(())
         } else {
             Err(anyhow!("Change host command failed"))

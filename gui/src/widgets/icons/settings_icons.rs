@@ -1,4 +1,4 @@
-use eframe::egui::{self, Color32, Stroke, pos2};
+use eframe::egui::{self, pos2, Color32, Stroke};
 
 pub fn draw_globe_icon(ui: &mut egui::Ui, rect: egui::Rect, color: egui::Color32) {
     let painter = ui.painter();

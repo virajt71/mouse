@@ -1,10 +1,11 @@
+use crate::theme;
+use crate::views::customization::mappings::CustomizingButton;
+use crate::widgets::{
+    draw_backlighting_icon, draw_easy_switch_icon, draw_equalizer_icon, draw_flow_icon,
+    draw_hamburger_icon, draw_keys_icon, draw_mouse_outline_icon, draw_settings_slider_icon,
+};
 use eframe::egui;
 use egui::{pos2, vec2, Color32, Rect};
-use crate::theme;
-use crate::widgets::{
-    draw_equalizer_icon, draw_mouse_outline_icon, draw_flow_icon, draw_hamburger_icon,
-};
-use crate::views::customization::mappings::CustomizingButton;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SidebarTab {
@@ -19,6 +20,7 @@ pub fn draw_sidebar(
     sidebar_rect: Rect,
     customization_tab: &mut SidebarTab,
     customizing_button: &mut Option<CustomizingButton>,
+    is_keyboard: bool,
 ) {
     let mut sidebar_ui = ui.new_child(egui::UiBuilder::new().max_rect(sidebar_rect));
 
@@ -28,12 +30,19 @@ pub fn draw_sidebar(
         let tab_width = 170.0;
         let tab_height = 36.0;
 
-        let tabs = &[
-            (SidebarTab::Buttons, "BUTTONS"),
-            (SidebarTab::PointAndScroll, "POINT AND SCROLL"),
-            (SidebarTab::Flow, "FLOW"),
-            (SidebarTab::Settings, "PROFILES"),
-        ];
+        let tabs = if is_keyboard {
+            &[
+                (SidebarTab::Buttons, "KEYS"),
+                (SidebarTab::PointAndScroll, "BACKLIGHTING"),
+                (SidebarTab::Settings, "SETTINGS"),
+            ][..]
+        } else {
+            &[
+                (SidebarTab::Buttons, "BUTTONS"),
+                (SidebarTab::PointAndScroll, "POINT AND SCROLL"),
+                (SidebarTab::Flow, "FLOW"),
+            ][..]
+        };
 
         for &(tab, label) in tabs {
             let is_active = tab == *customization_tab;
@@ -73,13 +82,26 @@ pub fn draw_sidebar(
                 };
 
                 let icon_center = pos2(tab_rect.min.x + 18.0, tab_rect.center().y);
-                match tab {
-                    SidebarTab::Buttons => draw_equalizer_icon(ui, icon_center, text_color),
-                    SidebarTab::PointAndScroll => {
-                        draw_mouse_outline_icon(ui, icon_center, text_color)
+                if is_keyboard {
+                    match tab {
+                        SidebarTab::Buttons => draw_keys_icon(ui, icon_center, text_color),
+                        SidebarTab::PointAndScroll => {
+                            draw_backlighting_icon(ui, icon_center, text_color)
+                        }
+                        SidebarTab::Flow => draw_easy_switch_icon(ui, icon_center, text_color),
+                        SidebarTab::Settings => {
+                            draw_settings_slider_icon(ui, icon_center, text_color)
+                        }
                     }
-                    SidebarTab::Flow => draw_flow_icon(ui, icon_center, text_color),
-                    SidebarTab::Settings => draw_hamburger_icon(ui, icon_center, text_color),
+                } else {
+                    match tab {
+                        SidebarTab::Buttons => draw_equalizer_icon(ui, icon_center, text_color),
+                        SidebarTab::PointAndScroll => {
+                            draw_mouse_outline_icon(ui, icon_center, text_color)
+                        }
+                        SidebarTab::Flow => draw_flow_icon(ui, icon_center, text_color),
+                        SidebarTab::Settings => draw_hamburger_icon(ui, icon_center, text_color),
+                    }
                 }
 
                 let text_pos = pos2(tab_rect.min.x + 36.0, tab_rect.center().y);

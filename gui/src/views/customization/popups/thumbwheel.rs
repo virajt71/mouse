@@ -1,10 +1,10 @@
-use eframe::egui;
-use egui::{pos2, vec2, Color32, Rect, RichText, Stroke};
-use mouser_engine::Engine;
-use mouser_engine::config::Config;
+use super::PopupView;
 use crate::theme;
 use crate::views::customization::mappings::CustomizingButton;
-use super::PopupView;
+use eframe::egui;
+use egui::{pos2, vec2, Color32, Rect, RichText, Stroke};
+use mouser_engine::config::Config;
+use mouser_engine::Engine;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ThumbwheelOption {
@@ -39,7 +39,9 @@ impl ThumbwheelOption {
     }
 }
 
-pub fn get_thumbwheel_option(mappings: &std::collections::HashMap<String, String>) -> ThumbwheelOption {
+pub fn get_thumbwheel_option(
+    mappings: &std::collections::HashMap<String, String>,
+) -> ThumbwheelOption {
     if let Some(hscroll_val) = mappings.get("hscroll") {
         match hscroll_val.as_str() {
             "zoom" => return ThumbwheelOption::Zoom,
@@ -58,7 +60,10 @@ pub fn get_thumbwheel_option(mappings: &std::collections::HashMap<String, String
     ThumbwheelOption::HorizontalScroll
 }
 
-pub fn save_thumbwheel_option(opt: ThumbwheelOption, mappings: &mut std::collections::HashMap<String, String>) {
+pub fn save_thumbwheel_option(
+    opt: ThumbwheelOption,
+    mappings: &mut std::collections::HashMap<String, String>,
+) {
     match opt {
         ThumbwheelOption::HorizontalScroll => {
             mappings.insert("hscroll".to_string(), "hscroll".to_string());
@@ -204,7 +209,15 @@ pub fn draw_thumbwheel_action_popup(
             ];
 
             for &opt in recommended {
-                if draw_thumbwheel_item(ui, opt, current_opt, profile, customizing_button, selected_option, view_state_id) {
+                if draw_thumbwheel_item(
+                    ui,
+                    opt,
+                    current_opt,
+                    profile,
+                    customizing_button,
+                    selected_option,
+                    view_state_id,
+                ) {
                     click_occurred = true;
                 }
             }
@@ -233,7 +246,15 @@ pub fn draw_thumbwheel_action_popup(
             ];
 
             for &opt in other {
-                if draw_thumbwheel_item(ui, opt, current_opt, profile, customizing_button, selected_option, view_state_id) {
+                if draw_thumbwheel_item(
+                    ui,
+                    opt,
+                    current_opt,
+                    profile,
+                    customizing_button,
+                    selected_option,
+                    view_state_id,
+                ) {
                     click_occurred = true;
                 }
             }
@@ -257,19 +278,22 @@ fn draw_thumbwheel_item(
     let is_selected = opt == current_opt;
     let item_h = 24.0;
 
-    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), item_h), egui::Sense::click());
+    let (rect, response) =
+        ui.allocate_exact_size(vec2(ui.available_width(), item_h), egui::Sense::click());
     let is_hovered = response.hovered();
 
     if is_hovered {
         ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
-        ui.painter().rect_filled(rect, 0.0, theme::hover_color(ui.ctx()));
+        ui.painter()
+            .rect_filled(rect, 0.0, theme::hover_color(ui.ctx()));
     }
 
     let bullet_center = pos2(rect.min.x + 14.0, rect.center().y);
     if is_selected {
         let accent = theme::accent_color(ui.ctx());
         ui.painter().circle_filled(bullet_center, 6.0, accent);
-        ui.painter().circle_filled(bullet_center, 2.0, theme::surface_color(ui.ctx()));
+        ui.painter()
+            .circle_filled(bullet_center, 2.0, theme::surface_color(ui.ctx()));
     } else {
         let bullet_color = Color32::from_gray(60);
         ui.painter().circle_filled(bullet_center, 6.0, bullet_color);
@@ -292,7 +316,8 @@ fn draw_thumbwheel_item(
         ))
     });
     let text_y = rect.center().y - galley.size().y / 2.0;
-    ui.painter().galley(pos2(rect.min.x + 28.0, text_y), galley, text_color);
+    ui.painter()
+        .galley(pos2(rect.min.x + 28.0, text_y), galley, text_color);
 
     let mut clicked = false;
     if response.clicked() {
@@ -305,7 +330,11 @@ fn draw_thumbwheel_item(
         ui.horizontal(|ui| {
             ui.add_space(28.0);
 
-            let left_val = profile.mappings.get("hscroll_left").map(|s| s.as_str()).unwrap_or("none");
+            let left_val = profile
+                .mappings
+                .get("hscroll_left")
+                .map(|s| s.as_str())
+                .unwrap_or("none");
             let left_text = if left_val.starts_with("custom:") {
                 std::borrow::Cow::Owned(left_val.strip_prefix("custom:").unwrap().to_uppercase())
             } else {
@@ -313,18 +342,27 @@ fn draw_thumbwheel_item(
             };
 
             let btn_left = ui.add(egui::Button::new(
-                RichText::new(format!("Left: {}", left_text)).size(10.0)
+                RichText::new(format!("Left: {}", left_text)).size(10.0),
             ));
             if btn_left.clicked() {
                 ui.ctx().memory_mut(|mem| mem.stop_text_input());
-                ui.ctx().data_mut(|d| d.insert_temp(view_state_id, PopupView::RecordShortcut {
-                    target_key: "hscroll_left".to_string(),
-                    display_label: "Scroll Left".to_string(),
-                }));
+                ui.ctx().data_mut(|d| {
+                    d.insert_temp(
+                        view_state_id,
+                        PopupView::RecordShortcut {
+                            target_key: "hscroll_left".to_string(),
+                            display_label: "Scroll Left".to_string(),
+                        },
+                    )
+                });
                 clicked = true;
             }
 
-            let right_val = profile.mappings.get("hscroll_right").map(|s| s.as_str()).unwrap_or("none");
+            let right_val = profile
+                .mappings
+                .get("hscroll_right")
+                .map(|s| s.as_str())
+                .unwrap_or("none");
             let right_text = if right_val.starts_with("custom:") {
                 std::borrow::Cow::Owned(right_val.strip_prefix("custom:").unwrap().to_uppercase())
             } else {
@@ -332,14 +370,19 @@ fn draw_thumbwheel_item(
             };
 
             let btn_right = ui.add(egui::Button::new(
-                RichText::new(format!("Right: {}", right_text)).size(10.0)
+                RichText::new(format!("Right: {}", right_text)).size(10.0),
             ));
             if btn_right.clicked() {
                 ui.ctx().memory_mut(|mem| mem.stop_text_input());
-                ui.ctx().data_mut(|d| d.insert_temp(view_state_id, PopupView::RecordShortcut {
-                    target_key: "hscroll_right".to_string(),
-                    display_label: "Scroll Right".to_string(),
-                }));
+                ui.ctx().data_mut(|d| {
+                    d.insert_temp(
+                        view_state_id,
+                        PopupView::RecordShortcut {
+                            target_key: "hscroll_right".to_string(),
+                            display_label: "Scroll Right".to_string(),
+                        },
+                    )
+                });
                 clicked = true;
             }
         });

@@ -1,12 +1,12 @@
 // engine and gui are external library crates in the workspace
+use std::io::Read;
 use std::thread;
 use std::time::Duration;
-use std::io::Read;
 
+mod gui;
 mod signal;
 mod single_instance;
 mod tray;
-mod gui;
 
 fn main() -> Result<(), eframe::Error> {
     let args: Vec<String> = std::env::args().collect();
@@ -39,22 +39,23 @@ fn main() -> Result<(), eframe::Error> {
     }
 
     let log_dir = engine::config::get_log_dir();
-    let _logger = flexi_logger::Logger::try_with_env_or_str("info,zbus=warn,tracing=warn,sctk_adwaita=off")
-        .expect("Failed to parse log configuration")
-        .log_to_file(
-            flexi_logger::FileSpec::default()
-                .directory(log_dir)
-                .basename("mouser")
-                .suffix("log"),
-        )
-        .rotate(
-            flexi_logger::Criterion::Size(5 * 1024 * 1024), // 5 MB
-            flexi_logger::Naming::Numbers,
-            flexi_logger::Cleanup::KeepLogFiles(5), // Keep 5 files
-        )
-        .duplicate_to_stdout(flexi_logger::Duplicate::All) // Show in stdout/stderr as well
-        .start()
-        .expect("Failed to initialize logger");
+    let _logger =
+        flexi_logger::Logger::try_with_env_or_str("info,zbus=warn,tracing=warn,sctk_adwaita=off")
+            .expect("Failed to parse log configuration")
+            .log_to_file(
+                flexi_logger::FileSpec::default()
+                    .directory(log_dir)
+                    .basename("mouser")
+                    .suffix("log"),
+            )
+            .rotate(
+                flexi_logger::Criterion::Size(5 * 1024 * 1024), // 5 MB
+                flexi_logger::Naming::Numbers,
+                flexi_logger::Cleanup::KeepLogFiles(5), // Keep 5 files
+            )
+            .duplicate_to_stdout(flexi_logger::Duplicate::All) // Show in stdout/stderr as well
+            .start()
+            .expect("Failed to initialize logger");
 
     log::info!("Starting Mouser Rust Daemon...");
 

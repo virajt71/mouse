@@ -1,11 +1,11 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use super::x11::get_active_app_pid_x11_persistent;
 use super::fallbacks::get_active_app_pid_fallbacks;
 use super::get_exe_for_pid;
+use super::x11::get_active_app_pid_x11_persistent;
 
 pub struct AppDetector {
     on_change: Arc<dyn Fn(String) + Send + Sync + 'static>,

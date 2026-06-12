@@ -1,11 +1,11 @@
+use super::{render_spaced_header, section_card};
+use crate::theme;
+use crate::translation::tr;
+use crate::widgets::draw_globe_icon;
 use eframe::egui;
 use egui::{vec2, Color32, RichText, Stroke};
 use mouser_engine::config::Config;
 use mouser_engine::Engine;
-use crate::translation::tr;
-use crate::theme;
-use crate::widgets::draw_globe_icon;
-use super::{section_card, render_spaced_header};
 
 pub fn render_section_language(ui: &mut egui::Ui, config: &mut Config, engine: &Engine) {
     section_card(ui, |ui| {

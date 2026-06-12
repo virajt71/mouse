@@ -1,13 +1,13 @@
-use std::thread;
-use std::time::{Duration, Instant};
+use std::collections::HashSet;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::collections::HashSet;
 use std::sync::Mutex;
+use std::thread;
+use std::time::{Duration, Instant};
 
-use crate::hidpp::HidppClient;
-use crate::input::{MouseHook, KeyboardHook};
 use super::Engine;
+use crate::hidpp::HidppClient;
+use crate::input::{KeyboardHook, MouseHook};
 
 lazy_static::lazy_static! {
     static ref CONNECTING_PATHS: Mutex<HashSet<String>> = Mutex::new(HashSet::new());
@@ -16,15 +16,26 @@ lazy_static::lazy_static! {
 impl Engine {
     pub fn restart_keyboard_hooks(&self) -> anyhow::Result<()> {
         let mappings = Arc::new(std::sync::Mutex::new(
-            self.inner.config.lock().unwrap().get_active_mappings()
+            self.inner.config.lock().unwrap().get_active_mappings(),
         ));
         let mut kb_hooks = self.inner.keyboard_hooks.lock().unwrap();
-        for hook in kb_hooks.iter_mut() { hook.stop(); }
+        for hook in kb_hooks.iter_mut() {
+            hook.stop();
+        }
         kb_hooks.clear();
         let kb_paths = crate::input::find_logitech_keyboards();
         for path in kb_paths {
             let mut hook = KeyboardHook::new();
-            if hook.start(path, mappings.clone(), self.inner.key_simulator.device(), self.inner.key_simulator.clone()).is_ok() {
+            if hook
+                .start(
+                    path,
+                    mappings.clone(),
+                    self.inner.key_simulator.device(),
+                    self.inner.key_simulator.clone(),
+                    self.clone(),
+                )
+                .is_ok()
+            {
                 kb_hooks.push(hook);
             }
         }
@@ -149,7 +160,8 @@ impl Engine {
                                         path.clone(),
                                         mappings,
                                         inner.key_simulator.device(),
-                                        inner.key_simulator.clone()
+                                        inner.key_simulator.clone(),
+                                        engine_clone.clone(),
                                     ) {
                                         Ok(()) => {
                                             log::info!("[Engine] Keyboard hook started successfully for {}.", path);
@@ -157,7 +169,12 @@ impl Engine {
                                             failed_keyboards.remove(path);
                                         }
                                         Err(e) => {
-                                            log::warn!("[Engine] Keyboard hook start failed for {}: {}", path, e);
+                                            let error_str = e.to_string();
+                                            if error_str.contains("No such file") || error_str.contains("No such device") {
+                                                log::info!("[Engine] Keyboard hook start bypassed for {} (device disconnected/disconnecting)", path);
+                                            } else {
+                                                log::warn!("[Engine] Keyboard hook start failed for {}: {}", path, e);
+                                            }
                                         }
                                     }
                                 }

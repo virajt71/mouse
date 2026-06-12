@@ -1,9 +1,9 @@
-use std::sync::{Arc, RwLock};
-use std::net::{UdpSocket, TcpListener, TcpStream};
-use std::io::{BufReader, BufRead, Write};
-use std::time::{Duration, Instant};
-use std::collections::HashMap;
 use super::FLOW_MANAGER;
+use std::collections::HashMap;
+use std::io::{BufRead, BufReader, Write};
+use std::net::{TcpListener, TcpStream, UdpSocket};
+use std::sync::{Arc, RwLock};
+use std::time::{Duration, Instant};
 
 lazy_static::lazy_static! {
     pub static ref DISCOVERED_PEERS: RwLock<HashMap<String, (String, Instant)>> = RwLock::new(HashMap::new());
@@ -33,7 +33,10 @@ pub fn run_discovery_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) 
                 break;
             }
             Err(e) => {
-                log::warn!("[Flow Network] Failed to bind discovery UDP socket: {}. Retrying in 5s...", e);
+                log::warn!(
+                    "[Flow Network] Failed to bind discovery UDP socket: {}. Retrying in 5s...",
+                    e
+                );
                 std::thread::sleep(Duration::from_secs(5));
             }
         }
@@ -75,7 +78,10 @@ pub fn run_discovery_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) 
                 if peer_name != local_name {
                     // Register peer IP
                     let peer_ip = src.ip().to_string();
-                    DISCOVERED_PEERS.write().unwrap().insert(peer_name.clone(), (peer_ip.clone(), Instant::now()));
+                    DISCOVERED_PEERS
+                        .write()
+                        .unwrap()
+                        .insert(peer_name.clone(), (peer_ip.clone(), Instant::now()));
 
                     // Respond with identity
                     let reply = format!("MOUSER_IDENTITY:{}", local_name);
@@ -87,7 +93,10 @@ pub fn run_discovery_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) 
                 let peer_name = parts[1].to_string();
                 if peer_name != local_name {
                     let peer_ip = src.ip().to_string();
-                    DISCOVERED_PEERS.write().unwrap().insert(peer_name.clone(), (peer_ip.clone(), Instant::now()));
+                    DISCOVERED_PEERS
+                        .write()
+                        .unwrap()
+                        .insert(peer_name.clone(), (peer_ip.clone(), Instant::now()));
 
                     trigger_auto_connect(&peer_name, &peer_ip, &engine_inner);
                 }
@@ -103,19 +112,20 @@ pub fn run_discovery_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) 
 }
 
 fn thread_spawn_broadcast(socket: UdpSocket, engine_inner: Arc<crate::engine::inner::EngineInner>) {
-    std::thread::spawn(move || {
-        loop {
-            let (enabled, name) = {
-                let cfg = engine_inner.config.lock().unwrap();
-                (cfg.settings.flow_enabled, cfg.settings.flow_local_name.clone())
-            };
+    std::thread::spawn(move || loop {
+        let (enabled, name) = {
+            let cfg = engine_inner.config.lock().unwrap();
+            (
+                cfg.settings.flow_enabled,
+                cfg.settings.flow_local_name.clone(),
+            )
+        };
 
-            if enabled {
-                let msg = format!("MOUSER_DISCOVER:{}", name);
-                let _ = socket.send_to(msg.as_bytes(), "255.255.255.255:50519");
-            }
-            std::thread::sleep(Duration::from_secs(3));
+        if enabled {
+            let msg = format!("MOUSER_DISCOVER:{}", name);
+            let _ = socket.send_to(msg.as_bytes(), "255.255.255.255:50519");
         }
+        std::thread::sleep(Duration::from_secs(3));
     });
 }
 
@@ -129,7 +139,10 @@ pub fn run_server_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) {
                 break;
             }
             Err(e) => {
-                log::warn!("[Flow Network] Failed to bind TCP listener: {}. Retrying in 5s...", e);
+                log::warn!(
+                    "[Flow Network] Failed to bind TCP listener: {}. Retrying in 5s...",
+                    e
+                );
                 std::thread::sleep(Duration::from_secs(5));
             }
         }
@@ -168,7 +181,9 @@ pub fn connect_to_peer(
     // Skip if already connected or connecting
     {
         let conns = ACTIVE_CONNECTIONS.read().unwrap();
-        if conns.contains_key(name) { return; }
+        if conns.contains_key(name) {
+            return;
+        }
     }
     {
         let mut connecting = CONNECTING_PEERS.write().unwrap();
@@ -185,39 +200,72 @@ pub fn connect_to_peer(
             CONNECTING_PEERS.write().unwrap().remove(&self.name);
         }
     }
-    let _cleanup = Cleanup { name: name.to_string() };
+    let _cleanup = Cleanup {
+        name: name.to_string(),
+    };
 
     let addr = format!("{}:{}", ip, port);
-    log::info!("[Flow Network] Attempting to connect to peer '{}' at {}", name, addr);
-    let Ok(mut stream) = TcpStream::connect_timeout(
-        &addr.parse().unwrap(),
-        Duration::from_secs(5),
-    ) else { return; };
+    log::info!(
+        "[Flow Network] Attempting to connect to peer '{}' at {}",
+        name,
+        addr
+    );
+    let Ok(mut stream) = TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_secs(5))
+    else {
+        return;
+    };
 
     // Read challenge
     let mut reader = BufReader::new(stream.try_clone().unwrap());
     let mut line = String::new();
-    if reader.read_line(&mut line).is_err() { return; }
-    
-    let salt = line.trim().strip_prefix("MOUSER_CHALLENGE:").unwrap_or("").to_string();
+    if reader.read_line(&mut line).is_err() {
+        return;
+    }
+
+    let salt = line
+        .trim()
+        .strip_prefix("MOUSER_CHALLENGE:")
+        .unwrap_or("")
+        .to_string();
 
     // Get PIN from config (stored as fingerprint field for now)
     let pin = {
         let cfg = engine_inner.config.lock().unwrap();
-        cfg.settings.flow_peers.iter()
+        cfg.settings
+            .flow_peers
+            .iter()
             .find(|p| p.name == name)
-            .map(|p| if p.fingerprint.is_empty() { "123456".to_string() } else { p.fingerprint.clone() })
+            .map(|p| {
+                if p.fingerprint.is_empty() {
+                    "123456".to_string()
+                } else {
+                    p.fingerprint.clone()
+                }
+            })
             .unwrap_or("123456".to_string())
     };
 
-    let hash = format!("{:x}", sha2::Sha256::digest(format!("{}{}", salt, pin).as_bytes()));
-    let local_name = engine_inner.config.lock().unwrap().settings.flow_local_name.clone();
-    
+    let hash = format!(
+        "{:x}",
+        sha2::Sha256::digest(format!("{}{}", salt, pin).as_bytes())
+    );
+    let local_name = engine_inner
+        .config
+        .lock()
+        .unwrap()
+        .settings
+        .flow_local_name
+        .clone();
+
     let _ = stream.write_all(format!("MOUSER_RESPONSE:{}:{}\n", local_name, hash).as_bytes());
 
     line.clear();
-    if reader.read_line(&mut line).is_err() { return; }
-    if line.trim() != "MOUSER_OK" { return; }
+    if reader.read_line(&mut line).is_err() {
+        return;
+    }
+    if line.trim() != "MOUSER_OK" {
+        return;
+    }
 
     log::info!("[Flow Network] Connected to peer '{}'", name);
     {
@@ -231,12 +279,20 @@ pub fn connect_to_peer(
     let inner_clone = engine_inner.clone();
     std::thread::spawn(move || {
         if let Err(e) = process_peer_events(stream_clone, name_clone.clone(), inner_clone) {
-            log::error!("[Flow Network] Error in process_peer_events for '{}': {}", name_clone, e);
+            log::error!(
+                "[Flow Network] Error in process_peer_events for '{}': {}",
+                name_clone,
+                e
+            );
         }
     });
 }
 
-fn trigger_auto_connect(peer_name: &str, peer_ip: &str, engine_inner: &Arc<crate::engine::inner::EngineInner>) {
+fn trigger_auto_connect(
+    peer_name: &str,
+    peer_ip: &str,
+    engine_inner: &Arc<crate::engine::inner::EngineInner>,
+) {
     let (is_paired, auto_reconnect) = {
         let cfg = engine_inner.config.lock().unwrap();
         if let Some(p) = cfg.settings.flow_peers.iter().find(|p| p.name == peer_name) {
@@ -267,7 +323,10 @@ fn trigger_auto_connect(peer_name: &str, peer_ip: &str, engine_inner: &Arc<crate
     }
 }
 
-fn handle_client(mut stream: TcpStream, engine_inner: Arc<crate::engine::inner::EngineInner>) -> anyhow::Result<()> {
+fn handle_client(
+    mut stream: TcpStream,
+    engine_inner: Arc<crate::engine::inner::EngineInner>,
+) -> anyhow::Result<()> {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(30)));
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut line = String::new();
@@ -296,7 +355,10 @@ fn handle_client(mut stream: TcpStream, engine_inner: Arc<crate::engine::inner::
 
     let is_paired = {
         let cfg = engine_inner.config.lock().unwrap();
-        cfg.settings.flow_peers.iter().any(|p| p.name == client_name && p.paired)
+        cfg.settings
+            .flow_peers
+            .iter()
+            .any(|p| p.name == client_name && p.paired)
     };
 
     let pin = "123456";
@@ -309,7 +371,10 @@ fn handle_client(mut stream: TcpStream, engine_inner: Arc<crate::engine::inner::
     }
 
     stream.write_all(b"MOUSER_OK\n")?;
-    log::info!("[Flow Network] Peer '{}' authenticated successfully.", client_name);
+    log::info!(
+        "[Flow Network] Peer '{}' authenticated successfully.",
+        client_name
+    );
 
     {
         let mut conns = ACTIVE_CONNECTIONS.write().unwrap();
@@ -319,7 +384,11 @@ fn handle_client(mut stream: TcpStream, engine_inner: Arc<crate::engine::inner::
     process_peer_events(stream, client_name, engine_inner)
 }
 
-fn process_peer_events(stream: TcpStream, client_name: String, engine_inner: Arc<crate::engine::inner::EngineInner>) -> anyhow::Result<()> {
+fn process_peer_events(
+    stream: TcpStream,
+    client_name: String,
+    engine_inner: Arc<crate::engine::inner::EngineInner>,
+) -> anyhow::Result<()> {
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut line = String::new();
 
@@ -336,14 +405,23 @@ fn process_peer_events(stream: TcpStream, client_name: String, engine_inner: Arc
                     if let Some(ref inner) = *FLOW_MANAGER.engine_inner.lock().unwrap() {
                         let is_paired = {
                             let cfg = inner.config.lock().unwrap();
-                            cfg.settings.flow_peers.iter().any(|p| p.name == client_name && p.paired)
+                            cfg.settings
+                                .flow_peers
+                                .iter()
+                                .any(|p| p.name == client_name && p.paired)
                         };
-                        
+
                         if is_paired {
-                            if let Some(target) = FLOW_MANAGER.handle_raw_motion(dx, dy, &inner.config) {
+                            if let Some(target) =
+                                FLOW_MANAGER.handle_raw_motion(dx, dy, &inner.config)
+                            {
                                 if target == client_name {
-                                    log::info!("[Flow Network] Edge transition back to controller '{}'", target);
-                                    let _ = send_event_to_peer(&client_name, &FlowEvent::ReturnToLocal);
+                                    log::info!(
+                                        "[Flow Network] Edge transition back to controller '{}'",
+                                        target
+                                    );
+                                    let _ =
+                                        send_event_to_peer(&client_name, &FlowEvent::ReturnToLocal);
                                 }
                             }
                         }
@@ -352,8 +430,16 @@ fn process_peer_events(stream: TcpStream, client_name: String, engine_inner: Arc
                         let mut uinput_guard = uinput_arc.lock().unwrap();
                         if let Some(ref mut uinput_dev) = *uinput_guard {
                             let evs = [
-                                evdev::InputEvent::new(evdev::EventType::RELATIVE, evdev::RelativeAxisType::REL_X.0, dx),
-                                evdev::InputEvent::new(evdev::EventType::RELATIVE, evdev::RelativeAxisType::REL_Y.0, dy),
+                                evdev::InputEvent::new(
+                                    evdev::EventType::RELATIVE,
+                                    evdev::RelativeAxisType::REL_X.0,
+                                    dx,
+                                ),
+                                evdev::InputEvent::new(
+                                    evdev::EventType::RELATIVE,
+                                    evdev::RelativeAxisType::REL_Y.0,
+                                    dy,
+                                ),
                                 evdev::InputEvent::new(evdev::EventType::SYNCHRONIZATION, 0, 0),
                             ];
                             let _ = uinput_dev.emit(&evs);
@@ -417,30 +503,54 @@ fn process_peer_events(stream: TcpStream, client_name: String, engine_inner: Arc
                     let _ = super::clipboard::save_flow_file(name, content);
                 }
                 FlowEvent::ReturnToLocal => {
-                    log::info!("[Flow Network] Received ReturnToLocal from peer '{}'", client_name);
-                    
+                    log::info!(
+                        "[Flow Network] Received ReturnToLocal from peer '{}'",
+                        client_name
+                    );
+
                     let (lx, ly) = {
                         let cfg = engine_inner.config.lock().unwrap();
-                        if let Some(peer) = cfg.settings.flow_peers.iter().find(|p| p.name == client_name) {
+                        if let Some(peer) = cfg
+                            .settings
+                            .flow_peers
+                            .iter()
+                            .find(|p| p.name == client_name)
+                        {
                             (peer.layout_x, peer.layout_y)
                         } else {
                             (0, 0)
                         }
                     };
-                    
+
                     FLOW_MANAGER.set_active_peer(None);
-                    
+
                     let sw = *FLOW_MANAGER.screen_width.read().unwrap();
                     let sh = *FLOW_MANAGER.screen_height.read().unwrap();
-                    
-                    let target_x = if lx == 1 { sw - 50 } else if lx == -1 { 50 } else { sw / 2 };
-                    let target_y = if ly == 1 { sh - 50 } else if ly == -1 { 50 } else { sh / 2 };
-                    
+
+                    let target_x = if lx == 1 {
+                        sw - 50
+                    } else if lx == -1 {
+                        50
+                    } else {
+                        sw / 2
+                    };
+                    let target_y = if ly == 1 {
+                        sh - 50
+                    } else if ly == -1 {
+                        50
+                    } else {
+                        sh / 2
+                    };
+
                     *FLOW_MANAGER.virtual_x.lock().unwrap() = target_x;
                     *FLOW_MANAGER.virtual_y.lock().unwrap() = target_y;
-                    
+
                     let _ = std::process::Command::new("xdotool")
-                        .args(["mousemove", &format!("{}", target_x), &format!("{}", target_y)])
+                        .args([
+                            "mousemove",
+                            &format!("{}", target_x),
+                            &format!("{}", target_y),
+                        ])
                         .spawn();
                 }
             }
@@ -454,7 +564,10 @@ fn process_peer_events(stream: TcpStream, client_name: String, engine_inner: Arc
     if FLOW_MANAGER.get_current_controller().as_ref() == Some(&client_name) {
         FLOW_MANAGER.set_current_controller(None);
     }
-    log::info!("[Flow Network] Connection to peer '{}' closed.", client_name);
+    log::info!(
+        "[Flow Network] Connection to peer '{}' closed.",
+        client_name
+    );
     Ok(())
 }
 
@@ -478,32 +591,72 @@ mod tests {
     fn test_event_serialization_deserialization() {
         let events = vec![
             FlowEvent::MouseMove { dx: 10, dy: -20 },
-            FlowEvent::MouseButton { code: 272, value: 1 },
+            FlowEvent::MouseButton {
+                code: 272,
+                value: 1,
+            },
             FlowEvent::Key { code: 30, value: 0 },
-            FlowEvent::MouseScroll { horizontal: false, delta: 120 },
+            FlowEvent::MouseScroll {
+                horizontal: false,
+                delta: 120,
+            },
             FlowEvent::ClipboardText("Hello World".to_string()),
             FlowEvent::ClipboardImage(vec![1, 2, 3, 4]),
-            FlowEvent::FileTransfer { name: "test.txt".to_string(), content: vec![65, 66, 67] },
+            FlowEvent::FileTransfer {
+                name: "test.txt".to_string(),
+                content: vec![65, 66, 67],
+            },
             FlowEvent::ReturnToLocal,
         ];
 
         for event in events {
             let serialized = serde_json::to_string(&event).expect("Failed to serialize");
-            let deserialized: FlowEvent = serde_json::from_str(&serialized).expect("Failed to deserialize");
+            let deserialized: FlowEvent =
+                serde_json::from_str(&serialized).expect("Failed to deserialize");
             match (&event, &deserialized) {
-                (FlowEvent::MouseMove { dx: dx1, dy: dy1 }, FlowEvent::MouseMove { dx: dx2, dy: dy2 }) => {
+                (
+                    FlowEvent::MouseMove { dx: dx1, dy: dy1 },
+                    FlowEvent::MouseMove { dx: dx2, dy: dy2 },
+                ) => {
                     assert_eq!(dx1, dx2);
                     assert_eq!(dy1, dy2);
                 }
-                (FlowEvent::MouseButton { code: c1, value: v1 }, FlowEvent::MouseButton { code: c2, value: v2 }) => {
+                (
+                    FlowEvent::MouseButton {
+                        code: c1,
+                        value: v1,
+                    },
+                    FlowEvent::MouseButton {
+                        code: c2,
+                        value: v2,
+                    },
+                ) => {
                     assert_eq!(c1, c2);
                     assert_eq!(v1, v2);
                 }
-                (FlowEvent::Key { code: c1, value: v1 }, FlowEvent::Key { code: c2, value: v2 }) => {
+                (
+                    FlowEvent::Key {
+                        code: c1,
+                        value: v1,
+                    },
+                    FlowEvent::Key {
+                        code: c2,
+                        value: v2,
+                    },
+                ) => {
                     assert_eq!(c1, c2);
                     assert_eq!(v1, v2);
                 }
-                (FlowEvent::MouseScroll { horizontal: h1, delta: d1 }, FlowEvent::MouseScroll { horizontal: h2, delta: d2 }) => {
+                (
+                    FlowEvent::MouseScroll {
+                        horizontal: h1,
+                        delta: d1,
+                    },
+                    FlowEvent::MouseScroll {
+                        horizontal: h2,
+                        delta: d2,
+                    },
+                ) => {
                     assert_eq!(h1, h2);
                     assert_eq!(d1, d2);
                 }
@@ -513,12 +666,24 @@ mod tests {
                 (FlowEvent::ClipboardImage(b1), FlowEvent::ClipboardImage(b2)) => {
                     assert_eq!(b1, b2);
                 }
-                (FlowEvent::FileTransfer { name: n1, content: c1 }, FlowEvent::FileTransfer { name: n2, content: c2 }) => {
+                (
+                    FlowEvent::FileTransfer {
+                        name: n1,
+                        content: c1,
+                    },
+                    FlowEvent::FileTransfer {
+                        name: n2,
+                        content: c2,
+                    },
+                ) => {
                     assert_eq!(n1, n2);
                     assert_eq!(c1, c2);
                 }
                 (FlowEvent::ReturnToLocal, FlowEvent::ReturnToLocal) => {}
-                _ => panic!("Event mismatch after deserialization: expected {:?}, got {:?}", event, deserialized),
+                _ => panic!(
+                    "Event mismatch after deserialization: expected {:?}, got {:?}",
+                    event, deserialized
+                ),
             }
         }
     }

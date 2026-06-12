@@ -1,8 +1,10 @@
+use super::Engine;
 use evdev::Key;
 use std::sync::atomic::Ordering;
-use super::Engine;
 
-pub fn compute_blocked_buttons(mappings: &std::collections::HashMap<String, String>) -> (Vec<Key>, bool) {
+pub fn compute_blocked_buttons(
+    mappings: &std::collections::HashMap<String, String>,
+) -> (Vec<Key>, bool) {
     let mut blocked = Vec::new();
     let mut hscroll_blocked = false;
     for (btn_key, action) in mappings {
@@ -39,24 +41,26 @@ impl Engine {
 
         let mut last_exe = self.inner.last_detected_exe.lock().unwrap();
         let mut current_profile = self.inner.current_profile.lock().unwrap();
-        
+
         if *current_profile == profile_name && *last_exe == exe_name {
             return;
         }
-        
+
         *last_exe = exe_name.clone();
-        
+
         if *current_profile != profile_name {
             log::info!("[Engine] App {} → profile '{}'", exe_name, profile_name);
             *current_profile = profile_name.clone();
             drop(current_profile);
             drop(last_exe);
-            
+
             *self.inner.active_profile_shared.lock().unwrap() = profile_name;
             *self.inner.active_mappings.lock().unwrap() = mappings.clone();
             let (blocked, hscroll_blocked) = compute_blocked_buttons(&mappings);
             *self.inner.blocked_buttons_arc.lock().unwrap() = blocked;
-            self.inner.block_hscroll_arc.store(hscroll_blocked, Ordering::SeqCst);
+            self.inner
+                .block_hscroll_arc
+                .store(hscroll_blocked, Ordering::SeqCst);
             let _ = self.restart_keyboard_hooks();
         }
     }

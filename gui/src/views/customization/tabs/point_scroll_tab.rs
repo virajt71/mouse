@@ -1,8 +1,8 @@
+use crate::theme;
 use eframe::egui;
 use egui::{pos2, vec2, Color32, Rect, Stroke};
-use mouser_engine::Engine;
 use mouser_engine::config::Config;
-use crate::theme;
+use mouser_engine::Engine;
 
 pub fn show_point_scroll_tab(
     ui: &mut egui::Ui,
@@ -24,95 +24,163 @@ pub fn show_point_scroll_tab(
     let mut settings_dirty = false;
 
     // Define card and dot positions
-    let scroll_wheel_dot  = center + vec2(80.0, -190.0);
+    let scroll_wheel_dot = center + vec2(80.0, -190.0);
     let scroll_wheel_card = center + vec2(270.0, -140.0);
 
-    let thumb_wheel_dot   = center + vec2(0.0, -23.0);
-    let thumb_wheel_card  = center + vec2(-180.0, 30.0);
+    let thumb_wheel_dot = center + vec2(0.0, -23.0);
+    let thumb_wheel_card = center + vec2(-180.0, 30.0);
 
-    let pointer_dot       = center + vec2(110.0, 40.0);
-    let pointer_card      = center + vec2(240.0, 40.0);
+    let pointer_dot = center + vec2(110.0, 40.0);
+    let pointer_card = center + vec2(240.0, 40.0);
 
     // State IDs for popup open/close (stored in egui ctx temp data)
     let scroll_popup_id = ui.id().with("scroll_popup_open");
-    let thumb_popup_id  = ui.id().with("thumb_popup_open");
-    let ptr_popup_id    = ui.id().with("ptr_popup_open");
+    let thumb_popup_id = ui.id().with("thumb_popup_open");
+    let ptr_popup_id = ui.id().with("ptr_popup_open");
 
-    let scroll_open = ui.ctx().data(|d| d.get_temp::<bool>(scroll_popup_id)).unwrap_or(false);
-    let thumb_open  = ui.ctx().data(|d| d.get_temp::<bool>(thumb_popup_id)).unwrap_or(false);
-    let ptr_open    = ui.ctx().data(|d| d.get_temp::<bool>(ptr_popup_id)).unwrap_or(false);
+    let scroll_open = ui
+        .ctx()
+        .data(|d| d.get_temp::<bool>(scroll_popup_id))
+        .unwrap_or(false);
+    let thumb_open = ui
+        .ctx()
+        .data(|d| d.get_temp::<bool>(thumb_popup_id))
+        .unwrap_or(false);
+    let ptr_open = ui
+        .ctx()
+        .data(|d| d.get_temp::<bool>(ptr_popup_id))
+        .unwrap_or(false);
 
     // Draw connecting lines and base dot rings
     for (dot_pos, card_pos) in &[
         (scroll_wheel_dot, scroll_wheel_card),
-        (thumb_wheel_dot,  thumb_wheel_card),
-        (pointer_dot,      pointer_card),
+        (thumb_wheel_dot, thumb_wheel_card),
+        (pointer_dot, pointer_card),
     ] {
         let stroke = Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 100));
         ui.painter().line_segment([*dot_pos, *card_pos], stroke);
-        ui.painter().circle_stroke(*dot_pos, 8.0, Stroke::new(1.2, Color32::WHITE));
+        ui.painter()
+            .circle_stroke(*dot_pos, 8.0, Stroke::new(1.2, Color32::WHITE));
     }
 
     // Get current settings
-    let invert_v         = config.settings.invert_vscroll;
-    let invert_h         = config.settings.invert_hscroll;
-    let smart_shift      = config.settings.smart_shift_enabled;
-    let ss_threshold     = config.settings.smart_shift_threshold;
-    let dpi              = config.settings.dpi;
+    let invert_v = config.settings.invert_vscroll;
+    let invert_h = config.settings.invert_hscroll;
+    let smart_shift = config.settings.smart_shift_enabled;
+    let ss_threshold = config.settings.smart_shift_threshold;
+    let dpi = config.settings.dpi;
     let smart_shift_mode = config.settings.smart_shift_mode.clone();
 
     let pointer_speed_pct = ((dpi.clamp(200, 4000) - 200) as f32 * 100.0 / 3800.0).round() as i32;
-    let thumb_speed_pct   = ((11 - config.settings.hscroll_threshold.clamp(1, 10)) * 10).clamp(10, 100);
+    let thumb_speed_pct =
+        ((11 - config.settings.hscroll_threshold.clamp(1, 10)) * 10).clamp(10, 100);
 
     // ── Card 1: Scroll wheel ─────────────────────────────────────────────────
-    let scroll_dir_str  = if invert_v { "Scroll direction: Inverted" } else { "Scroll direction: Standard" };
-    let smart_shift_str = if smart_shift { "SmartShift: On" } else { "SmartShift: Off" };
-    let scroll_rows     = &[scroll_dir_str, "Smooth scrolling: Off", smart_shift_str];
+    let scroll_dir_str = if invert_v {
+        "Scroll direction: Inverted"
+    } else {
+        "Scroll direction: Standard"
+    };
+    let smart_shift_str = if smart_shift {
+        "SmartShift: On"
+    } else {
+        "SmartShift: Off"
+    };
+    let scroll_rows = &[scroll_dir_str, "Smooth scrolling: Off", smart_shift_str];
     let scroll_card_rect = Rect::from_center_size(scroll_wheel_card, vec2(160.0, 72.0));
-    let scroll_res = draw_ps_card(ui, scroll_wheel_card, 160.0, 72.0, "Scroll wheel", scroll_rows, scroll_open);
+    let scroll_res = draw_ps_card(
+        ui,
+        scroll_wheel_card,
+        160.0,
+        72.0,
+        "Scroll wheel",
+        scroll_rows,
+        scroll_open,
+    );
     let scroll_card_hovered = scroll_res.hovered();
     if scroll_res.clicked() {
-        ui.ctx().data_mut(|d| d.insert_temp(scroll_popup_id, !scroll_open));
-        ui.ctx().data_mut(|d| d.insert_temp(thumb_popup_id,  false));
-        ui.ctx().data_mut(|d| d.insert_temp(ptr_popup_id,    false));
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(scroll_popup_id, !scroll_open));
+        ui.ctx().data_mut(|d| d.insert_temp(thumb_popup_id, false));
+        ui.ctx().data_mut(|d| d.insert_temp(ptr_popup_id, false));
     }
 
     // ── Card 2: Thumb wheel ──────────────────────────────────────────────────
-    let thumb_dir_str   = if invert_h { "Scroll direction: Inverted" } else { "Scroll direction: Default" };
+    let thumb_dir_str = if invert_h {
+        "Scroll direction: Inverted"
+    } else {
+        "Scroll direction: Default"
+    };
     let thumb_speed_str = format!("Speed: {}%", thumb_speed_pct);
-    let thumb_rows      = &[thumb_speed_str.as_str(), thumb_dir_str];
+    let thumb_rows = &[thumb_speed_str.as_str(), thumb_dir_str];
     let thumb_card_rect = Rect::from_center_size(thumb_wheel_card, vec2(160.0, 58.0));
-    let thumb_res = draw_ps_card(ui, thumb_wheel_card, 160.0, 58.0, "Thumb wheel", thumb_rows, thumb_open);
+    let thumb_res = draw_ps_card(
+        ui,
+        thumb_wheel_card,
+        160.0,
+        58.0,
+        "Thumb wheel",
+        thumb_rows,
+        thumb_open,
+    );
     let thumb_card_hovered = thumb_res.hovered();
     if thumb_res.clicked() {
-        ui.ctx().data_mut(|d| d.insert_temp(thumb_popup_id,  !thumb_open));
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(thumb_popup_id, !thumb_open));
         ui.ctx().data_mut(|d| d.insert_temp(scroll_popup_id, false));
-        ui.ctx().data_mut(|d| d.insert_temp(ptr_popup_id,    false));
+        ui.ctx().data_mut(|d| d.insert_temp(ptr_popup_id, false));
     }
 
     // ── Card 3: Pointer speed ────────────────────────────────────────────────
     let pointer_speed_str = format!("Speed: {}%", pointer_speed_pct);
-    let pointer_rows      = &[pointer_speed_str.as_str()];
+    let pointer_rows = &[pointer_speed_str.as_str()];
     let pointer_card_rect = Rect::from_center_size(pointer_card, vec2(145.0, 44.0));
-    let pointer_res = draw_ps_card(ui, pointer_card, 145.0, 44.0, "Pointer speed", pointer_rows, ptr_open);
+    let pointer_res = draw_ps_card(
+        ui,
+        pointer_card,
+        145.0,
+        44.0,
+        "Pointer speed",
+        pointer_rows,
+        ptr_open,
+    );
     let pointer_card_hovered = pointer_res.hovered();
     if pointer_res.clicked() {
-        ui.ctx().data_mut(|d| d.insert_temp(ptr_popup_id,    !ptr_open));
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(ptr_popup_id, !ptr_open));
         ui.ctx().data_mut(|d| d.insert_temp(scroll_popup_id, false));
-        ui.ctx().data_mut(|d| d.insert_temp(thumb_popup_id,  false));
+        ui.ctx().data_mut(|d| d.insert_temp(thumb_popup_id, false));
     }
 
     // ── Animated accent dots ─────────────────────────────────────────────────
     for (dot_pos, is_active, id_str) in &[
-        (scroll_wheel_dot, scroll_card_hovered || scroll_open, "scroll_dot"),
-        (thumb_wheel_dot,  thumb_card_hovered  || thumb_open,  "thumb_dot"),
-        (pointer_dot,      pointer_card_hovered || ptr_open,   "pointer_dot"),
+        (
+            scroll_wheel_dot,
+            scroll_card_hovered || scroll_open,
+            "scroll_dot",
+        ),
+        (
+            thumb_wheel_dot,
+            thumb_card_hovered || thumb_open,
+            "thumb_dot",
+        ),
+        (pointer_dot, pointer_card_hovered || ptr_open, "pointer_dot"),
     ] {
-        let t = ui.ctx().animate_bool(ui.id().with(id_str).with("dot_glow"), *is_active);
-        let dot_color = theme::lerp_color(theme::accent_dim_color(ui.ctx()), theme::accent_color(ui.ctx()), t);
+        let t = ui
+            .ctx()
+            .animate_bool(ui.id().with(id_str).with("dot_glow"), *is_active);
+        let dot_color = theme::lerp_color(
+            theme::accent_dim_color(ui.ctx()),
+            theme::accent_color(ui.ctx()),
+            t,
+        );
         ui.painter().circle_filled(*dot_pos, 5.0, dot_color);
         if *is_active {
-            ui.painter().circle_stroke(*dot_pos, 14.0, Stroke::new(2.0, theme::accent_color(ui.ctx())));
+            ui.painter().circle_stroke(
+                *dot_pos,
+                14.0,
+                Stroke::new(2.0, theme::accent_color(ui.ctx())),
+            );
         }
     }
 
@@ -123,11 +191,19 @@ pub fn show_point_scroll_tab(
         let popup_h = if smart_shift { 400.0_f32 } else { 340.0_f32 };
         let popup_rect = compute_popup_rect(scroll_card_rect, 240.0, popup_h, rect, center);
         let (close, dirty, new_invert_v, new_smart_shift, new_mode, new_ss_thresh) =
-            draw_scroll_wheel_popup(ui, popup_rect, scroll_card_rect, invert_v, smart_shift, &smart_shift_mode, ss_threshold);
+            draw_scroll_wheel_popup(
+                ui,
+                popup_rect,
+                scroll_card_rect,
+                invert_v,
+                smart_shift,
+                &smart_shift_mode,
+                ss_threshold,
+            );
         if dirty {
-            config.settings.invert_vscroll        = new_invert_v;
-            config.settings.smart_shift_enabled   = new_smart_shift;
-            config.settings.smart_shift_mode      = new_mode;
+            config.settings.invert_vscroll = new_invert_v;
+            config.settings.smart_shift_enabled = new_smart_shift;
+            config.settings.smart_shift_mode = new_mode;
             config.settings.smart_shift_threshold = new_ss_thresh;
             settings_dirty = true;
         }
@@ -188,7 +264,13 @@ pub fn show_point_scroll_tab(
 
 // ── Popup rect helper ────────────────────────────────────────────────────────
 
-fn compute_popup_rect(card_rect: Rect, popup_w: f32, popup_h: f32, canvas: Rect, center: egui::Pos2) -> Rect {
+fn compute_popup_rect(
+    card_rect: Rect,
+    popup_w: f32,
+    popup_h: f32,
+    canvas: Rect,
+    center: egui::Pos2,
+) -> Rect {
     let mut r = if card_rect.center().x > center.x {
         // card is on right → popup to the left
         Rect::from_min_size(
@@ -203,10 +285,18 @@ fn compute_popup_rect(card_rect: Rect, popup_w: f32, popup_h: f32, canvas: Rect,
         )
     };
     // Clamp inside canvas
-    if r.min.x < canvas.min.x + 10.0 { r = r.translate(vec2(canvas.min.x + 10.0 - r.min.x, 0.0)); }
-    if r.max.x > canvas.max.x - 10.0 { r = r.translate(vec2((canvas.max.x - 10.0) - r.max.x, 0.0)); }
-    if r.min.y < canvas.min.y + 10.0 { r = r.translate(vec2(0.0, canvas.min.y + 10.0 - r.min.y)); }
-    if r.max.y > canvas.max.y - 10.0 { r = r.translate(vec2(0.0, (canvas.max.y - 10.0) - r.max.y)); }
+    if r.min.x < canvas.min.x + 10.0 {
+        r = r.translate(vec2(canvas.min.x + 10.0 - r.min.x, 0.0));
+    }
+    if r.max.x > canvas.max.x - 10.0 {
+        r = r.translate(vec2((canvas.max.x - 10.0) - r.max.x, 0.0));
+    }
+    if r.min.y < canvas.min.y + 10.0 {
+        r = r.translate(vec2(0.0, canvas.min.y + 10.0 - r.min.y));
+    }
+    if r.max.y > canvas.max.y - 10.0 {
+        r = r.translate(vec2(0.0, (canvas.max.y - 10.0) - r.max.y));
+    }
     r
 }
 
@@ -223,8 +313,10 @@ fn draw_popup_shell(ui: &mut egui::Ui, rect: Rect, card_rect: Rect) -> bool {
         3.0,
         Color32::from_rgba_unmultiplied(0, 0, 0, 80),
     );
-    ui.painter().rect_filled(rect, 2.0, theme::surface_color(ui.ctx()));
-    ui.painter().rect_stroke(rect, 2.0, Stroke::new(1.0, theme::border_color(ui.ctx())));
+    ui.painter()
+        .rect_filled(rect, 2.0, theme::surface_color(ui.ctx()));
+    ui.painter()
+        .rect_stroke(rect, 2.0, Stroke::new(1.0, theme::border_color(ui.ctx())));
     theme::draw_tech_corners(ui.painter(), rect, theme::accent_color(ui.ctx()), 6.0);
 
     ui.input(|i| i.pointer.any_click())
@@ -287,20 +379,25 @@ fn draw_description(ui: &mut egui::Ui, text: &str) {
 
 /// Radio bullet item — returns true if clicked.
 fn draw_ps_radio_item(ui: &mut egui::Ui, label: &str, is_selected: bool) -> bool {
-    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 26.0), egui::Sense::click());
+    let (rect, response) =
+        ui.allocate_exact_size(vec2(ui.available_width(), 26.0), egui::Sense::click());
     let is_hovered = response.hovered();
 
     if is_hovered {
         ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
-        ui.painter().rect_filled(rect, 0.0, theme::hover_color(ui.ctx()));
+        ui.painter()
+            .rect_filled(rect, 0.0, theme::hover_color(ui.ctx()));
     }
 
     let bullet = pos2(rect.min.x + 14.0, rect.center().y);
     if is_selected {
-        ui.painter().circle_filled(bullet, 6.0, theme::accent_color(ui.ctx()));
-        ui.painter().circle_filled(bullet, 2.0, theme::surface_color(ui.ctx()));
+        ui.painter()
+            .circle_filled(bullet, 6.0, theme::accent_color(ui.ctx()));
+        ui.painter()
+            .circle_filled(bullet, 2.0, theme::surface_color(ui.ctx()));
     } else {
-        ui.painter().circle_filled(bullet, 6.0, Color32::from_gray(60));
+        ui.painter()
+            .circle_filled(bullet, 6.0, Color32::from_gray(60));
     }
 
     let text_color = if is_selected {
@@ -313,31 +410,45 @@ fn draw_ps_radio_item(ui: &mut egui::Ui, label: &str, is_selected: bool) -> bool
 
     let galley = ui.fonts(|f| {
         f.layout_job(egui::text::LayoutJob::simple_singleline(
-            label.to_string(), egui::FontId::proportional(11.0), text_color,
+            label.to_string(),
+            egui::FontId::proportional(11.0),
+            text_color,
         ))
     });
-    ui.painter().galley(pos2(rect.min.x + 28.0, rect.center().y - galley.size().y / 2.0), galley, text_color);
+    ui.painter().galley(
+        pos2(rect.min.x + 28.0, rect.center().y - galley.size().y / 2.0),
+        galley,
+        text_color,
+    );
 
     response.clicked()
 }
 
 /// Toggle row (label + animated pill) — returns true if clicked.
 fn draw_ps_toggle_row(ui: &mut egui::Ui, label: &str, is_on: bool) -> bool {
-    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), egui::Sense::click());
+    let (rect, response) =
+        ui.allocate_exact_size(vec2(ui.available_width(), 28.0), egui::Sense::click());
     let is_hovered = response.hovered();
 
     if is_hovered {
         ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
-        ui.painter().rect_filled(rect, 0.0, theme::hover_color(ui.ctx()));
+        ui.painter()
+            .rect_filled(rect, 0.0, theme::hover_color(ui.ctx()));
     }
 
     let text_color = theme::primary_text(ui.ctx());
     let galley = ui.fonts(|f| {
         f.layout_job(egui::text::LayoutJob::simple_singleline(
-            label.to_string(), egui::FontId::proportional(12.0), text_color,
+            label.to_string(),
+            egui::FontId::proportional(12.0),
+            text_color,
         ))
     });
-    ui.painter().galley(pos2(rect.min.x + 12.0, rect.center().y - galley.size().y / 2.0), galley, text_color);
+    ui.painter().galley(
+        pos2(rect.min.x + 12.0, rect.center().y - galley.size().y / 2.0),
+        galley,
+        text_color,
+    );
 
     // Animated pill
     let pill_w = 32.0;
@@ -347,9 +458,17 @@ fn draw_ps_toggle_row(ui: &mut egui::Ui, label: &str, is_on: bool) -> bool {
         vec2(pill_w, pill_h),
     );
     let t = ui.ctx().animate_bool(response.id.with("toggle"), is_on);
-    ui.painter().rect_filled(pill_rect, pill_h / 2.0, theme::lerp_color(Color32::from_gray(50), theme::accent_color(ui.ctx()), t));
+    ui.painter().rect_filled(
+        pill_rect,
+        pill_h / 2.0,
+        theme::lerp_color(Color32::from_gray(50), theme::accent_color(ui.ctx()), t),
+    );
     let knob_x = pill_rect.min.x + pill_h / 2.0 + t * (pill_w - pill_h);
-    ui.painter().circle_filled(pos2(knob_x, pill_rect.center().y), (pill_h / 2.0) - 2.0, Color32::WHITE);
+    ui.painter().circle_filled(
+        pos2(knob_x, pill_rect.center().y),
+        (pill_h / 2.0) - 2.0,
+        Color32::WHITE,
+    );
 
     response.clicked()
 }
@@ -388,9 +507,9 @@ fn draw_ps_slider(
     });
     ui.add_space(6.0);
 
-    let slider_h  = 4.0;
-    let thumb_r   = 8.0;
-    let margin    = 12.0 + thumb_r;
+    let slider_h = 4.0;
+    let thumb_r = 8.0;
+    let margin = 12.0 + thumb_r;
 
     // Allocate the full slider row as clickable+draggable immediately
     let (track_rect, response) = ui.allocate_exact_size(
@@ -400,26 +519,36 @@ fn draw_ps_slider(
 
     let full_range = *range.end() - *range.start();
     let track_start_x = track_rect.min.x + margin;
-    let track_end_x   = track_rect.max.x - margin;
-    let track_w       = track_end_x - track_start_x;
-    let cy            = track_rect.center().y;
+    let track_end_x = track_rect.max.x - margin;
+    let track_w = track_end_x - track_start_x;
+    let cy = track_rect.center().y;
 
     let t = ((display_value - *range.start()) / full_range).clamp(0.0, 1.0);
     let thumb_x = track_start_x + t * track_w;
 
     // Background track
     ui.painter().rect_filled(
-        Rect::from_min_max(pos2(track_start_x, cy - slider_h / 2.0), pos2(track_end_x, cy + slider_h / 2.0)),
-        slider_h / 2.0, Color32::from_gray(50),
+        Rect::from_min_max(
+            pos2(track_start_x, cy - slider_h / 2.0),
+            pos2(track_end_x, cy + slider_h / 2.0),
+        ),
+        slider_h / 2.0,
+        Color32::from_gray(50),
     );
     // Filled portion
     ui.painter().rect_filled(
-        Rect::from_min_max(pos2(track_start_x, cy - slider_h / 2.0), pos2(thumb_x, cy + slider_h / 2.0)),
-        slider_h / 2.0, accent,
+        Rect::from_min_max(
+            pos2(track_start_x, cy - slider_h / 2.0),
+            pos2(thumb_x, cy + slider_h / 2.0),
+        ),
+        slider_h / 2.0,
+        accent,
     );
     // Thumb
-    ui.painter().circle_filled(pos2(thumb_x, cy), thumb_r, accent);
-    ui.painter().circle_filled(pos2(thumb_x, cy), thumb_r - 3.0, Color32::from_gray(15));
+    ui.painter()
+        .circle_filled(pos2(thumb_x, cy), thumb_r, accent);
+    ui.painter()
+        .circle_filled(pos2(thumb_x, cy), thumb_r - 3.0, Color32::from_gray(15));
 
     // Show cursor when hovering
     if response.hovered() || response.dragged() {
@@ -463,10 +592,10 @@ fn draw_scroll_wheel_popup(
 ) -> (bool, bool, bool, bool, String, i32) {
     let should_close = draw_popup_shell(ui, popup_rect, card_rect);
 
-    let mut new_invert_v    = invert_v;
+    let mut new_invert_v = invert_v;
     let mut new_smart_shift = smart_shift;
-    let mut new_mode        = smart_shift_mode.to_string();
-    let mut new_ss_thresh   = ss_threshold;
+    let mut new_mode = smart_shift_mode.to_string();
+    let mut new_ss_thresh = ss_threshold;
     let mut dirty = false;
 
     let mut child = ui.new_child(
@@ -534,7 +663,14 @@ fn draw_scroll_wheel_popup(
             ui.add_space(8.0);
         });
 
-    (should_close, dirty, new_invert_v, new_smart_shift, new_mode, new_ss_thresh)
+    (
+        should_close,
+        dirty,
+        new_invert_v,
+        new_smart_shift,
+        new_mode,
+        new_ss_thresh,
+    )
 }
 
 // ── Thumb Wheel Popup ────────────────────────────────────────────────────────
@@ -549,7 +685,7 @@ fn draw_thumb_wheel_popup(
 ) -> (bool, bool, Option<f32>, Option<bool>) {
     let should_close = draw_popup_shell(ui, popup_rect, card_rect);
 
-    let mut new_speed: Option<f32>  = None;
+    let mut new_speed: Option<f32> = None;
     let mut new_invert: Option<bool> = None;
     let mut dirty = false;
 
@@ -566,7 +702,9 @@ fn draw_thumb_wheel_popup(
             ui.add_space(4.0);
 
             // — Speed slider —
-            if let Some(val) = draw_ps_slider(ui, "Thumb wheel speed", speed_pct as f32, 10.0..=100.0) {
+            if let Some(val) =
+                draw_ps_slider(ui, "Thumb wheel speed", speed_pct as f32, 10.0..=100.0)
+            {
                 new_speed = Some(val);
                 dirty = true;
             }
@@ -649,7 +787,11 @@ fn draw_ps_card(
         ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
     }
 
-    let bg = if is_active || is_hovered { Color32::from_rgb(0x24, 0x24, 0x24) } else { Color32::from_rgb(0x16, 0x16, 0x16) };
+    let bg = if is_active || is_hovered {
+        Color32::from_rgb(0x24, 0x24, 0x24)
+    } else {
+        Color32::from_rgb(0x16, 0x16, 0x16)
+    };
     let border = if is_active {
         theme::accent_color(ui.ctx())
     } else if is_hovered {
@@ -659,24 +801,52 @@ fn draw_ps_card(
     };
 
     ui.painter().rect_filled(rect, 2.0, bg);
-    ui.painter().rect_stroke(rect, 2.0, Stroke::new(1.0, border));
+    ui.painter()
+        .rect_stroke(rect, 2.0, Stroke::new(1.0, border));
 
     let sel_t = ui.ctx().animate_bool(response.id, is_active);
     let hov_t = ui.ctx().animate_bool(response.id.with("hov"), is_hovered);
-    theme::draw_tech_corners(ui.painter(), rect, theme::lerp_color(Color32::TRANSPARENT, theme::accent_color(ui.ctx()), sel_t.max(hov_t)), 4.0);
+    theme::draw_tech_corners(
+        ui.painter(),
+        rect,
+        theme::lerp_color(
+            Color32::TRANSPARENT,
+            theme::accent_color(ui.ctx()),
+            sel_t.max(hov_t),
+        ),
+        4.0,
+    );
 
     let left_x = rect.left() + 10.0;
-    let mut y  = rect.top() + 7.0;
+    let mut y = rect.top() + 7.0;
 
-    let title_color = if is_active { theme::accent_color(ui.ctx()) } else { theme::primary_text(ui.ctx()) };
-    let title_galley = ui.fonts(|f| f.layout_job(egui::text::LayoutJob::simple_singleline(title.to_string(), egui::FontId::proportional(10.5), title_color)));
-    ui.painter().galley(pos2(left_x, y), title_galley, title_color);
+    let title_color = if is_active {
+        theme::accent_color(ui.ctx())
+    } else {
+        theme::primary_text(ui.ctx())
+    };
+    let title_galley = ui.fonts(|f| {
+        f.layout_job(egui::text::LayoutJob::simple_singleline(
+            title.to_string(),
+            egui::FontId::proportional(10.5),
+            title_color,
+        ))
+    });
+    ui.painter()
+        .galley(pos2(left_x, y), title_galley, title_color);
     y += 14.0;
 
     for &row in rows {
         let sub_color = theme::muted_text(ui.ctx());
-        let galley = ui.fonts(|f| f.layout_job(egui::text::LayoutJob::simple_singleline(row.to_string(), egui::FontId::proportional(9.0), sub_color)));
-        ui.painter().galley(pos2(left_x, y + 1.0), galley, sub_color);
+        let galley = ui.fonts(|f| {
+            f.layout_job(egui::text::LayoutJob::simple_singleline(
+                row.to_string(),
+                egui::FontId::proportional(9.0),
+                sub_color,
+            ))
+        });
+        ui.painter()
+            .galley(pos2(left_x, y + 1.0), galley, sub_color);
         y += 14.0;
     }
 

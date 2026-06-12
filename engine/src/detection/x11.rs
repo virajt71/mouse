@@ -1,16 +1,16 @@
 use x11rb::connection::Connection;
-use x11rb::protocol::xproto::{AtomEnum, ConnectionExt};
 use x11rb::errors::ReplyError;
+use x11rb::protocol::xproto::{AtomEnum, ConnectionExt};
 
-pub fn get_pid_via_active_window(conn: &impl Connection, root: u32) -> Result<Option<u32>, ReplyError> {
+pub fn get_pid_via_active_window(
+    conn: &impl Connection,
+    root: u32,
+) -> Result<Option<u32>, ReplyError> {
     let active_window_atom = conn
         .intern_atom(false, b"_NET_ACTIVE_WINDOW")?
         .reply()?
         .atom;
-    let pid_atom = conn
-        .intern_atom(false, b"_NET_WM_PID")?
-        .reply()?
-        .atom;
+    let pid_atom = conn.intern_atom(false, b"_NET_WM_PID")?.reply()?.atom;
 
     let resp = conn
         .get_property(false, root, active_window_atom, AtomEnum::WINDOW, 0, 1)?
@@ -40,15 +40,15 @@ pub fn get_pid_via_active_window(conn: &impl Connection, root: u32) -> Result<Op
     Ok(pid)
 }
 
-pub fn get_pid_via_stacking_list(conn: &impl Connection, root: u32) -> Result<Option<u32>, ReplyError> {
+pub fn get_pid_via_stacking_list(
+    conn: &impl Connection,
+    root: u32,
+) -> Result<Option<u32>, ReplyError> {
     let stacking_atom = conn
         .intern_atom(false, b"_NET_CLIENT_LIST_STACKING")?
         .reply()?
         .atom;
-    let pid_atom = conn
-        .intern_atom(false, b"_NET_WM_PID")?
-        .reply()?
-        .atom;
+    let pid_atom = conn.intern_atom(false, b"_NET_WM_PID")?.reply()?.atom;
 
     let resp = conn
         .get_property(false, root, stacking_atom, AtomEnum::WINDOW, 0, 1024)?

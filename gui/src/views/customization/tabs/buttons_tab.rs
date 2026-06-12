@@ -1,17 +1,17 @@
-use eframe::egui;
-use egui::{pos2, vec2, Color32, Rect, Stroke};
-use mouser_engine::Engine;
-use mouser_engine::config::Config;
 use crate::theme;
 use crate::views::customization::mappings::{
-    CustomizingButton, get_button_keys, mapping_to_action, get_button_option,
-    UniversalButtonOption, save_button_option,
+    get_button_keys, get_button_option, mapping_to_action, save_button_option, CustomizingButton,
+    UniversalButtonOption,
 };
 use crate::views::customization::popups::{
-    PopupView, draw_gesture_config_ui, draw_record_shortcut_ui,
-    draw_thumbwheel_action_popup, draw_button_action_popup,
-    save_thumbwheel_option, ThumbwheelOption, get_thumbwheel_option,
+    draw_button_action_popup, draw_gesture_config_ui, draw_record_shortcut_ui,
+    draw_thumbwheel_action_popup, get_thumbwheel_option, save_thumbwheel_option, PopupView,
+    ThumbwheelOption,
 };
+use eframe::egui;
+use egui::{pos2, vec2, Color32, Rect, Stroke};
+use mouser_engine::config::Config;
+use mouser_engine::Engine;
 
 pub fn show_buttons_tab(
     ui: &mut egui::Ui,
@@ -32,9 +32,9 @@ pub fn show_buttons_tab(
     );
 
     // 2. Fetch active mappings
-    let profile = config.get_profile(&config.active_app_profile).unwrap_or_else(|| {
-        config.get_profile("global").unwrap()
-    });
+    let profile = config
+        .get_profile(&config.active_app_profile)
+        .unwrap_or_else(|| config.get_profile("global").unwrap());
 
     let middle_val = mapping_to_action(CustomizingButton::Middle, &profile.mappings);
     let top_val = mapping_to_action(CustomizingButton::Top, &profile.mappings);
@@ -128,24 +128,41 @@ pub fn show_buttons_tab(
             CustomizingButton::Back => "Back button",
             CustomizingButton::Thumbwheel => "Thumb wheel",
             CustomizingButton::Thumb => "Thumb button",
+            _ => "Key",
         };
 
         // Determine specific label
         let (base_key, _, _, _, _, _) = get_button_keys(btn);
-        let mapping_str = profile.mappings.get(base_key).map(|s| s.as_str()).unwrap_or("none");
+        let mapping_str = profile
+            .mappings
+            .get(base_key)
+            .map(|s| s.as_str())
+            .unwrap_or("none");
 
         let primary_label = if btn == CustomizingButton::Thumbwheel {
             let opt = get_thumbwheel_option(&profile.mappings);
             if opt == ThumbwheelOption::KeyboardShortcut {
-                let left_val = profile.mappings.get("hscroll_left").map(|s| s.as_str()).unwrap_or("none");
-                let right_val = profile.mappings.get("hscroll_right").map(|s| s.as_str()).unwrap_or("none");
+                let left_val = profile
+                    .mappings
+                    .get("hscroll_left")
+                    .map(|s| s.as_str())
+                    .unwrap_or("none");
+                let right_val = profile
+                    .mappings
+                    .get("hscroll_right")
+                    .map(|s| s.as_str())
+                    .unwrap_or("none");
                 let left_label = if left_val.starts_with("custom:") {
-                    std::borrow::Cow::Owned(left_val.strip_prefix("custom:").unwrap().to_uppercase())
+                    std::borrow::Cow::Owned(
+                        left_val.strip_prefix("custom:").unwrap().to_uppercase(),
+                    )
                 } else {
                     std::borrow::Cow::Borrowed("NONE")
                 };
                 let right_label = if right_val.starts_with("custom:") {
-                    std::borrow::Cow::Owned(right_val.strip_prefix("custom:").unwrap().to_uppercase())
+                    std::borrow::Cow::Owned(
+                        right_val.strip_prefix("custom:").unwrap().to_uppercase(),
+                    )
                 } else {
                     std::borrow::Cow::Borrowed("NONE")
                 };
@@ -157,7 +174,9 @@ pub fn show_buttons_tab(
             let opt = get_button_option(btn, &profile.mappings);
             if opt == UniversalButtonOption::KeyboardShortcut {
                 if mapping_str.starts_with("custom:") {
-                    std::borrow::Cow::Owned(mapping_str.strip_prefix("custom:").unwrap().to_uppercase())
+                    std::borrow::Cow::Owned(
+                        mapping_str.strip_prefix("custom:").unwrap().to_uppercase(),
+                    )
                 } else {
                     std::borrow::Cow::Borrowed("NONE")
                 }
@@ -214,19 +233,28 @@ pub fn show_buttons_tab(
         };
 
         let view_state_id = ui.id().with(format!("popup_view_for_{:?}", btn));
-        let current_view = ui.ctx().data(|d| d.get_temp::<PopupView>(view_state_id)).unwrap_or({
-            if is_gesture_active {
-                PopupView::GesturesConfig
-            } else {
-                PopupView::ActionList
-            }
-        });
+        let current_view = ui
+            .ctx()
+            .data(|d| d.get_temp::<PopupView>(view_state_id))
+            .unwrap_or({
+                if is_gesture_active {
+                    PopupView::GesturesConfig
+                } else {
+                    PopupView::ActionList
+                }
+            });
 
         let popup_w = match &current_view {
             PopupView::GesturesConfig => 240.0,
             PopupView::RecordShortcut { .. } => 200.0,
             PopupView::ActionList => {
-                if show_thumbwheel || show_thumb || show_forward || show_back || show_top || show_wheel {
+                if show_thumbwheel
+                    || show_thumb
+                    || show_forward
+                    || show_back
+                    || show_top
+                    || show_wheel
+                {
                     200.0
                 } else {
                     170.0
@@ -238,7 +266,13 @@ pub fn show_buttons_tab(
             PopupView::GesturesConfig => 370.0,
             PopupView::RecordShortcut { .. } => 300.0,
             PopupView::ActionList => {
-                if show_thumbwheel || show_thumb || show_forward || show_back || show_top || show_wheel {
+                if show_thumbwheel
+                    || show_thumb
+                    || show_forward
+                    || show_back
+                    || show_top
+                    || show_wheel
+                {
                     300.0
                 } else {
                     190.0
@@ -278,30 +312,29 @@ pub fn show_buttons_tab(
         }
 
         let clicked_away = match &current_view {
-            PopupView::GesturesConfig => {
-                draw_gesture_config_ui(
-                    ui,
-                    engine,
-                    config,
-                    btn,
-                    popup_rect,
-                    card_rect,
-                    customizing_button,
-                )
-            }
-            PopupView::RecordShortcut { target_key, display_label } => {
-                draw_record_shortcut_ui(
-                    ui,
-                    engine,
-                    config,
-                    btn,
-                    target_key.clone(),
-                    display_label.clone(),
-                    popup_rect,
-                    card_rect,
-                    customizing_button,
-                )
-            }
+            PopupView::GesturesConfig => draw_gesture_config_ui(
+                ui,
+                engine,
+                config,
+                btn,
+                popup_rect,
+                card_rect,
+                customizing_button,
+            ),
+            PopupView::RecordShortcut {
+                target_key,
+                display_label,
+            } => draw_record_shortcut_ui(
+                ui,
+                engine,
+                config,
+                btn,
+                target_key.clone(),
+                display_label.clone(),
+                popup_rect,
+                card_rect,
+                customizing_button,
+            ),
             PopupView::ActionList => {
                 if show_thumbwheel {
                     let mut selected_opt = None;
@@ -323,12 +356,16 @@ pub fn show_buttons_tab(
                             save_thumbwheel_option(opt, &mut mappings);
                             let engine_bg = engine.clone();
                             let profile_bg = config.active_app_profile.clone();
-                            std::thread::spawn(move || { engine_bg.update_profile_mappings(&profile_bg, mappings); });
+                            std::thread::spawn(move || {
+                                engine_bg.update_profile_mappings(&profile_bg, mappings);
+                            });
                         } else {
                             save_thumbwheel_option(opt, &mut mappings);
                             let engine_bg = engine.clone();
                             let profile_bg = config.active_app_profile.clone();
-                            std::thread::spawn(move || { engine_bg.update_profile_mappings(&profile_bg, mappings); });
+                            std::thread::spawn(move || {
+                                engine_bg.update_profile_mappings(&profile_bg, mappings);
+                            });
                             *customizing_button = None;
                         }
                     }
@@ -354,9 +391,13 @@ pub fn show_buttons_tab(
                             save_button_option(btn, opt, &mut mappings);
                             let engine_bg = engine.clone();
                             let profile_bg = config.active_app_profile.clone();
-                            std::thread::spawn(move || { engine_bg.update_profile_mappings(&profile_bg, mappings); });
+                            std::thread::spawn(move || {
+                                engine_bg.update_profile_mappings(&profile_bg, mappings);
+                            });
                             // Then show the gesture configuration panel
-                            ui.ctx().data_mut(|d| d.insert_temp(view_state_id, PopupView::GesturesConfig));
+                            ui.ctx().data_mut(|d| {
+                                d.insert_temp(view_state_id, PopupView::GesturesConfig)
+                            });
                         } else if opt == UniversalButtonOption::KeyboardShortcut {
                             let (click_key, _, _, _, _, _) = get_button_keys(btn);
                             let display_label = match btn {
@@ -367,15 +408,22 @@ pub fn show_buttons_tab(
                                 CustomizingButton::Middle => "Wheel Button",
                                 _ => "",
                             };
-                            ui.ctx().data_mut(|d| d.insert_temp(view_state_id, PopupView::RecordShortcut {
-                                target_key: click_key.to_string(),
-                                display_label: display_label.to_string(),
-                            }));
+                            ui.ctx().data_mut(|d| {
+                                d.insert_temp(
+                                    view_state_id,
+                                    PopupView::RecordShortcut {
+                                        target_key: click_key.to_string(),
+                                        display_label: display_label.to_string(),
+                                    },
+                                )
+                            });
                         } else {
                             save_button_option(btn, opt, &mut mappings);
                             let engine_bg = engine.clone();
                             let profile_bg = config.active_app_profile.clone();
-                            std::thread::spawn(move || { engine_bg.update_profile_mappings(&profile_bg, mappings); });
+                            std::thread::spawn(move || {
+                                engine_bg.update_profile_mappings(&profile_bg, mappings);
+                            });
                             *customizing_button = None;
                         }
                     }

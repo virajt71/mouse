@@ -1,9 +1,9 @@
 use super::gnome::get_active_app_pid_gnome_shell;
-use super::kde::get_pid_from_kdotool;
-use super::xdotool::get_pid_from_xdotool;
-use super::sway::get_active_app_pid_sway;
 use super::hyprland::get_active_app_pid_hyprland;
 use super::i3::get_active_app_pid_i3;
+use super::kde::get_pid_from_kdotool;
+use super::sway::get_active_app_pid_sway;
+use super::xdotool::get_pid_from_xdotool;
 
 pub fn get_active_app_pid_fallbacks(x11_queried: bool) -> Option<u32> {
     let desktop = std::env::var("XDG_CURRENT_DESKTOP")
@@ -13,14 +13,18 @@ pub fn get_active_app_pid_fallbacks(x11_queried: bool) -> Option<u32> {
         .unwrap_or_default()
         .to_lowercase();
 
-    let is_gnome     = desktop.contains("GNOME");
-    let is_kde       = desktop.contains("KDE");
-    let is_sway      = desktop.contains("SWAY");
-    let is_hyprland  = desktop.contains("HYPRLAND");
-    let is_i3        = desktop.contains("I3");
-    let has_display  = std::env::var("DISPLAY").map(|v| !v.is_empty()).unwrap_or(false);
-    let is_wayland   = session_type == "wayland"
-        || std::env::var("WAYLAND_DISPLAY").map(|v| !v.is_empty()).unwrap_or(false);
+    let is_gnome = desktop.contains("GNOME");
+    let is_kde = desktop.contains("KDE");
+    let is_sway = desktop.contains("SWAY");
+    let is_hyprland = desktop.contains("HYPRLAND");
+    let is_i3 = desktop.contains("I3");
+    let has_display = std::env::var("DISPLAY")
+        .map(|v| !v.is_empty())
+        .unwrap_or(false);
+    let is_wayland = session_type == "wayland"
+        || std::env::var("WAYLAND_DISPLAY")
+            .map(|v| !v.is_empty())
+            .unwrap_or(false);
 
     // 1. GNOME Shell D-Bus Eval (GNOME ≤44 Wayland native apps)
     if is_gnome && is_wayland {

@@ -1,6 +1,6 @@
+use super::HidppClient;
 use anyhow::{anyhow, Result};
 use std::time::{Duration, Instant};
-use super::HidppClient;
 
 pub const LOGI_VID: u16 = 0x046D;
 pub const SHORT_ID: u8 = 0x10;
@@ -17,7 +17,10 @@ pub const FEAT_CHANGE_HOST: u16 = 0x0018;
 
 impl HidppClient {
     pub fn tx(&self, feat: u8, func: u8, params: &[u8]) -> Result<()> {
-        let dev = self.device.as_ref().ok_or_else(|| anyhow!("Device closed"))?;
+        let dev = self
+            .device
+            .as_ref()
+            .ok_or_else(|| anyhow!("Device closed"))?;
         let mut buf = [0u8; LONG_LEN + 1];
         buf[1] = LONG_ID;
         buf[2] = self.dev_idx;
@@ -35,7 +38,10 @@ impl HidppClient {
     }
 
     pub fn rx(&self, timeout_ms: i32) -> Result<Option<Vec<u8>>> {
-        let dev = self.device.as_ref().ok_or_else(|| anyhow!("Device closed"))?;
+        let dev = self
+            .device
+            .as_ref()
+            .ok_or_else(|| anyhow!("Device closed"))?;
         let mut buf = [0u8; 64];
         let bytes_read = dev.read_timeout(&mut buf, timeout_ms)?;
         if bytes_read > 0 {
@@ -45,18 +51,30 @@ impl HidppClient {
         }
     }
 
-    pub fn request(&self, feat: u8, func: u8, params: &[u8], timeout_ms: u64) -> Result<Option<Vec<u8>>> {
+    pub fn request(
+        &self,
+        feat: u8,
+        func: u8,
+        params: &[u8],
+        timeout_ms: u64,
+    ) -> Result<Option<Vec<u8>>> {
         self.tx(feat, func, params)?;
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);
         let expected_func = ((func & 0x0F) << 4) | (MY_SW & 0x0F);
 
         while Instant::now() < deadline {
-            let timeout = deadline.saturating_duration_since(Instant::now()).as_millis() as i32;
+            let timeout = deadline
+                .saturating_duration_since(Instant::now())
+                .as_millis() as i32;
             if let Some(raw) = self.rx(timeout.min(100))? {
                 if raw.len() < 4 {
                     continue;
                 }
-                let off = if raw[0] == SHORT_ID || raw[0] == LONG_ID { 1 } else { 0 };
+                let off = if raw[0] == SHORT_ID || raw[0] == LONG_ID {
+                    1
+                } else {
+                    0
+                };
                 if off + 3 >= raw.len() {
                     continue;
                 }
