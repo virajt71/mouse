@@ -1,12 +1,12 @@
-use eframe::egui;
-use egui::{pos2, vec2, Color32, Rect, RichText, Stroke};
-use mouser_engine::Engine;
-use mouser_engine::config::Config;
+use super::PopupView;
 use crate::theme;
 use crate::views::customization::mappings::{
-    CustomizingButton, UniversalButtonOption, get_button_option,
+    get_button_option, CustomizingButton, UniversalButtonOption,
 };
-use super::PopupView;
+use eframe::egui;
+use egui::{pos2, vec2, Color32, Rect, RichText, Stroke};
+use mouser_engine::config::Config;
+use mouser_engine::Engine;
 
 #[allow(clippy::too_many_arguments)]
 pub fn draw_button_action_popup(
@@ -83,7 +83,16 @@ pub fn draw_button_action_popup(
             let recommended = btn.recommended_options();
 
             for &opt in recommended {
-                if draw_button_item(ui, btn, opt, current_opt, profile, customizing_button, selected_option, view_state_id) {
+                if draw_button_item(
+                    ui,
+                    btn,
+                    opt,
+                    current_opt,
+                    profile,
+                    customizing_button,
+                    selected_option,
+                    view_state_id,
+                ) {
                     click_occurred = true;
                 }
             }
@@ -105,7 +114,16 @@ pub fn draw_button_action_popup(
             let other = btn.other_options();
 
             for opt in other {
-                if draw_button_item(ui, btn, opt, current_opt, profile, customizing_button, selected_option, view_state_id) {
+                if draw_button_item(
+                    ui,
+                    btn,
+                    opt,
+                    current_opt,
+                    profile,
+                    customizing_button,
+                    selected_option,
+                    view_state_id,
+                ) {
                     click_occurred = true;
                 }
             }
@@ -130,19 +148,22 @@ fn draw_button_item(
     let is_selected = opt == current_opt;
     let item_h = 24.0;
 
-    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), item_h), egui::Sense::click());
+    let (rect, response) =
+        ui.allocate_exact_size(vec2(ui.available_width(), item_h), egui::Sense::click());
     let is_hovered = response.hovered();
 
     if is_hovered {
         ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
-        ui.painter().rect_filled(rect, 0.0, theme::hover_color(ui.ctx()));
+        ui.painter()
+            .rect_filled(rect, 0.0, theme::hover_color(ui.ctx()));
     }
 
     let bullet_center = pos2(rect.min.x + 14.0, rect.center().y);
     if is_selected {
         let accent = theme::accent_color(ui.ctx());
         ui.painter().circle_filled(bullet_center, 6.0, accent);
-        ui.painter().circle_filled(bullet_center, 2.0, theme::surface_color(ui.ctx()));
+        ui.painter()
+            .circle_filled(bullet_center, 2.0, theme::surface_color(ui.ctx()));
     } else {
         let bullet_color = Color32::from_gray(60);
         ui.painter().circle_filled(bullet_center, 6.0, bullet_color);
@@ -165,7 +186,8 @@ fn draw_button_item(
         ))
     });
     let text_y = rect.center().y - galley.size().y / 2.0;
-    ui.painter().galley(pos2(rect.min.x + 28.0, text_y), galley, text_color);
+    ui.painter()
+        .galley(pos2(rect.min.x + 28.0, text_y), galley, text_color);
 
     let mut clicked = false;
     if response.clicked() {
@@ -179,16 +201,18 @@ fn draw_button_item(
         ui.horizontal(|ui| {
             ui.add_space(28.0);
 
-            let val = profile.mappings.get(base_key).map(|s| s.as_str()).unwrap_or("none");
+            let val = profile
+                .mappings
+                .get(base_key)
+                .map(|s| s.as_str())
+                .unwrap_or("none");
             let keys_text = if val.starts_with("custom:") {
                 std::borrow::Cow::Owned(val.strip_prefix("custom:").unwrap().to_uppercase())
             } else {
                 std::borrow::Cow::Borrowed("Record Keystroke")
             };
 
-            let btn_rec = ui.add(egui::Button::new(
-                RichText::new(keys_text).size(10.0)
-            ));
+            let btn_rec = ui.add(egui::Button::new(RichText::new(keys_text).size(10.0)));
             if btn_rec.clicked() {
                 ui.ctx().memory_mut(|mem| mem.stop_text_input());
                 let display_label = match btn {
@@ -199,10 +223,15 @@ fn draw_button_item(
                     CustomizingButton::Middle => "Wheel Button",
                     _ => "",
                 };
-                ui.ctx().data_mut(|d| d.insert_temp(view_state_id, PopupView::RecordShortcut {
-                    target_key: base_key.to_string(),
-                    display_label: display_label.to_string(),
-                }));
+                ui.ctx().data_mut(|d| {
+                    d.insert_temp(
+                        view_state_id,
+                        PopupView::RecordShortcut {
+                            target_key: base_key.to_string(),
+                            display_label: display_label.to_string(),
+                        },
+                    )
+                });
                 clicked = true;
             }
         });

@@ -1,7 +1,7 @@
 use super::MouserApp;
-use eframe::egui;
 use crate::theme;
 use crate::views::ActiveView;
+use eframe::egui;
 
 impl eframe::App for MouserApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -46,15 +46,13 @@ impl eframe::App for MouserApp {
             self.paired_devices = update.paired_devices;
             self.battery_pct = update.battery_pct;
             self.has_active_hidpp_battery = Some(update.has_active_hidpp_battery);
-            self.device_batteries = update.device_batteries;
-            self.device_conn_types = update.device_conn_types;
 
             self.last_known_profile = update.active_profile.clone();
         }
 
         // Evaluate and lock/freeze connection type on device connect
         let is_device_connected = if !self.paired_devices.is_empty() {
-            self.paired_devices[0].2
+            self.paired_devices.iter().any(|(_, _, is_conn)| *is_conn)
         } else {
             self.has_active_hidpp_battery.unwrap_or(false)
         };
@@ -115,7 +113,7 @@ impl eframe::App for MouserApp {
         visual.panel_fill = bg;
         visual.window_fill = bg;
         visual.widgets.noninteractive.bg_fill = bg;
-        
+
         if ctx.style().visuals != visual {
             ctx.set_visuals(visual);
         }
@@ -164,15 +162,27 @@ impl eframe::App for MouserApp {
                                         for (mac, name, is_connected) in &display_devices {
                                             let layout_key = crate::app::get_layout_key_from_name(name);
                                             if let Some(device_tex) = self.get_or_load_device_texture(ctx, &layout_key) {
-                                                let battery_pct = self.device_batteries.get(mac).cloned().unwrap_or_else(|| {
-                                                    if *is_connected {
-                                                        "80".to_string()
-                                                    } else {
-                                                        "0".to_string()
-                                                    }
-                                                });
+                                                let battery_pct = if *is_connected {
+                                                    self.battery_pct.clone()
+                                                } else {
+                                                    "0".to_string()
+                                                };
 
-                                                let conn_type = self.device_conn_types.get(mac).map(|s| s.as_str()).unwrap_or("bluetooth");
+                                                let conn_type = if *is_connected {
+                                                    let is_bt = self.paired_devices.iter()
+                                                        .any(|(_, n, conn)| n == name && *conn);
+                                                    if is_bt {
+                                                        "bluetooth"
+                                                    } else if self.bolt_receiver_connected.unwrap_or(false) {
+                                                        "bolt"
+                                                    } else if self.unifying_receiver_connected.unwrap_or(false) {
+                                                        "unifying"
+                                                    } else {
+                                                        "bluetooth"
+                                                    }
+                                                } else {
+                                                    "bluetooth"
+                                                };
 
                                                 let action = crate::views::empty_state::show_known_device(
                                                     ui,
@@ -256,21 +266,36 @@ impl eframe::App for MouserApp {
                             };
 
                             if let Some(device_tex) = device_tex_opt {
-                                let dev_mac = self.paired_devices.iter()
-                                    .find(|(_, name, _)| name == &customizing_device_name)
-                                    .map(|(mac, _, _)| mac.clone())
-                                    .unwrap_or_default();
+                                let is_customizing_connected = if self.paired_devices.is_empty() && customizing_device_name == "MX Master 3" {
+                                    self.has_active_hidpp_battery.unwrap_or(false)
+                                } else {
+                                    self.paired_devices.iter()
+                                        .find(|(_, name, _)| name == &customizing_device_name)
+                                        .map(|(_, _, conn)| *conn)
+                                        .unwrap_or(false)
+                                };
 
-                                let dev_is_connected = self.paired_devices.iter()
-                                    .find(|(_, name, _)| name == &customizing_device_name)
-                                    .map(|(_, _, conn)| *conn)
-                                    .unwrap_or(false);
+                                let conn_type = if is_customizing_connected {
+                                    let is_bt = self.paired_devices.iter()
+                                        .any(|(_, name, conn)| name == &customizing_device_name && *conn);
+                                    if is_bt {
+                                        "bluetooth"
+                                    } else if self.bolt_receiver_connected.unwrap_or(false) {
+                                        "bolt"
+                                    } else if self.unifying_receiver_connected.unwrap_or(false) {
+                                        "unifying"
+                                    } else {
+                                        "bluetooth"
+                                    }
+                                } else {
+                                    "bluetooth"
+                                };
 
-                                let battery_pct = self.device_batteries.get(&dev_mac).cloned().unwrap_or_else(|| {
-                                    if dev_is_connected { "80".to_string() } else { "0".to_string() }
-                                });
-
-                                let conn_type = self.device_conn_types.get(&dev_mac).map(|s| s.as_str()).unwrap_or("bluetooth");
+                                let battery_pct = if is_customizing_connected {
+                                    self.battery_pct.clone()
+                                } else {
+                                    "0".to_string()
+                                };
 
                                 crate::views::customization::show(
                                     ui,
@@ -283,7 +308,7 @@ impl eframe::App for MouserApp {
                                     &mut self.customization_tab,
                                     conn_type,
                                     &battery_pct,
-                                    dev_is_connected,
+                                    is_customizing_connected,
                                     &customizing_device_name,
                                 );
                             } else {

@@ -1,5 +1,5 @@
-use std::time::{Duration, Instant};
 use super::Engine;
+use std::time::{Duration, Instant};
 
 impl Engine {
     pub fn handle_hscroll_event(&self, delta: i32, action_id: &str) {
@@ -17,9 +17,15 @@ impl Engine {
         };
 
         let (accum_ref, last_fire_ref) = if delta < 0 {
-            (&self.inner.hscroll_accum_right, &self.inner.hscroll_last_fire_right)
+            (
+                &self.inner.hscroll_accum_right,
+                &self.inner.hscroll_last_fire_right,
+            )
         } else {
-            (&self.inner.hscroll_accum_left, &self.inner.hscroll_last_fire_left)
+            (
+                &self.inner.hscroll_accum_left,
+                &self.inner.hscroll_last_fire_left,
+            )
         };
 
         {

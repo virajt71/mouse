@@ -3,23 +3,21 @@ pub mod popups;
 pub mod sidebar;
 pub mod tabs;
 
+use crate::widgets::draw_status_pill;
+use crate::{theme, ActiveView};
 use eframe::egui;
 use egui::{pos2, vec2, Color32, Rect, RichText, Stroke};
-use mouser_engine::Engine;
 use mouser_engine::config::Config;
-use crate::{ActiveView, theme};
-use crate::widgets::draw_status_pill;
+use mouser_engine::Engine;
 
-pub use sidebar::SidebarTab;
-use sidebar::draw_sidebar;
-use tabs::{show_buttons_tab, show_point_scroll_tab, show_flow_tab, show_profiles_settings_tab};
-use mappings::{CustomizingButton, get_button_keys, egui_key_to_string, is_valid_combo};
+use mappings::{egui_key_to_string, get_button_keys, is_valid_combo, CustomizingButton};
 pub use popups::{
-    draw_add_app_modal, RECORDING_TARGET, RECORDED_KEYS, RecordingTarget,
-    SHOW_ADD_APP_MODAL, APP_SEARCH_QUERY, FOCUS_REQUESTED,
-    SCANNED_APPS,
+    draw_add_app_modal, RecordingTarget, APP_SEARCH_QUERY, FOCUS_REQUESTED, RECORDED_KEYS,
+    RECORDING_TARGET, SCANNED_APPS, SHOW_ADD_APP_MODAL,
 };
-pub use tabs::profiles_tab::{NEW_PROFILE_NAME, APP_BINDINGS_BUFFER, SELECTED_EDIT_PROFILE, SELECTED_EDIT_GROUP, NEW_GROUP_NAME};
+use sidebar::draw_sidebar;
+pub use sidebar::SidebarTab;
+use tabs::{show_buttons_tab, show_flow_tab, show_point_scroll_tab, show_profiles_settings_tab};
 
 #[allow(clippy::too_many_arguments)]
 pub fn show(
@@ -27,23 +25,28 @@ pub fn show(
     ctx: &egui::Context,
     engine: &Engine,
     config: &mut Config,
-    mouse_texture: &egui::TextureHandle,
+    device_texture: &egui::TextureHandle,
     active_view: &mut ActiveView,
     customizing_button: &mut Option<CustomizingButton>,
     customization_tab: &mut SidebarTab,
     conn_type: &str,
     battery_pct: &str,
     is_connected: bool,
+    customizing_device_name: &str,
 ) {
     let rect = ui.max_rect();
     let bg = theme::app_bg(ctx);
+
+    let layout_key = crate::app::get_layout_key_from_name(customizing_device_name);
+    let is_keyboard = layout_key.contains("keys") || layout_key.contains("mechanical");
 
     // Fill background
     ui.painter().rect_filled(rect, 0.0, bg);
 
     // ── 1. Thin Window Title Bar (decorations) ───────────────────────────────
     let title_bar_height = 24.0;
-    let title_bar_rect = Rect::from_min_max(rect.min, pos2(rect.max.x, rect.min.y + title_bar_height));
+    let title_bar_rect =
+        Rect::from_min_max(rect.min, pos2(rect.max.x, rect.min.y + title_bar_height));
 
     let title_bar_bg = Color32::from_rgb(0x11, 0x11, 0x11);
     ui.painter().rect_filled(title_bar_rect, 0.0, title_bar_bg);
@@ -57,13 +60,16 @@ pub fn show(
     title_bar_ui.add_space(8.0);
 
     // Close button in thin title bar
-    let (close_rect, close_res) = title_bar_ui.allocate_exact_size(vec2(20.0, 20.0), egui::Sense::click());
+    let (close_rect, close_res) =
+        title_bar_ui.allocate_exact_size(vec2(20.0, 20.0), egui::Sense::click());
     let close_hover = if close_res.hovered() {
         Color32::from_rgba_unmultiplied(255, 0, 0, 40)
     } else {
         Color32::TRANSPARENT
     };
-    title_bar_ui.painter().rect_filled(close_rect, 2.0, close_hover);
+    title_bar_ui
+        .painter()
+        .rect_filled(close_rect, 2.0, close_hover);
     let cr_stroke = Stroke::new(1.0, Color32::from_rgb(0xaa, 0xaa, 0xaa));
     let ccx = close_rect.center().x;
     let ccy = close_rect.center().y;
@@ -82,7 +88,8 @@ pub fn show(
     title_bar_ui.add_space(4.0);
 
     // Minimize button in thin title bar
-    let (min_rect, min_res) = title_bar_ui.allocate_exact_size(vec2(20.0, 20.0), egui::Sense::click());
+    let (min_rect, min_res) =
+        title_bar_ui.allocate_exact_size(vec2(20.0, 20.0), egui::Sense::click());
     let min_hover = if min_res.hovered() {
         Color32::from_rgba_unmultiplied(255, 255, 255, 20)
     } else {
@@ -91,17 +98,19 @@ pub fn show(
     title_bar_ui.painter().rect_filled(min_rect, 2.0, min_hover);
     let mcx = min_rect.center().x;
     let mcy = min_rect.center().y;
-    title_bar_ui.painter().line_segment(
-        [pos2(mcx - 5.0, mcy), pos2(mcx + 5.0, mcy)],
-        cr_stroke,
-    );
+    title_bar_ui
+        .painter()
+        .line_segment([pos2(mcx - 5.0, mcy), pos2(mcx + 5.0, mcy)], cr_stroke);
     if min_res.clicked() {
         ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
     }
 
     // Drag behavior for title bar
     let is_title_button_hovered = close_res.hovered() || min_res.hovered();
-    if !is_title_button_hovered && ui.rect_contains_pointer(title_bar_rect) && ui.input(|i| i.pointer.primary_pressed()) {
+    if !is_title_button_hovered
+        && ui.rect_contains_pointer(title_bar_rect)
+        && ui.input(|i| i.pointer.primary_pressed())
+    {
         ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
     }
 
@@ -125,21 +134,30 @@ pub fn show(
     let mut back_clicked = false;
     header_ui.add_space(20.0);
 
-    let (back_rect, back_res) = header_ui.allocate_exact_size(vec2(32.0, 32.0), egui::Sense::click());
+    let (back_rect, back_res) =
+        header_ui.allocate_exact_size(vec2(32.0, 32.0), egui::Sense::click());
     let back_hover_color = if back_res.hovered() {
         header_ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
         Color32::from_rgba_unmultiplied(255, 255, 255, 20)
     } else {
         Color32::TRANSPARENT
     };
-    header_ui.painter().rect_filled(back_rect, 2.0, back_hover_color);
+    header_ui
+        .painter()
+        .rect_filled(back_rect, 2.0, back_hover_color);
 
     let arrow_stroke = Stroke::new(1.5, Color32::WHITE);
     let cx = back_rect.center().x;
     let cy = back_rect.center().y;
-    header_ui.painter().line_segment([pos2(cx - 7.0, cy), pos2(cx + 7.0, cy)], arrow_stroke);
-    header_ui.painter().line_segment([pos2(cx - 7.0, cy), pos2(cx - 2.0, cy - 5.0)], arrow_stroke);
-    header_ui.painter().line_segment([pos2(cx - 7.0, cy), pos2(cx - 2.0, cy + 5.0)], arrow_stroke);
+    header_ui
+        .painter()
+        .line_segment([pos2(cx - 7.0, cy), pos2(cx + 7.0, cy)], arrow_stroke);
+    header_ui
+        .painter()
+        .line_segment([pos2(cx - 7.0, cy), pos2(cx - 2.0, cy - 5.0)], arrow_stroke);
+    header_ui
+        .painter()
+        .line_segment([pos2(cx - 7.0, cy), pos2(cx - 2.0, cy + 5.0)], arrow_stroke);
 
     if back_res.clicked() {
         back_clicked = true;
@@ -148,7 +166,7 @@ pub fn show(
     header_ui.add_space(8.0);
 
     // Profile title in header
-    let profile_label = "MX Master 3";
+    let profile_label = customizing_device_name;
     header_ui.add(
         egui::Label::new(
             RichText::new(profile_label)
@@ -159,7 +177,12 @@ pub fn show(
         .selectable(false),
     );
 
-    let show_switcher = *customization_tab == SidebarTab::Buttons || *customization_tab == SidebarTab::PointAndScroll;
+    let show_switcher = if is_keyboard {
+        *customization_tab == SidebarTab::Buttons
+    } else {
+        *customization_tab == SidebarTab::Buttons
+            || *customization_tab == SidebarTab::PointAndScroll
+    };
 
     // Auto-close modal if we switch tabs away from Buttons or PointAndScroll
     if !show_switcher {
@@ -172,7 +195,8 @@ pub fn show(
             ui.add_space(20.0);
 
             // 3. Plus Icon
-            let (plus_rect, plus_res) = ui.allocate_exact_size(vec2(20.0, 20.0), egui::Sense::click());
+            let (plus_rect, plus_res) =
+                ui.allocate_exact_size(vec2(20.0, 20.0), egui::Sense::click());
             if plus_res.hovered() {
                 ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
             }
@@ -182,8 +206,14 @@ pub fn show(
                 Color32::WHITE
             };
             let pc = plus_rect.center();
-            ui.painter().line_segment([pos2(pc.x - 7.0, pc.y), pos2(pc.x + 7.0, pc.y)], Stroke::new(2.0, plus_color));
-            ui.painter().line_segment([pos2(pc.x, pc.y - 7.0), pos2(pc.x, pc.y + 7.0)], Stroke::new(2.0, plus_color));
+            ui.painter().line_segment(
+                [pos2(pc.x - 7.0, pc.y), pos2(pc.x + 7.0, pc.y)],
+                Stroke::new(2.0, plus_color),
+            );
+            ui.painter().line_segment(
+                [pos2(pc.x, pc.y - 7.0), pos2(pc.x, pc.y + 7.0)],
+                Stroke::new(2.0, plus_color),
+            );
 
             if plus_res.clicked() {
                 SHOW_ADD_APP_MODAL.with(|s| *s.borrow_mut() = true);
@@ -200,7 +230,9 @@ pub fn show(
             // Get custom profiles sorted alphabetically from active group
             let mut custom_profiles: Vec<String> = Vec::new();
             if let Some(group) = config.profile_groups.get(&config.active_group) {
-                custom_profiles = group.profiles.keys()
+                custom_profiles = group
+                    .profiles
+                    .keys()
                     .filter(|k| *k != "global")
                     .cloned()
                     .collect();
@@ -212,7 +244,8 @@ pub fn show(
                 let is_active = config.active_app_profile == *p_name;
                 let is_brave = p_name.to_lowercase().contains("brave");
 
-                let (p_rect, p_res) = ui.allocate_exact_size(vec2(23.0, 23.0), egui::Sense::click());
+                let (p_rect, p_res) =
+                    ui.allocate_exact_size(vec2(23.0, 23.0), egui::Sense::click());
                 if p_res.hovered() {
                     ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
                 }
@@ -221,7 +254,10 @@ pub fn show(
 
                 if is_active {
                     // Delete/Close button geometry
-                    let delete_rect = Rect::from_center_size(pos2(p_rect.max.x - 3.0, p_rect.min.y + 3.0), vec2(12.0, 12.0));
+                    let delete_rect = Rect::from_center_size(
+                        pos2(p_rect.max.x - 3.0, p_rect.min.y + 3.0),
+                        vec2(12.0, 12.0),
+                    );
                     let delete_id = ui.make_persistent_id(format!("del_prof_{}", p_name));
                     let delete_res = ui.interact(delete_rect, delete_id, egui::Sense::click());
 
@@ -253,20 +289,56 @@ pub fn show(
                         } else {
                             Color32::from_rgb(249, 115, 22)
                         };
-                        ui.painter().add(egui::Shape::convex_polygon(shield_pts, shield_fill, Stroke::NONE));
+                        ui.painter().add(egui::Shape::convex_polygon(
+                            shield_pts,
+                            shield_fill,
+                            Stroke::NONE,
+                        ));
 
                         let lion_stroke = Stroke::new(1.2, Color32::WHITE);
-                        ui.painter().line_segment([pos2(sc.x, sc.y - 2.0), pos2(sc.x, sc.y + 3.0)], lion_stroke);
-                        ui.painter().line_segment([pos2(sc.x - 2.0, sc.y + 3.0), pos2(sc.x + 2.0, sc.y + 3.0)], lion_stroke);
-                        ui.painter().line_segment([pos2(sc.x - 4.0, sc.y - 4.0), pos2(sc.x, sc.y - 2.0)], lion_stroke);
-                        ui.painter().line_segment([pos2(sc.x + 4.0, sc.y - 4.0), pos2(sc.x, sc.y - 2.0)], lion_stroke);
-                        ui.painter().line_segment([pos2(sc.x - 5.0, sc.y - 1.0), pos2(sc.x - 3.0, sc.y + 3.0)], lion_stroke);
-                        ui.painter().line_segment([pos2(sc.x + 5.0, sc.y - 1.0), pos2(sc.x + 3.0, sc.y + 3.0)], lion_stroke);
-                        ui.painter().line_segment([pos2(sc.x - 4.0, sc.y - 7.0), pos2(sc.x - 2.0, sc.y - 5.0)], lion_stroke);
-                        ui.painter().line_segment([pos2(sc.x + 4.0, sc.y - 7.0), pos2(sc.x + 2.0, sc.y - 5.0)], lion_stroke);
-                        ui.painter().line_segment([pos2(sc.x, sc.y - 7.0), pos2(sc.x, sc.y - 4.0)], lion_stroke);
+                        ui.painter().line_segment(
+                            [pos2(sc.x, sc.y - 2.0), pos2(sc.x, sc.y + 3.0)],
+                            lion_stroke,
+                        );
+                        ui.painter().line_segment(
+                            [pos2(sc.x - 2.0, sc.y + 3.0), pos2(sc.x + 2.0, sc.y + 3.0)],
+                            lion_stroke,
+                        );
+                        ui.painter().line_segment(
+                            [pos2(sc.x - 4.0, sc.y - 4.0), pos2(sc.x, sc.y - 2.0)],
+                            lion_stroke,
+                        );
+                        ui.painter().line_segment(
+                            [pos2(sc.x + 4.0, sc.y - 4.0), pos2(sc.x, sc.y - 2.0)],
+                            lion_stroke,
+                        );
+                        ui.painter().line_segment(
+                            [pos2(sc.x - 5.0, sc.y - 1.0), pos2(sc.x - 3.0, sc.y + 3.0)],
+                            lion_stroke,
+                        );
+                        ui.painter().line_segment(
+                            [pos2(sc.x + 5.0, sc.y - 1.0), pos2(sc.x + 3.0, sc.y + 3.0)],
+                            lion_stroke,
+                        );
+                        ui.painter().line_segment(
+                            [pos2(sc.x - 4.0, sc.y - 7.0), pos2(sc.x - 2.0, sc.y - 5.0)],
+                            lion_stroke,
+                        );
+                        ui.painter().line_segment(
+                            [pos2(sc.x + 4.0, sc.y - 7.0), pos2(sc.x + 2.0, sc.y - 5.0)],
+                            lion_stroke,
+                        );
+                        ui.painter().line_segment(
+                            [pos2(sc.x, sc.y - 7.0), pos2(sc.x, sc.y - 4.0)],
+                            lion_stroke,
+                        );
                     } else {
-                        let initial = p_name.chars().next().unwrap_or('?').to_uppercase().to_string();
+                        let initial = p_name
+                            .chars()
+                            .next()
+                            .unwrap_or('?')
+                            .to_uppercase()
+                            .to_string();
                         let circle_color = if is_active {
                             Color32::from_rgb(0x1a, 0x1a, 0x1a)
                         } else if p_res.hovered() {
@@ -282,7 +354,8 @@ pub fn show(
                             Color32::from_rgb(0x44, 0x44, 0x44)
                         };
 
-                        ui.painter().circle(pc, 11.5, circle_color, Stroke::new(1.0, border_color));
+                        ui.painter()
+                            .circle(pc, 11.5, circle_color, Stroke::new(1.0, border_color));
 
                         let text_color = if is_active {
                             Color32::from_rgb(0, 212, 200)
@@ -308,11 +381,18 @@ pub fn show(
                         Color32::from_rgb(63, 63, 70) // Gray
                     };
 
-                    ui.painter().circle_filled(delete_rect.center(), 5.0, del_circle_color);
+                    ui.painter()
+                        .circle_filled(delete_rect.center(), 5.0, del_circle_color);
                     let cross_stroke = Stroke::new(1.0, Color32::WHITE);
                     let dc = delete_rect.center();
-                    ui.painter().line_segment([pos2(dc.x - 2.0, dc.y - 2.0), pos2(dc.x + 2.0, dc.y + 2.0)], cross_stroke);
-                    ui.painter().line_segment([pos2(dc.x - 2.0, dc.y + 2.0), pos2(dc.x + 2.0, dc.y - 2.0)], cross_stroke);
+                    ui.painter().line_segment(
+                        [pos2(dc.x - 2.0, dc.y - 2.0), pos2(dc.x + 2.0, dc.y + 2.0)],
+                        cross_stroke,
+                    );
+                    ui.painter().line_segment(
+                        [pos2(dc.x - 2.0, dc.y + 2.0), pos2(dc.x + 2.0, dc.y - 2.0)],
+                        cross_stroke,
+                    );
 
                     let bar_y = pc.y + 11.5 + 4.0;
                     let bar_left = pc.x - 11.5;
@@ -341,20 +421,56 @@ pub fn show(
                         } else {
                             Color32::from_rgb(249, 115, 22)
                         };
-                        ui.painter().add(egui::Shape::convex_polygon(shield_pts, shield_fill, Stroke::NONE));
+                        ui.painter().add(egui::Shape::convex_polygon(
+                            shield_pts,
+                            shield_fill,
+                            Stroke::NONE,
+                        ));
 
                         let lion_stroke = Stroke::new(1.2, Color32::WHITE);
-                        ui.painter().line_segment([pos2(sc.x, sc.y - 2.0), pos2(sc.x, sc.y + 3.0)], lion_stroke);
-                        ui.painter().line_segment([pos2(sc.x - 2.0, sc.y + 3.0), pos2(sc.x + 2.0, sc.y + 3.0)], lion_stroke);
-                        ui.painter().line_segment([pos2(sc.x - 4.0, sc.y - 4.0), pos2(sc.x, sc.y - 2.0)], lion_stroke);
-                        ui.painter().line_segment([pos2(sc.x + 4.0, sc.y - 4.0), pos2(sc.x, sc.y - 2.0)], lion_stroke);
-                        ui.painter().line_segment([pos2(sc.x - 5.0, sc.y - 1.0), pos2(sc.x - 3.0, sc.y + 3.0)], lion_stroke);
-                        ui.painter().line_segment([pos2(sc.x + 5.0, sc.y - 1.0), pos2(sc.x + 3.0, sc.y + 3.0)], lion_stroke);
-                        ui.painter().line_segment([pos2(sc.x - 4.0, sc.y - 7.0), pos2(sc.x - 2.0, sc.y - 5.0)], lion_stroke);
-                        ui.painter().line_segment([pos2(sc.x + 4.0, sc.y - 7.0), pos2(sc.x + 2.0, sc.y - 5.0)], lion_stroke);
-                        ui.painter().line_segment([pos2(sc.x, sc.y - 7.0), pos2(sc.x, sc.y - 4.0)], lion_stroke);
+                        ui.painter().line_segment(
+                            [pos2(sc.x, sc.y - 2.0), pos2(sc.x, sc.y + 3.0)],
+                            lion_stroke,
+                        );
+                        ui.painter().line_segment(
+                            [pos2(sc.x - 2.0, sc.y + 3.0), pos2(sc.x + 2.0, sc.y + 3.0)],
+                            lion_stroke,
+                        );
+                        ui.painter().line_segment(
+                            [pos2(sc.x - 4.0, sc.y - 4.0), pos2(sc.x, sc.y - 2.0)],
+                            lion_stroke,
+                        );
+                        ui.painter().line_segment(
+                            [pos2(sc.x + 4.0, sc.y - 4.0), pos2(sc.x, sc.y - 2.0)],
+                            lion_stroke,
+                        );
+                        ui.painter().line_segment(
+                            [pos2(sc.x - 5.0, sc.y - 1.0), pos2(sc.x - 3.0, sc.y + 3.0)],
+                            lion_stroke,
+                        );
+                        ui.painter().line_segment(
+                            [pos2(sc.x + 5.0, sc.y - 1.0), pos2(sc.x + 3.0, sc.y + 3.0)],
+                            lion_stroke,
+                        );
+                        ui.painter().line_segment(
+                            [pos2(sc.x - 4.0, sc.y - 7.0), pos2(sc.x - 2.0, sc.y - 5.0)],
+                            lion_stroke,
+                        );
+                        ui.painter().line_segment(
+                            [pos2(sc.x + 4.0, sc.y - 7.0), pos2(sc.x + 2.0, sc.y - 5.0)],
+                            lion_stroke,
+                        );
+                        ui.painter().line_segment(
+                            [pos2(sc.x, sc.y - 7.0), pos2(sc.x, sc.y - 4.0)],
+                            lion_stroke,
+                        );
                     } else {
-                        let initial = p_name.chars().next().unwrap_or('?').to_uppercase().to_string();
+                        let initial = p_name
+                            .chars()
+                            .next()
+                            .unwrap_or('?')
+                            .to_uppercase()
+                            .to_string();
                         let circle_color = if p_res.hovered() {
                             Color32::from_rgb(0x2a, 0x2a, 0x2a)
                         } else {
@@ -366,7 +482,8 @@ pub fn show(
                             Color32::from_rgb(0x44, 0x44, 0x44)
                         };
 
-                        ui.painter().circle(pc, 11.5, circle_color, Stroke::new(1.0, border_color));
+                        ui.painter()
+                            .circle(pc, 11.5, circle_color, Stroke::new(1.0, border_color));
 
                         ui.painter().text(
                             pos2(pc.x, pc.y - 0.5),
@@ -388,7 +505,8 @@ pub fn show(
 
             // 1. 2x2 Grid Icon
             let is_default_active = config.active_app_profile == "global";
-            let (grid_rect, grid_res) = ui.allocate_exact_size(vec2(23.0, 23.0), egui::Sense::click());
+            let (grid_rect, grid_res) =
+                ui.allocate_exact_size(vec2(23.0, 23.0), egui::Sense::click());
             if grid_res.hovered() {
                 ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
             }
@@ -417,10 +535,22 @@ pub fn show(
                 painter.rect_filled(rect, r, grid_color);
             };
 
-            draw_sq(ui.painter(), pos2(gc.x - sq_half - gap / 2.0, gc.y - sq_half - gap / 2.0));
-            draw_sq(ui.painter(), pos2(gc.x + sq_half + gap / 2.0, gc.y - sq_half - gap / 2.0));
-            draw_sq(ui.painter(), pos2(gc.x - sq_half - gap / 2.0, gc.y + sq_half + gap / 2.0));
-            draw_sq(ui.painter(), pos2(gc.x + sq_half + gap / 2.0, gc.y + sq_half + gap / 2.0));
+            draw_sq(
+                ui.painter(),
+                pos2(gc.x - sq_half - gap / 2.0, gc.y - sq_half - gap / 2.0),
+            );
+            draw_sq(
+                ui.painter(),
+                pos2(gc.x + sq_half + gap / 2.0, gc.y - sq_half - gap / 2.0),
+            );
+            draw_sq(
+                ui.painter(),
+                pos2(gc.x - sq_half - gap / 2.0, gc.y + sq_half + gap / 2.0),
+            );
+            draw_sq(
+                ui.painter(),
+                pos2(gc.x + sq_half + gap / 2.0, gc.y + sq_half + gap / 2.0),
+            );
 
             // Active State: Underline
             if is_default_active {
@@ -448,32 +578,80 @@ pub fn show(
         pos2(rect.min.x + 240.0, rect.max.y),
     );
 
-    draw_sidebar(ui, sidebar_rect, customization_tab, customizing_button);
+
+
+    draw_sidebar(
+        ui,
+        sidebar_rect,
+        customization_tab,
+        customizing_button,
+        is_keyboard,
+    );
 
     // ── 4. Bottom-Left Status Pill ───────────────────────────────────────────
     let status_w = if is_connected { 85.0 } else { 110.0 };
     let status_rect = Rect::from_min_max(
         pos2(sidebar_rect.min.x + 20.0, sidebar_rect.max.y - 54.0),
-        pos2(sidebar_rect.min.x + 20.0 + status_w, sidebar_rect.max.y - 20.0),
+        pos2(
+            sidebar_rect.min.x + 20.0 + status_w,
+            sidebar_rect.max.y - 20.0,
+        ),
     );
-    draw_status_pill(ui, status_rect, is_connected, battery_pct, conn_type, &config.settings.language, true);
+    draw_status_pill(
+        ui,
+        status_rect,
+        is_connected,
+        battery_pct,
+        conn_type,
+        &config.settings.language,
+        true,
+    );
 
     // ── 5. Main Content Canvas ───────────────────────────────────────────────
     let canvas_rect = Rect::from_min_max(pos2(sidebar_rect.max.x, header_rect.max.y), rect.max);
     let mut canvas_ui = ui.new_child(egui::UiBuilder::new().max_rect(canvas_rect));
 
-    match *customization_tab {
-        SidebarTab::Buttons => {
-            show_buttons_tab(&mut canvas_ui, engine, config, mouse_texture, customizing_button);
+    if is_keyboard {
+        match *customization_tab {
+            SidebarTab::Buttons => {
+                tabs::show_keyboard_keys_tab(
+                    &mut canvas_ui,
+                    engine,
+                    config,
+                    device_texture,
+                    customizing_button,
+                );
+            }
+            SidebarTab::PointAndScroll => {
+                tabs::show_keyboard_backlighting_tab(&mut canvas_ui, engine, config, device_texture);
+            }
+            SidebarTab::Flow => {
+                tabs::show_keyboard_easy_switch_tab(&mut canvas_ui, engine, config);
+            }
+            SidebarTab::Settings => {
+                show_profiles_settings_tab(&mut canvas_ui, engine, config, true);
+            }
         }
-        SidebarTab::PointAndScroll => {
-            show_point_scroll_tab(&mut canvas_ui, engine, config, mouse_texture);
-        }
-        SidebarTab::Flow => {
-            show_flow_tab(&mut canvas_ui, engine, config);
-        }
-        SidebarTab::Settings => {
-            show_profiles_settings_tab(&mut canvas_ui, engine, config);
+    } else {
+        match *customization_tab {
+            SidebarTab::Buttons => {
+                show_buttons_tab(
+                    &mut canvas_ui,
+                    engine,
+                    config,
+                    device_texture,
+                    customizing_button,
+                );
+            }
+            SidebarTab::PointAndScroll => {
+                show_point_scroll_tab(&mut canvas_ui, engine, config, device_texture);
+            }
+            SidebarTab::Flow => {
+                show_flow_tab(&mut canvas_ui, engine, config);
+            }
+            SidebarTab::Settings => {
+                show_profiles_settings_tab(&mut canvas_ui, engine, config, false);
+            }
         }
     }
 

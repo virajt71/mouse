@@ -1,9 +1,9 @@
+pub mod actions;
+pub mod emit;
 pub mod key_map;
 pub mod mouse_map;
-pub mod emit;
-pub mod actions;
 
-pub use self::mouse_map::{is_mouse_button_action, get_mouse_button_key};
+pub use self::mouse_map::{get_mouse_button_key, is_mouse_button_action};
 
 use evdev::{
     uinput::{VirtualDevice, VirtualDeviceBuilder},
@@ -11,12 +11,12 @@ use evdev::{
 };
 use std::sync::{Arc, Mutex};
 
-use self::key_map::KEY_MAP;
 use self::mouse_map::MOUSE_BTN_MAP;
 
 #[derive(Clone)]
 pub struct KeySimulator {
     device: Arc<Mutex<Option<VirtualDevice>>>,
+    keyboard_layout: Arc<Mutex<String>>,
 }
 
 impl Default for KeySimulator {
@@ -29,11 +29,20 @@ impl KeySimulator {
     pub fn new() -> Self {
         KeySimulator {
             device: Arc::new(Mutex::new(None)),
+            keyboard_layout: Arc::new(Mutex::new("ANSI (US)".to_string())),
         }
     }
 
     pub fn device(&self) -> Arc<Mutex<Option<VirtualDevice>>> {
         self.device.clone()
+    }
+
+    pub fn set_keyboard_layout(&self, layout: &str) {
+        *self.keyboard_layout.lock().unwrap() = layout.to_string();
+    }
+
+    pub fn get_keyboard_layout(&self) -> String {
+        self.keyboard_layout.lock().unwrap().clone()
     }
 
     pub fn ensure_device(&self) {
@@ -45,8 +54,9 @@ impl KeySimulator {
 
     fn init_device(&self) -> Option<VirtualDevice> {
         let mut keys = AttributeSet::<Key>::new();
-        for &key in (*KEY_MAP).values() {
-            keys.insert(key);
+        // Insert all possible standard keys (1 to 248) and other codes up to 0x2ff
+        for code in 1..=0x2ff {
+            keys.insert(Key(code));
         }
         for &btn in (*MOUSE_BTN_MAP).values() {
             keys.insert(btn);

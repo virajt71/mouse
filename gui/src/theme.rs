@@ -338,13 +338,13 @@ pub fn create_bluetooth_tray_icon() -> Icon {
 
             let mut min_line_dist = f32::MAX;
             for &(ax, ay, bx, by) in &[
-                (15.5, 6.5, 15.5, 24.5), // vertical
+                (15.5, 6.5, 15.5, 24.5),  // vertical
                 (15.5, 15.5, 21.0, 11.0), // upper diag 1
                 (21.0, 11.0, 15.5, 6.5),  // upper diag 2
                 (15.5, 15.5, 21.0, 20.0), // lower diag 1
                 (21.0, 20.0, 15.5, 24.5), // lower diag 2
                 (15.5, 11.0, 10.0, 6.5),  // upper ear
-                (15.5, 20.0, 10.0, 24.5),  // lower ear
+                (15.5, 20.0, 10.0, 24.5), // lower ear
             ] {
                 min_line_dist = min_line_dist.min(line_dist(x as f32, y as f32, ax, ay, bx, by));
             }

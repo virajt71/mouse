@@ -1,5 +1,5 @@
-use eframe::egui;
 use crate::theme;
+use eframe::egui;
 
 pub fn draw_trash_icon(ui: &egui::Ui, center: egui::Pos2, color: egui::Color32) {
     let painter = ui.painter();

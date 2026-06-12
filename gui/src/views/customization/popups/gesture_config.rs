@@ -1,13 +1,13 @@
-use eframe::egui;
-use egui::{pos2, vec2, Color32, Rect, RichText, Stroke};
-use mouser_engine::Engine;
-use mouser_engine::config::Config;
+use super::{PopupView, RecordingTarget, RECORDING_TARGET};
 use crate::theme;
 use crate::views::customization::mappings::{
-    CustomizingButton, get_button_keys, GESTURE_PRESETS, SLOT_ACTIONS,
-    action_id_to_slot_display_name, resolve_generic_slot_action, get_generic_action_id,
+    action_id_to_slot_display_name, get_button_keys, get_generic_action_id,
+    resolve_generic_slot_action, CustomizingButton, GESTURE_PRESETS, SLOT_ACTIONS,
 };
-use super::{PopupView, RecordingTarget, RECORDING_TARGET};
+use eframe::egui;
+use egui::{pos2, vec2, Color32, Rect, RichText, Stroke};
+use mouser_engine::config::Config;
+use mouser_engine::Engine;
 
 pub fn draw_gesture_config_ui(
     ui: &mut egui::Ui,
@@ -47,7 +47,12 @@ pub fn draw_gesture_config_ui(
     let header_rect = Rect::from_min_max(rect.min, pos2(rect.max.x, rect.min.y + header_h));
     ui.painter().rect_filled(
         header_rect,
-        egui::Rounding { nw: 2.0, ne: 2.0, sw: 0.0, se: 0.0 },
+        egui::Rounding {
+            nw: 2.0,
+            ne: 2.0,
+            sw: 0.0,
+            se: 0.0,
+        },
         Color32::from_rgb(0, 245, 198), // Teal `#00f5c6`
     );
 
@@ -55,11 +60,31 @@ pub fn draw_gesture_config_ui(
     let (_, _, up_key, down_key, left_key, right_key) = get_button_keys(btn);
     let click_key = get_button_keys(btn).0;
 
-    let cur_left = profile.mappings.get(left_key).map(|s| s.as_str()).unwrap_or("none");
-    let cur_right = profile.mappings.get(right_key).map(|s| s.as_str()).unwrap_or("none");
-    let cur_up = profile.mappings.get(up_key).map(|s| s.as_str()).unwrap_or("none");
-    let cur_down = profile.mappings.get(down_key).map(|s| s.as_str()).unwrap_or("none");
-    let cur_click = profile.mappings.get(click_key).map(|s| s.as_str()).unwrap_or("none");
+    let cur_left = profile
+        .mappings
+        .get(left_key)
+        .map(|s| s.as_str())
+        .unwrap_or("none");
+    let cur_right = profile
+        .mappings
+        .get(right_key)
+        .map(|s| s.as_str())
+        .unwrap_or("none");
+    let cur_up = profile
+        .mappings
+        .get(up_key)
+        .map(|s| s.as_str())
+        .unwrap_or("none");
+    let cur_down = profile
+        .mappings
+        .get(down_key)
+        .map(|s| s.as_str())
+        .unwrap_or("none");
+    let cur_click = profile
+        .mappings
+        .get(click_key)
+        .map(|s| s.as_str())
+        .unwrap_or("none");
 
     // Draw elements inside header_rect using child_ui
     let mut header_ui = ui.new_child(
@@ -69,25 +94,35 @@ pub fn draw_gesture_config_ui(
     );
 
     // Back Button (←)
-    let (back_rect, back_res) = header_ui.allocate_exact_size(vec2(20.0, 20.0), egui::Sense::click());
+    let (back_rect, back_res) =
+        header_ui.allocate_exact_size(vec2(20.0, 20.0), egui::Sense::click());
     let back_hover_color = if back_res.hovered() {
         header_ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
         Color32::from_rgba_unmultiplied(0, 0, 0, 20)
     } else {
         Color32::TRANSPARENT
     };
-    header_ui.painter().rect_filled(back_rect, 4.0, back_hover_color);
+    header_ui
+        .painter()
+        .rect_filled(back_rect, 4.0, back_hover_color);
 
     let stroke = egui::Stroke::new(1.5, Color32::BLACK);
     let cx = back_rect.center().x;
     let cy = back_rect.center().y;
-    header_ui.painter().line_segment([pos2(cx - 5.0, cy), pos2(cx + 5.0, cy)], stroke);
-    header_ui.painter().line_segment([pos2(cx - 5.0, cy), pos2(cx - 1.0, cy - 4.0)], stroke);
-    header_ui.painter().line_segment([pos2(cx - 5.0, cy), pos2(cx - 1.0, cy + 4.0)], stroke);
+    header_ui
+        .painter()
+        .line_segment([pos2(cx - 5.0, cy), pos2(cx + 5.0, cy)], stroke);
+    header_ui
+        .painter()
+        .line_segment([pos2(cx - 5.0, cy), pos2(cx - 1.0, cy - 4.0)], stroke);
+    header_ui
+        .painter()
+        .line_segment([pos2(cx - 5.0, cy), pos2(cx - 1.0, cy + 4.0)], stroke);
 
     if back_res.clicked() {
         let view_state_id = ui.id().with(format!("popup_view_for_{:?}", btn));
-        ui.ctx().data_mut(|d| d.insert_temp(view_state_id, PopupView::ActionList));
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(view_state_id, PopupView::ActionList));
         click_occurred = true;
     }
 
@@ -96,7 +131,8 @@ pub fn draw_gesture_config_ui(
     // Gestures Icon (circle outline with circle inside)
     let icon_center = header_ui.min_rect().min + vec2(28.0, 12.0);
     ui.painter().circle_filled(icon_center, 6.5, Color32::BLACK);
-    ui.painter().circle_filled(icon_center, 2.0, Color32::from_rgb(0, 245, 198));
+    ui.painter()
+        .circle_filled(icon_center, 2.0, Color32::from_rgb(0, 245, 198));
 
     header_ui.add_space(12.0);
 
@@ -129,11 +165,12 @@ pub fn draw_gesture_config_ui(
     // Determine active preset
     let mut active_preset_idx = 0; // Default to Custom
     for (idx, preset) in GESTURE_PRESETS.iter().enumerate().skip(1) {
-        if cur_left == preset.left &&
-           cur_right == preset.right &&
-           cur_up == preset.up &&
-           cur_down == preset.down &&
-           cur_click == preset.click {
+        if cur_left == preset.left
+            && cur_right == preset.right
+            && cur_up == preset.up
+            && cur_down == preset.down
+            && cur_click == preset.click
+        {
             active_preset_idx = idx;
             break;
         }
@@ -146,14 +183,17 @@ pub fn draw_gesture_config_ui(
         .selected_text(
             RichText::new(GESTURE_PRESETS[active_preset_idx].name)
                 .font(egui::FontId::proportional(11.0))
-                .color(Color32::WHITE)
+                .color(Color32::WHITE),
         );
 
     let res = combo.show_ui(&mut content_ui, |ui| {
         let mut changed = false;
         let mut selected_idx = active_preset_idx;
         for (idx, preset) in GESTURE_PRESETS.iter().enumerate() {
-            if ui.selectable_label(idx == active_preset_idx, preset.name).clicked() {
+            if ui
+                .selectable_label(idx == active_preset_idx, preset.name)
+                .clicked()
+            {
                 selected_idx = idx;
                 changed = true;
             }
@@ -172,7 +212,9 @@ pub fn draw_gesture_config_ui(
         mps.insert(click_key.to_string(), preset.click.to_string());
         let engine_bg = engine.clone();
         let profile_bg = config.active_app_profile.clone();
-        std::thread::spawn(move || { engine_bg.update_profile_mappings(&profile_bg, mps); });
+        std::thread::spawn(move || {
+            engine_bg.update_profile_mappings(&profile_bg, mps);
+        });
     }
 
     content_ui.add_space(8.0);
@@ -184,8 +226,13 @@ pub fn draw_gesture_config_ui(
     );
 
     // Frame background and stroke
-    ui.painter().rect_filled(container_rect, 4.0, theme::elevated_color(ui.ctx()));
-    ui.painter().rect_stroke(container_rect, 4.0, Stroke::new(1.0, theme::border_color(ui.ctx())));
+    ui.painter()
+        .rect_filled(container_rect, 4.0, theme::elevated_color(ui.ctx()));
+    ui.painter().rect_stroke(
+        container_rect,
+        4.0,
+        Stroke::new(1.0, theme::border_color(ui.ctx())),
+    );
 
     let slots = &[
         ("left", "HOLD + MOVE LEFT", left_key, cur_left),
@@ -200,14 +247,20 @@ pub fn draw_gesture_config_ui(
             // Draw divider line between slots
             let y = container_rect.min.y + i as f32 * 40.0;
             ui.painter().line_segment(
-                [pos2(container_rect.min.x + 4.0, y), pos2(container_rect.max.x - 4.0, y)],
+                [
+                    pos2(container_rect.min.x + 4.0, y),
+                    pos2(container_rect.max.x - 4.0, y),
+                ],
                 Stroke::new(0.8, theme::border_color(ui.ctx())),
             );
         }
 
         let slot_rect = Rect::from_min_max(
             pos2(container_rect.min.x, container_rect.min.y + i as f32 * 40.0),
-            pos2(container_rect.max.x, container_rect.min.y + (i + 1) as f32 * 40.0),
+            pos2(
+                container_rect.max.x,
+                container_rect.min.y + (i + 1) as f32 * 40.0,
+            ),
         );
 
         let row_id = ui.id().with(format!("slot_{:?}_{}", btn, dir));
@@ -216,7 +269,8 @@ pub fn draw_gesture_config_ui(
 
         if is_hovered {
             ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
-            ui.painter().rect_filled(slot_rect, 0.0, theme::hover_color(ui.ctx()));
+            ui.painter()
+                .rect_filled(slot_rect, 0.0, theme::hover_color(ui.ctx()));
         }
 
         // Left Icon
@@ -227,36 +281,49 @@ pub fn draw_gesture_config_ui(
                 let cx = icon_pos.x;
                 let cy = icon_pos.y;
                 let stroke = Stroke::new(1.5, icon_color);
-                ui.painter().line_segment([pos2(cx - 5.0, cy), pos2(cx + 5.0, cy)], stroke);
-                ui.painter().line_segment([pos2(cx - 5.0, cy), pos2(cx - 1.0, cy - 4.0)], stroke);
-                ui.painter().line_segment([pos2(cx - 5.0, cy), pos2(cx - 1.0, cy + 4.0)], stroke);
+                ui.painter()
+                    .line_segment([pos2(cx - 5.0, cy), pos2(cx + 5.0, cy)], stroke);
+                ui.painter()
+                    .line_segment([pos2(cx - 5.0, cy), pos2(cx - 1.0, cy - 4.0)], stroke);
+                ui.painter()
+                    .line_segment([pos2(cx - 5.0, cy), pos2(cx - 1.0, cy + 4.0)], stroke);
             }
             "right" => {
                 let cx = icon_pos.x;
                 let cy = icon_pos.y;
                 let stroke = Stroke::new(1.5, icon_color);
-                ui.painter().line_segment([pos2(cx - 5.0, cy), pos2(cx + 5.0, cy)], stroke);
-                ui.painter().line_segment([pos2(cx + 5.0, cy), pos2(cx + 1.0, cy - 4.0)], stroke);
-                ui.painter().line_segment([pos2(cx + 5.0, cy), pos2(cx + 1.0, cy + 4.0)], stroke);
+                ui.painter()
+                    .line_segment([pos2(cx - 5.0, cy), pos2(cx + 5.0, cy)], stroke);
+                ui.painter()
+                    .line_segment([pos2(cx + 5.0, cy), pos2(cx + 1.0, cy - 4.0)], stroke);
+                ui.painter()
+                    .line_segment([pos2(cx + 5.0, cy), pos2(cx + 1.0, cy + 4.0)], stroke);
             }
             "up" => {
                 let cx = icon_pos.x;
                 let cy = icon_pos.y;
                 let stroke = Stroke::new(1.5, icon_color);
-                ui.painter().line_segment([pos2(cx, cy - 5.0), pos2(cx, cy + 5.0)], stroke);
-                ui.painter().line_segment([pos2(cx, cy - 5.0), pos2(cx - 4.0, cy - 1.0)], stroke);
-                ui.painter().line_segment([pos2(cx, cy - 5.0), pos2(cx + 4.0, cy - 1.0)], stroke);
+                ui.painter()
+                    .line_segment([pos2(cx, cy - 5.0), pos2(cx, cy + 5.0)], stroke);
+                ui.painter()
+                    .line_segment([pos2(cx, cy - 5.0), pos2(cx - 4.0, cy - 1.0)], stroke);
+                ui.painter()
+                    .line_segment([pos2(cx, cy - 5.0), pos2(cx + 4.0, cy - 1.0)], stroke);
             }
             "down" => {
                 let cx = icon_pos.x;
                 let cy = icon_pos.y;
                 let stroke = Stroke::new(1.5, icon_color);
-                ui.painter().line_segment([pos2(cx, cy - 5.0), pos2(cx, cy + 5.0)], stroke);
-                ui.painter().line_segment([pos2(cx, cy + 5.0), pos2(cx - 4.0, cy + 1.0)], stroke);
-                ui.painter().line_segment([pos2(cx, cy + 5.0), pos2(cx + 4.0, cy + 1.0)], stroke);
+                ui.painter()
+                    .line_segment([pos2(cx, cy - 5.0), pos2(cx, cy + 5.0)], stroke);
+                ui.painter()
+                    .line_segment([pos2(cx, cy + 5.0), pos2(cx - 4.0, cy + 1.0)], stroke);
+                ui.painter()
+                    .line_segment([pos2(cx, cy + 5.0), pos2(cx + 4.0, cy + 1.0)], stroke);
             }
             _ => {
-                ui.painter().circle_stroke(icon_pos, 4.0, Stroke::new(1.5, icon_color));
+                ui.painter()
+                    .circle_stroke(icon_pos, 4.0, Stroke::new(1.5, icon_color));
             }
         }
 
@@ -312,7 +379,10 @@ pub fn draw_gesture_config_ui(
             let mut changed = false;
             let mut selected_act = generic_action.to_string();
             for &(act_id, act_disp) in SLOT_ACTIONS {
-                if ui.selectable_label(generic_action == act_id, act_disp).clicked() {
+                if ui
+                    .selectable_label(generic_action == act_id, act_disp)
+                    .clicked()
+                {
                     selected_act = act_id.to_string();
                     changed = true;
                 }
@@ -328,7 +398,9 @@ pub fn draw_gesture_config_ui(
                 if dir == "click" {
                     RECORDING_TARGET.with(|r| *r.borrow_mut() = Some(RecordingTarget::Button(btn)));
                 } else {
-                    RECORDING_TARGET.with(|r| *r.borrow_mut() = Some(RecordingTarget::Gesture(btn, dir.to_string())));
+                    RECORDING_TARGET.with(|r| {
+                        *r.borrow_mut() = Some(RecordingTarget::Gesture(btn, dir.to_string()))
+                    });
                 }
                 *customizing_button = None;
             } else {
@@ -337,7 +409,9 @@ pub fn draw_gesture_config_ui(
                 mps.insert(key_str.to_string(), resolved);
                 let engine_bg = engine.clone();
                 let profile_bg = config.active_app_profile.clone();
-                std::thread::spawn(move || { engine_bg.update_profile_mappings(&profile_bg, mps); });
+                std::thread::spawn(move || {
+                    engine_bg.update_profile_mappings(&profile_bg, mps);
+                });
             }
         }
     }

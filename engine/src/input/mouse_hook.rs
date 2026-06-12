@@ -29,14 +29,19 @@ pub fn find_logitech_mouse() -> Option<String> {
                         let id = dev.input_id();
                         if id.vendor() == 0x046D {
                             // Check if it supports relative axes REL_X and REL_Y
-                            let has_rel = dev.supported_relative_axes().map(|axes| {
-                                axes.contains(RelativeAxisType::REL_X) && axes.contains(RelativeAxisType::REL_Y)
-                            }).unwrap_or(false);
+                            let has_rel = dev
+                                .supported_relative_axes()
+                                .map(|axes| {
+                                    axes.contains(RelativeAxisType::REL_X)
+                                        && axes.contains(RelativeAxisType::REL_Y)
+                                })
+                                .unwrap_or(false);
 
                             // Check if it supports BTN_LEFT
-                            let has_left = dev.supported_keys().map(|keys| {
-                                keys.contains(Key::BTN_LEFT)
-                            }).unwrap_or(false);
+                            let has_left = dev
+                                .supported_keys()
+                                .map(|keys| keys.contains(Key::BTN_LEFT))
+                                .unwrap_or(false);
 
                             if has_rel && has_left {
                                 log::info!(
@@ -81,13 +86,15 @@ impl MouseHook {
             return Ok(());
         }
 
-        let dev_path = find_logitech_mouse().ok_or_else(|| anyhow!("Logitech physical mouse event node not found"))?;
+        let dev_path = find_logitech_mouse()
+            .ok_or_else(|| anyhow!("Logitech physical mouse event node not found"))?;
         self.device_path = Some(dev_path.clone());
 
-        let mut dev = Device::open(&dev_path).map_err(|e| anyhow!("Failed to open {}: {}", dev_path, e))?;
+        let mut dev =
+            Device::open(&dev_path).map_err(|e| anyhow!("Failed to open {}: {}", dev_path, e))?;
 
-        use std::os::unix::io::AsRawFd;
         use nix::fcntl::{fcntl, FcntlArg, OFlag};
+        use std::os::unix::io::AsRawFd;
         let fd = dev.as_raw_fd();
         if let Ok(flags) = fcntl(fd, FcntlArg::F_GETFL) {
             let mut oflags = OFlag::from_bits_truncate(flags);
@@ -101,9 +108,16 @@ impl MouseHook {
 
         // Acquire exclusive grab
         dev.grab().map_err(|e| {
-            anyhow!("Failed to grab {}: {}. remap will be disabled. Run as root or adjust permissions.", dev_path, e)
+            anyhow!(
+                "Failed to grab {}: {}. remap will be disabled. Run as root or adjust permissions.",
+                dev_path,
+                e
+            )
         })?;
-        log::info!("[MouseHook] Grabbed physical mouse exclusively: {}", dev_path);
+        log::info!(
+            "[MouseHook] Grabbed physical mouse exclusively: {}",
+            dev_path
+        );
 
         self.running.store(true, Ordering::SeqCst);
         let running = self.running.clone();

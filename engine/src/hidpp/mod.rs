@@ -1,11 +1,11 @@
-pub mod protocol;
 pub mod device;
 pub mod diversion;
+pub mod protocol;
 
 use anyhow::{anyhow, Result};
 use hidapi::HidDevice;
 
-use self::protocol::{SHORT_ID, LONG_ID};
+use self::protocol::{LONG_ID, SHORT_ID};
 
 pub enum HidppEvent {
     GestureDown,
@@ -74,7 +74,9 @@ impl HidppClient {
     }
 
     pub fn set_dpi(&self, dpi: u32) -> Result<()> {
-        let idx = self.dpi_idx.ok_or_else(|| anyhow!("DPI adjustments not supported"))?;
+        let idx = self
+            .dpi_idx
+            .ok_or_else(|| anyhow!("DPI adjustments not supported"))?;
         let hi = ((dpi >> 8) & 0xFF) as u8;
         let lo = (dpi & 0xFF) as u8;
         let resp = self.request(idx, 3, &[0x00, hi, lo], 1000)?;
@@ -87,8 +89,11 @@ impl HidppClient {
     }
 
     pub fn read_dpi(&self) -> Result<u32> {
-        let idx = self.dpi_idx.ok_or_else(|| anyhow!("DPI reading not supported"))?;
-        let resp = self.request(idx, 2, &[0x00], 1000)?
+        let idx = self
+            .dpi_idx
+            .ok_or_else(|| anyhow!("DPI reading not supported"))?;
+        let resp = self
+            .request(idx, 2, &[0x00], 1000)?
             .ok_or_else(|| anyhow!("DPI read failed"))?;
         if resp.len() >= 3 {
             let actual = ((resp[1] as u32) << 8) | (resp[2] as u32);
@@ -99,7 +104,9 @@ impl HidppClient {
     }
 
     pub fn set_smart_shift(&self, mode: &str, enabled: bool, threshold: u8) -> Result<()> {
-        let idx = self.smart_shift_idx.ok_or_else(|| anyhow!("Smart Shift not supported"))?;
+        let idx = self
+            .smart_shift_idx
+            .ok_or_else(|| anyhow!("Smart Shift not supported"))?;
         let write_fn = if self.smart_shift_enhanced { 2 } else { 1 };
 
         let params = if enabled {
@@ -112,12 +119,69 @@ impl HidppClient {
 
         let resp = self.request(idx, write_fn, &params, 1000)?;
         if resp.is_some() {
-            log::info!("[HID++] Smart Shift configured: mode={}, enabled={}", mode, enabled);
+            log::info!(
+                "[HID++] Smart Shift configured: mode={}, enabled={}",
+                mode,
+                enabled
+            );
             Ok(())
         } else {
             Err(anyhow!("Failed to configure Smart Shift"))
         }
     }
+
+    pub fn set_backlight_effect(&self, effect: &str) -> Result<()> {
+        log::info!("[HID++] Attempting to set backlight effect on '{}' to {}", self.device_name, effect);
+        
+        let feat_idx = if let Some(idx) = self.find_feature(0x8070) {
+            idx
+        } else if let Some(idx) = self.find_feature(0x1982) {
+            idx
+        } else {
+            return Err(anyhow!("No backlight control feature (0x8070 or 0x1982) found on this device"));
+        };
+
+        let effect_id = match effect {
+            "Static" => 0x01,
+            "Contrast" => 0x02,
+            "Breathing" => 0x03,
+            "Waves" => 0x04,
+            "Reaction" => 0x05,
+            "Random" => 0x06,
+            _ => 0x01,
+        };
+
+        let params = [effect_id, 0x00, 0x00, 0x00, 0x00];
+        let resp = self.request(feat_idx, 3, &params, 1000)?;
+        if resp.is_some() {
+            log::info!("[HID++] Backlight effect '{}' successfully sent to device", effect);
+            Ok(())
+        } else {
+            Err(anyhow!("Failed to apply backlight effect to device"))
+        }
+    }
+
+    pub fn set_backlight_enabled(&self, enabled: bool) -> Result<()> {
+        log::info!("[HID++] Attempting to set backlight enabled to {} on '{}'", enabled, self.device_name);
+        
+        let feat_idx = if let Some(idx) = self.find_feature(0x1982) {
+            idx
+        } else if let Some(idx) = self.find_feature(0x8070) {
+            idx
+        } else {
+            return Err(anyhow!("No backlight control feature (0x1982 or 0x8070) found on this device"));
+        };
+
+        let params = [enabled as u8, 0x00, 0x00];
+        let resp = self.request(feat_idx, 1, &params, 1000)?;
+        if resp.is_some() {
+            log::info!("[HID++] Backlight enabled state {} successfully sent to device", enabled);
+            Ok(())
+        } else {
+            Err(anyhow!("Failed to apply backlight state to device"))
+        }
+    }
+
 
     pub fn poll_events(&mut self) -> Result<Vec<HidppEvent>> {
         if self.device.is_none() {
@@ -127,14 +191,22 @@ impl HidppClient {
         let mut events = Vec::new();
         match self.rx(0) {
             Err(e) => {
-                log::info!("[HID++] Device '{}' disconnected: {}. Will reconnect automatically.", self.device_name, e);
+                log::info!(
+                    "[HID++] Device '{}' disconnected: {}. Will reconnect automatically.",
+                    self.device_name,
+                    e
+                );
                 self.close();
             }
             Ok(Some(raw)) => {
                 if raw.len() < 4 {
                     return Ok(events);
                 }
-                let off = if raw[0] == SHORT_ID || raw[0] == LONG_ID { 1 } else { 0 };
+                let off = if raw[0] == SHORT_ID || raw[0] == LONG_ID {
+                    1
+                } else {
+                    0
+                };
                 if off + 3 >= raw.len() {
                     return Ok(events);
                 }

@@ -1,23 +1,29 @@
-pub mod section_updates;
 pub mod section_language;
-pub mod section_theme;
 pub mod section_profiles;
+pub mod section_theme;
+pub mod section_updates;
 
+use crate::theme;
+use crate::translation::tr;
+use crate::updater::Updater;
+use crate::widgets::draw_tech_corners;
 use eframe::egui;
 use egui::{Color32, Stroke};
 use mouser_engine::config::Config;
 use mouser_engine::Engine;
-use crate::updater::Updater;
-use crate::translation::tr;
-use crate::theme;
-use crate::widgets::draw_tech_corners;
 
-pub use section_updates::render_section_updates;
 pub use section_language::render_section_language;
-pub use section_theme::render_section_theme;
 pub use section_profiles::render_section_profiles;
+pub use section_theme::render_section_theme;
+pub use section_updates::render_section_updates;
 
-pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, config: &mut Config, engine: &Engine, updater: &Updater) {
+pub fn show(
+    ui: &mut egui::Ui,
+    ctx: &egui::Context,
+    config: &mut Config,
+    engine: &Engine,
+    updater: &Updater,
+) {
     let avail_w = ui.available_width();
     let avail_h = ui.available_height();
     let h_pad = (avail_w * 0.04).max(24.0);
@@ -125,7 +131,10 @@ pub fn render_spaced_header(ui: &mut egui::Ui, text: &str, size: f32, color: Col
     let mut chars = text_upper.char_indices().peekable();
     let mut is_first = true;
     while let Some((idx, _)) = chars.next() {
-        let next_idx = chars.peek().map(|(n_idx, _)| *n_idx).unwrap_or(text_upper.len());
+        let next_idx = chars
+            .peek()
+            .map(|(n_idx, _)| *n_idx)
+            .unwrap_or(text_upper.len());
         let space = if is_first {
             is_first = false;
             0.0

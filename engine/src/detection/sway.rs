@@ -14,8 +14,7 @@ pub fn get_active_app_pid_sway() -> Option<u32> {
 
     match output {
         Some(out) if out.status.success() => {
-            let json: serde_json::Value =
-                serde_json::from_slice(&out.stdout).ok()?;
+            let json: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
             find_focused_pid_sway(&json)
         }
         Some(_) => None,
@@ -28,7 +27,11 @@ pub fn get_active_app_pid_sway() -> Option<u32> {
 }
 
 pub fn find_focused_pid_sway(node: &serde_json::Value) -> Option<u32> {
-    if node.get("focused").and_then(|v| v.as_bool()).unwrap_or(false) {
+    if node
+        .get("focused")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
         if let Some(pid) = node.get("pid").and_then(|v| v.as_u64()) {
             return Some(pid as u32);
         }

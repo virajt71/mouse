@@ -1,10 +1,10 @@
 use anyhow::Result;
-use evdev::{Device, EventType, Key, InputEvent};
+use evdev::{Device, EventType, InputEvent, Key};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
-use std::collections::HashMap;
 
 use super::simulator::KeySimulator;
 
@@ -25,13 +25,18 @@ pub fn find_logitech_keyboards() -> Vec<String> {
                         let id = dev.input_id();
                         if id.vendor() == 0x046D {
                             // A keyboard should have many keys but NOT relative axes (X/Y)
-                            let has_rel = dev.supported_relative_axes().map(|axes| {
-                                axes.contains(evdev::RelativeAxisType::REL_X) || axes.contains(evdev::RelativeAxisType::REL_Y)
-                            }).unwrap_or(false);
+                            let has_rel = dev
+                                .supported_relative_axes()
+                                .map(|axes| {
+                                    axes.contains(evdev::RelativeAxisType::REL_X)
+                                        || axes.contains(evdev::RelativeAxisType::REL_Y)
+                                })
+                                .unwrap_or(false);
 
-                            let has_keys = dev.supported_keys().map(|keys| {
-                                keys.contains(Key::KEY_A) && keys.contains(Key::KEY_F1)
-                            }).unwrap_or(false);
+                            let has_keys = dev
+                                .supported_keys()
+                                .map(|keys| keys.contains(Key::KEY_A) && keys.contains(Key::KEY_F1))
+                                .unwrap_or(false);
 
                             if has_keys && !has_rel {
                                 list.push(path.to_string_lossy().to_string());
@@ -66,52 +71,56 @@ impl KeyboardHook {
         mappings: Arc<std::sync::Mutex<HashMap<String, String>>>,
         uinput_device: Arc<std::sync::Mutex<Option<evdev::uinput::VirtualDevice>>>,
         key_simulator: KeySimulator,
+        engine: crate::engine::Engine,
     ) -> Result<()> {
         if self.running.load(Ordering::SeqCst) {
             return Ok(());
         }
 
+        // Open the device synchronously to catch transient race conditions early
+        let mut dev = Device::open(&dev_path)?;
+
+        use nix::fcntl::{fcntl, FcntlArg, OFlag};
+        use std::os::unix::io::AsRawFd;
+        let fd = dev.as_raw_fd();
+        if let Ok(flags) = fcntl(fd, FcntlArg::F_GETFL) {
+            let mut oflags = OFlag::from_bits_truncate(flags);
+            oflags.insert(OFlag::O_NONBLOCK);
+            if let Err(e) = fcntl(fd, FcntlArg::F_SETFL(oflags)) {
+                return Err(anyhow::anyhow!(
+                    "Failed to set non-blocking on {}: {}",
+                    dev_path,
+                    e
+                ));
+            }
+        } else {
+            return Err(anyhow::anyhow!(
+                "Failed to get fcntl flags for {}",
+                dev_path
+            ));
+        }
+
+        // Acquire exclusive grab
+        if let Err(e) = dev.grab() {
+            return Err(anyhow::anyhow!(
+                "Failed to grab keyboard {}: {}",
+                dev_path,
+                e
+            ));
+        }
+        log::info!(
+            "[KeyboardHook] Grabbed physical keyboard exclusively: {}",
+            dev_path
+        );
+
         self.device_path = Some(dev_path.clone());
         self.running.store(true, Ordering::SeqCst);
         let running = self.running.clone();
+        let dev_path_clone = dev_path.clone();
 
         let handle = thread::Builder::new()
-            .name(format!("KeyboardHook-{}", dev_path))
+            .name(format!("KeyboardHook-{}", dev_path_clone))
             .spawn(move || {
-                let mut dev = match Device::open(&dev_path) {
-                    Ok(d) => d,
-                    Err(e) => {
-                        log::error!("[KeyboardHook] Failed to open {}: {}", dev_path, e);
-                        running.store(false, Ordering::SeqCst);
-                        return;
-                    }
-                };
-
-                use std::os::unix::io::AsRawFd;
-                use nix::fcntl::{fcntl, FcntlArg, OFlag};
-                let fd = dev.as_raw_fd();
-                if let Ok(flags) = fcntl(fd, FcntlArg::F_GETFL) {
-                    let mut oflags = OFlag::from_bits_truncate(flags);
-                    oflags.insert(OFlag::O_NONBLOCK);
-                    if let Err(e) = fcntl(fd, FcntlArg::F_SETFL(oflags)) {
-                        log::error!("[KeyboardHook] Failed to set non-blocking on {}: {}", dev_path, e);
-                        running.store(false, Ordering::SeqCst);
-                        return;
-                    }
-                } else {
-                    log::error!("[KeyboardHook] Failed to get fcntl flags for {}", dev_path);
-                    running.store(false, Ordering::SeqCst);
-                    return;
-                }
-
-                // Acquire exclusive grab
-                if let Err(e) = dev.grab() {
-                    log::error!("[KeyboardHook] Failed to grab keyboard {}: {}", dev_path, e);
-                    running.store(false, Ordering::SeqCst);
-                    return;
-                }
-                log::info!("[KeyboardHook] Grabbed physical keyboard exclusively: {}", dev_path);
-
                 use nix::poll::{poll, PollFd, PollFlags, PollTimeout};
                 let mut fds = [PollFd::new(unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) }, PollFlags::POLLIN)];
 
@@ -139,43 +148,61 @@ impl KeyboardHook {
                                             let key_code = event.code();
                                             let down = event.value() != 0;
 
-                                            // Map F1-F12 keys
-                                            let key_name = match key_code {
-                                                k if k == Key::KEY_F1.0 => Some("f1"),
-                                                k if k == Key::KEY_F2.0 => Some("f2"),
-                                                k if k == Key::KEY_F3.0 => Some("f3"),
-                                                k if k == Key::KEY_F4.0 => Some("f4"),
-                                                k if k == Key::KEY_F5.0 => Some("f5"),
-                                                k if k == Key::KEY_F6.0 => Some("f6"),
-                                                k if k == Key::KEY_F7.0 => Some("f7"),
-                                                k if k == Key::KEY_F8.0 => Some("f8"),
-                                                k if k == Key::KEY_F9.0 => Some("f9"),
-                                                k if k == Key::KEY_F10.0 => Some("f10"),
-                                                k if k == Key::KEY_F11.0 => Some("f11"),
-                                                k if k == Key::KEY_F12.0 => Some("f12"),
-                                                _ => None,
-                                            };
-
-                                            if let Some(name) = key_name {
-                                                let mapping = {
-                                                    mappings.lock().unwrap().get(name).cloned()
+                                            if key_code == Key::KEY_KBDILLUMTOGGLE.0 {
+                                                if event.value() == 1 {
+                                                    log::info!("[KeyboardHook] Captured Fn + Lightbulb (KEY_KBDILLUMTOGGLE). Cycling backlight effect...");
+                                                    engine.cycle_backlight_effect();
+                                                }
+                                                should_forward = false;
+                                            } else {
+                                                // Map F1-F12 and other customizable keys
+                                                let key_name = match key_code {
+                                                    k if k == Key::KEY_F1.0 => Some("f1"),
+                                                    k if k == Key::KEY_F2.0 => Some("f2"),
+                                                    k if k == Key::KEY_F3.0 => Some("f3"),
+                                                    k if k == Key::KEY_F4.0 => Some("f4"),
+                                                    k if k == Key::KEY_F5.0 => Some("f5"),
+                                                    k if k == Key::KEY_F6.0 => Some("f6"),
+                                                    k if k == Key::KEY_F7.0 => Some("f7"),
+                                                    k if k == Key::KEY_F8.0 => Some("f8"),
+                                                    k if k == Key::KEY_F9.0 => Some("f9"),
+                                                    k if k == Key::KEY_F10.0 => Some("f10"),
+                                                    k if k == Key::KEY_F11.0 => Some("f11"),
+                                                    k if k == Key::KEY_F12.0 => Some("f12"),
+                                                    k if k == Key::KEY_INSERT.0 => Some("insert"),
+                                                    k if k == Key::KEY_HOME.0 => Some("home"),
+                                                    k if k == Key::KEY_PAGEUP.0 => Some("pageup"),
+                                                    k if k == Key::KEY_DELETE.0 => Some("delete"),
+                                                    k if k == Key::KEY_END.0 => Some("end"),
+                                                    k if k == Key::KEY_PAGEDOWN.0 => Some("pagedown"),
+                                                    k if k == Key::KEY_CALC.0 => Some("calculator"),
+                                                    k if k == Key::KEY_COFFEE.0 => Some("screenlock"),
+                                                    k if k == Key::KEY_SEARCH.0 => Some("search"),
+                                                    k if k == Key::KEY_SUSPEND.0 || k == Key::KEY_SLEEP.0 => Some("lockpower"),
+                                                    _ => None,
                                                 };
 
-                                                if let Some(action_id) = mapping {
-                                                    if action_id != "none" {
-                                                        if down {
-                                                            key_simulator.execute_action(&action_id);
+                                                if let Some(name) = key_name {
+                                                    let mapping = {
+                                                        mappings.lock().unwrap().get(name).cloned()
+                                                    };
+
+                                                    if let Some(action_id) = mapping {
+                                                        if action_id != "none" {
+                                                            if down {
+                                                                key_simulator.execute_action(&action_id);
+                                                            }
+                                                            should_forward = false;
                                                         }
-                                                        should_forward = false;
                                                     }
                                                 }
-                                            }
 
-                                            if should_forward {
-                                                if down {
-                                                    pressed_keys.insert(key_code);
-                                                } else {
-                                                    pressed_keys.remove(&key_code);
+                                                if should_forward {
+                                                    if down {
+                                                        pressed_keys.insert(key_code);
+                                                    } else {
+                                                        pressed_keys.remove(&key_code);
+                                                    }
                                                 }
                                             }
                                         }
@@ -190,9 +217,9 @@ impl KeyboardHook {
                                 Err(e) => {
                                     if e.kind() != std::io::ErrorKind::WouldBlock {
                                         if e.raw_os_error() == Some(19) {
-                                            log::info!("[KeyboardHook] Physical keyboard on {} unplugged/disconnected.", dev_path);
+                                            log::info!("[KeyboardHook] Physical keyboard on {} unplugged/disconnected.", dev_path_clone);
                                         } else {
-                                            log::warn!("[KeyboardHook] Read error on {}: {}. Releasing grab.", dev_path, e);
+                                            log::warn!("[KeyboardHook] Read error on {}: {}. Releasing grab.", dev_path_clone, e);
                                         }
                                         break;
                                     }
@@ -202,7 +229,11 @@ impl KeyboardHook {
                         Ok(_) => {} // Timeout reached
                         Err(e) => {
                             if e != nix::errno::Errno::EINTR {
-                                log::error!("[KeyboardHook] Poll error on {}: {}. Releasing grab.", dev_path, e);
+                                if e == nix::errno::Errno::ENODEV {
+                                    log::info!("[KeyboardHook] Physical keyboard on {} unplugged/disconnected.", dev_path_clone);
+                                } else {
+                                    log::error!("[KeyboardHook] Poll error on {}: {}. Releasing grab.", dev_path_clone, e);
+                                }
                                 break;
                             }
                         }
@@ -225,7 +256,7 @@ impl KeyboardHook {
                 }
 
                 let _ = dev.ungrab();
-                log::info!("[KeyboardHook] Ungrabbed physical keyboard: {}", dev_path);
+                log::info!("[KeyboardHook] Ungrabbed physical keyboard: {}", dev_path_clone);
                 running.store(false, Ordering::SeqCst);
             })
             .expect("Failed to spawn KeyboardHook thread");
@@ -243,7 +274,10 @@ impl KeyboardHook {
     }
 
     pub fn stop(&mut self) {
-        log::info!("[KeyboardHook] Stopping listener for {:?}...", self.device_path);
+        log::info!(
+            "[KeyboardHook] Stopping listener for {:?}...",
+            self.device_path
+        );
         self.running.store(false, Ordering::SeqCst);
         if let Some(handle) = self.thread_handle.take() {
             let _ = handle.join();

@@ -1,6 +1,6 @@
+use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
-use std::collections::HashSet;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DesktopApp {
@@ -28,7 +28,9 @@ pub fn scan_desktop_applications() -> Vec<DesktopApp> {
                 let path = entry.path();
                 if path.extension().is_some_and(|ext| ext == "desktop") {
                     if let Ok(content) = fs::read_to_string(&path) {
-                        if let Some(app) = parse_desktop_file(&content, path.to_string_lossy().into_owned()) {
+                        if let Some(app) =
+                            parse_desktop_file(&content, path.to_string_lossy().into_owned())
+                        {
                             let name_lower = app.name.to_lowercase();
                             if !seen_names.contains(&name_lower) {
                                 seen_names.insert(name_lower);
@@ -92,7 +94,12 @@ fn parse_desktop_file(content: &str, path: String) -> Option<DesktopApp> {
             return None;
         }
         let i = icon.unwrap_or_default();
-        Some(DesktopApp { name: n, exec: e, icon: i, path })
+        Some(DesktopApp {
+            name: n,
+            exec: e,
+            icon: i,
+            path,
+        })
     } else {
         None
     }
@@ -103,7 +110,7 @@ fn split_exec_line(raw: &str) -> Vec<String> {
     let mut current = String::new();
     let mut in_double_quote = false;
     let mut in_single_quote = false;
-    
+
     for c in raw.chars() {
         match c {
             '"' if !in_single_quote => {
@@ -132,7 +139,7 @@ fn split_exec_line(raw: &str) -> Vec<String> {
 fn clean_exec_command(raw_exec: &str) -> String {
     let tokens = split_exec_line(raw_exec);
     let mut exe_token = "";
-    
+
     for tok in &tokens {
         if tok.starts_with('%') {
             continue;
@@ -150,7 +157,7 @@ fn clean_exec_command(raw_exec: &str) -> String {
     if exe_token.is_empty() {
         return String::new();
     }
-    
+
     // Resolve filename (basename)
     if let Some(pos) = exe_token.rfind('/') {
         exe_token[pos + 1..].to_string()
@@ -160,10 +167,25 @@ fn clean_exec_command(raw_exec: &str) -> String {
 }
 
 const PROC_NOISE: &[&str] = &[
-    "systemd", "kworker", "dbus-daemon", "Xorg", "Xwayland",
-    "pulseaudio", "pipewire", "wireplumber", "gdm", "lightdm",
-    "NetworkManager", "wpa_supplicant", "bluetoothd", "udisksd",
-    "upowerd", "packagekitd", "polkitd", "rsyslogd", "cron",
+    "systemd",
+    "kworker",
+    "dbus-daemon",
+    "Xorg",
+    "Xwayland",
+    "pulseaudio",
+    "pipewire",
+    "wireplumber",
+    "gdm",
+    "lightdm",
+    "NetworkManager",
+    "wpa_supplicant",
+    "bluetoothd",
+    "udisksd",
+    "upowerd",
+    "packagekitd",
+    "polkitd",
+    "rsyslogd",
+    "cron",
 ];
 
 pub fn scan_running_processes() -> Vec<DesktopApp> {
@@ -172,13 +194,19 @@ pub fn scan_running_processes() -> Vec<DesktopApp> {
     if let Ok(entries) = std::fs::read_dir("/proc") {
         for entry in entries.flatten() {
             let fname = entry.file_name();
-            if !fname.to_string_lossy().chars().all(|c| c.is_ascii_digit()) { continue; }
+            if !fname.to_string_lossy().chars().all(|c| c.is_ascii_digit()) {
+                continue;
+            }
             let exe_link = entry.path().join("exe");
             if let Ok(target) = std::fs::read_link(&exe_link) {
                 if let Some(basename) = target.file_name() {
                     let exe = basename.to_string_lossy().to_string();
-                    if exe.starts_with('[') { continue; }
-                    if PROC_NOISE.contains(&exe.as_str()) { continue; }
+                    if exe.starts_with('[') {
+                        continue;
+                    }
+                    if PROC_NOISE.contains(&exe.as_str()) {
+                        continue;
+                    }
                     if seen.insert(exe.clone()) {
                         apps.push(DesktopApp {
                             name: exe.clone(),
@@ -232,9 +260,18 @@ mod tests {
     #[test]
     fn test_clean_exec_command() {
         assert_eq!(clean_exec_command("brave-browser %U"), "brave-browser");
-        assert_eq!(clean_exec_command("/usr/bin/brave-browser-stable %U"), "brave-browser-stable");
-        assert_eq!(clean_exec_command("env BAMF_DESKTOP_FILE_HINT=foo /usr/bin/spotify"), "spotify");
-        assert_eq!(clean_exec_command("\"/opt/My App/bin/myapp\" --some-arg"), "myapp");
+        assert_eq!(
+            clean_exec_command("/usr/bin/brave-browser-stable %U"),
+            "brave-browser-stable"
+        );
+        assert_eq!(
+            clean_exec_command("env BAMF_DESKTOP_FILE_HINT=foo /usr/bin/spotify"),
+            "spotify"
+        );
+        assert_eq!(
+            clean_exec_command("\"/opt/My App/bin/myapp\" --some-arg"),
+            "myapp"
+        );
     }
 
     #[test]

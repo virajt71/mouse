@@ -1,8 +1,8 @@
+use super::FLOW_MANAGER;
+use crate::config::Config;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use x11rb::connection::Connection;
-use crate::config::Config;
-use super::FLOW_MANAGER;
 
 pub fn run_edge_detection_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) {
     // Dedicated edge-detection thread (primarily for X11/XWayland active pointer query fallback)
@@ -16,7 +16,10 @@ pub fn run_edge_detection_loop(engine_inner: Arc<crate::engine::inner::EngineInn
 
         let (enabled, mouse_mode) = {
             let cfg = engine_inner.config.lock().unwrap();
-            (cfg.settings.flow_enabled, cfg.settings.flow_mouse_mode.clone())
+            (
+                cfg.settings.flow_enabled,
+                cfg.settings.flow_mouse_mode.clone(),
+            )
         };
 
         if !enabled || mouse_mode != "software" {
@@ -38,7 +41,11 @@ pub fn run_edge_detection_loop(engine_inner: Arc<crate::engine::inner::EngineInn
 
                     let (inner_enabled, inner_mouse_mode, hold_key) = {
                         let cfg = engine_inner.config.lock().unwrap();
-                        (cfg.settings.flow_enabled, cfg.settings.flow_mouse_mode.clone(), cfg.settings.flow_hold_key.clone())
+                        (
+                            cfg.settings.flow_enabled,
+                            cfg.settings.flow_mouse_mode.clone(),
+                            cfg.settings.flow_hold_key.clone(),
+                        )
                     };
 
                     if !inner_enabled || inner_mouse_mode != "software" {
@@ -65,35 +72,68 @@ pub fn run_edge_detection_loop(engine_inner: Arc<crate::engine::inner::EngineInn
                                         let mut lx = 0;
                                         let mut ly = 0;
 
-                                        if rx <= threshold { lx = -1; }
-                                        else if rx >= sw - threshold - 1 { lx = 1; }
-                                        else if ry <= threshold { ly = -1; }
-                                        else if ry >= sh - threshold - 1 { ly = 1; }
+                                        if rx <= threshold {
+                                            lx = -1;
+                                        } else if rx >= sw - threshold - 1 {
+                                            lx = 1;
+                                        } else if ry <= threshold {
+                                            ly = -1;
+                                        } else if ry >= sh - threshold - 1 {
+                                            ly = 1;
+                                        }
 
                                         if lx != 0 || ly != 0 {
                                             // Check if transition modifier key is satisfied
                                             if is_hold_key_satisfied(&hold_key) {
                                                 let cfg = engine_inner.config.lock().unwrap();
-                                                if let Some(peer) = cfg.settings.flow_peers.iter().find(|p| p.paired && p.layout_x == lx && p.layout_y == ly) {
+                                                if let Some(peer) =
+                                                    cfg.settings.flow_peers.iter().find(|p| {
+                                                        p.paired
+                                                            && p.layout_x == lx
+                                                            && p.layout_y == ly
+                                                    })
+                                                {
                                                     // If this peer is currently controlling us, return control to them!
-                                                    if let Some(controller) = FLOW_MANAGER.get_current_controller() {
+                                                    if let Some(controller) =
+                                                        FLOW_MANAGER.get_current_controller()
+                                                    {
                                                         if controller == peer.name {
                                                             log::info!("[Flow Switching] Screen edge crossed on X11: returning to controller '{}'", peer.name);
                                                             let _ = crate::flow::network::send_event_to_peer(&peer.name, &crate::flow::network::FlowEvent::ReturnToLocal);
                                                             // Warp cursor away from edge to prevent loop bouncing
-                                                            let rx_target = if lx == -1 { 100 } else if lx == 1 { sw - 100 } else { rx };
-                                                            let ry_target = if ly == -1 { 100 } else if ly == 1 { sh - 100 } else { ry };
-                                                            let _ = std::process::Command::new("xdotool")
-                                                                .args(["mousemove", &format!("{}", rx_target), &format!("{}", ry_target)])
-                                                                .spawn();
+                                                            let rx_target = if lx == -1 {
+                                                                100
+                                                            } else if lx == 1 {
+                                                                sw - 100
+                                                            } else {
+                                                                rx
+                                                            };
+                                                            let ry_target = if ly == -1 {
+                                                                100
+                                                            } else if ly == 1 {
+                                                                sh - 100
+                                                            } else {
+                                                                ry
+                                                            };
+                                                            let _ = std::process::Command::new(
+                                                                "xdotool",
+                                                            )
+                                                            .args([
+                                                                "mousemove",
+                                                                &format!("{}", rx_target),
+                                                                &format!("{}", ry_target),
+                                                            ])
+                                                            .spawn();
                                                             continue;
                                                         }
                                                     }
 
                                                     log::info!("[Flow Switching] Screen edge crossed on X11: transitioning to peer '{}'", peer.name);
-                                                    FLOW_MANAGER.set_active_peer(Some(peer.name.clone()));
+                                                    FLOW_MANAGER
+                                                        .set_active_peer(Some(peer.name.clone()));
                                                     // Sync virtual coords for the transition
-                                                    *FLOW_MANAGER.virtual_x.lock().unwrap() = if lx == -1 { sw - 50 } else { 50 };
+                                                    *FLOW_MANAGER.virtual_x.lock().unwrap() =
+                                                        if lx == -1 { sw - 50 } else { 50 };
                                                 }
                                             }
                                         }
@@ -115,7 +155,10 @@ pub fn run_edge_detection_loop(engine_inner: Arc<crate::engine::inner::EngineInn
                 }
             }
             Err(e) => {
-                log::debug!("[Flow Switching] X11 connection failed: {}. Retrying in 5s...", e);
+                log::debug!(
+                    "[Flow Switching] X11 connection failed: {}. Retrying in 5s...",
+                    e
+                );
                 std::thread::sleep(Duration::from_secs(5));
             }
         }
@@ -135,7 +178,12 @@ pub fn is_hold_key_satisfied(hold_key: &str) -> bool {
 pub fn get_peer_channel_index(peer_name: &str, config_lock: &Mutex<Config>) -> Option<u8> {
     let cfg = config_lock.lock().unwrap();
     // In this implementation, we map peer order index (0, 1, 2) to channel index
-    if let Some(pos) = cfg.settings.flow_peers.iter().position(|p| p.name == peer_name) {
+    if let Some(pos) = cfg
+        .settings
+        .flow_peers
+        .iter()
+        .position(|p| p.name == peer_name)
+    {
         Some(pos as u8)
     } else {
         None
@@ -143,13 +191,20 @@ pub fn get_peer_channel_index(peer_name: &str, config_lock: &Mutex<Config>) -> O
 }
 
 pub fn trigger_hidpp_channel_switch(channel_idx: u8) {
-    log::info!("[Flow Switching] Triggering HID++ host switch to channel {}", channel_idx);
+    log::info!(
+        "[Flow Switching] Triggering HID++ host switch to channel {}",
+        channel_idx
+    );
     if let Some(ref inner) = *FLOW_MANAGER.engine_inner.lock().unwrap() {
         let mut clients = inner.hid_clients.lock().unwrap();
         for client in clients.iter_mut() {
             if client.change_host_idx.is_some() {
                 if let Err(e) = client.switch_host_channel(channel_idx) {
-                    log::error!("[Flow Switching] Failed to switch channel on device '{}': {}", client.device_name, e);
+                    log::error!(
+                        "[Flow Switching] Failed to switch channel on device '{}': {}",
+                        client.device_name,
+                        e
+                    );
                 }
             }
         }

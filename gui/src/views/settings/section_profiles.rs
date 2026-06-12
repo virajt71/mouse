@@ -1,10 +1,15 @@
+use super::{render_spaced_header, section_card};
+use crate::theme;
+use crate::widgets::draw_profiles_icon_settings;
 use eframe::egui;
 use egui::{vec2, RichText};
 use mouser_engine::config::Config;
 use mouser_engine::Engine;
-use crate::theme;
-use crate::widgets::draw_profiles_icon_settings;
-use super::{section_card, render_spaced_header};
+
+thread_local! {
+    pub static SELECTED_EDIT_GROUP: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+    pub static NEW_GROUP_NAME: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+}
 
 pub fn render_section_profiles(ui: &mut egui::Ui, config: &mut Config, engine: &Engine) {
     section_card(ui, |ui| {
@@ -13,12 +18,7 @@ pub fn render_section_profiles(ui: &mut egui::Ui, config: &mut Config, engine: &
             let (icon_rect, _) = ui.allocate_exact_size(vec2(16.0, 16.0), egui::Sense::hover());
             draw_profiles_icon_settings(ui, icon_rect, theme::accent_color(ui.ctx()));
             ui.add_space(6.0);
-            render_spaced_header(
-                ui,
-                "PROFILE GROUPS",
-                14.0,
-                theme::primary_text(ui.ctx()),
-            );
+            render_spaced_header(ui, "PROFILE GROUPS", 14.0, theme::primary_text(ui.ctx()));
         });
 
         ui.add_space(14.0);
@@ -28,10 +28,10 @@ pub fn render_section_profiles(ui: &mut egui::Ui, config: &mut Config, engine: &
             let mut sorted_keys: Vec<String> = config.profile_groups.keys().cloned().collect();
             sorted_keys.sort();
 
-            let mut editing_group = crate::views::customization::SELECTED_EDIT_GROUP.with(|g| g.borrow().clone());
+            let mut editing_group = SELECTED_EDIT_GROUP.with(|g| g.borrow().clone());
             if editing_group.is_empty() {
                 editing_group = config.active_group.clone();
-                crate::views::customization::SELECTED_EDIT_GROUP.with(|g| *g.borrow_mut() = editing_group.clone());
+                SELECTED_EDIT_GROUP.with(|g| *g.borrow_mut() = editing_group.clone());
             }
 
             let combo = egui::ComboBox::from_id_salt("settings_editing_group_combo")
@@ -44,7 +44,10 @@ pub fn render_section_profiles(ui: &mut egui::Ui, config: &mut Config, engine: &
                     } else {
                         g_name.clone()
                     };
-                    if ui.selectable_value(&mut editing_group, g_name.clone(), label).clicked() {
+                    if ui
+                        .selectable_value(&mut editing_group, g_name.clone(), label)
+                        .clicked()
+                    {
                         changed = true;
                     }
                 }
@@ -52,7 +55,7 @@ pub fn render_section_profiles(ui: &mut egui::Ui, config: &mut Config, engine: &
             });
 
             if let Some(true) = res.inner {
-                crate::views::customization::SELECTED_EDIT_GROUP.with(|g| *g.borrow_mut() = editing_group.clone());
+                SELECTED_EDIT_GROUP.with(|g| *g.borrow_mut() = editing_group.clone());
             }
 
             // Button to activate if not active
@@ -63,22 +66,35 @@ pub fn render_section_profiles(ui: &mut egui::Ui, config: &mut Config, engine: &
                     config.active_app_profile = "global".to_string();
                 }
             } else {
-                ui.label(RichText::new("Active").size(11.0).color(theme::accent_color(ui.ctx())));
+                ui.label(
+                    RichText::new("Active")
+                        .size(11.0)
+                        .color(theme::accent_color(ui.ctx())),
+                );
             }
         });
 
         ui.add_space(14.0);
 
-        let editing_group = crate::views::customization::SELECTED_EDIT_GROUP.with(|g| g.borrow().clone());
+        let editing_group = SELECTED_EDIT_GROUP.with(|g| g.borrow().clone());
         if !editing_group.is_empty() {
             // Delete group
             if editing_group == "default" {
                 ui.add_enabled(false, egui::Button::new("Delete Group"));
-                ui.label(RichText::new("The 'default' group cannot be deleted.").size(10.0).color(theme::muted_text(ui.ctx())));
+                ui.label(
+                    RichText::new("The 'default' group cannot be deleted.")
+                        .size(10.0)
+                        .color(theme::muted_text(ui.ctx())),
+                );
             } else {
-                if ui.button(RichText::new("Delete Profile Group").color(theme::danger_color(ui.ctx()))).clicked() {
+                if ui
+                    .button(
+                        RichText::new("Delete Profile Group").color(theme::danger_color(ui.ctx())),
+                    )
+                    .clicked()
+                {
                     engine.delete_profile_group(&editing_group);
-                    crate::views::customization::SELECTED_EDIT_GROUP.with(|g| g.borrow_mut().clear());
+                    SELECTED_EDIT_GROUP.with(|g| g.borrow_mut().clear());
                 }
             }
         }
@@ -90,7 +106,7 @@ pub fn render_section_profiles(ui: &mut egui::Ui, config: &mut Config, engine: &
         // Add group form
         ui.label("Create New Profile Group:");
         ui.horizontal(|ui| {
-            crate::views::customization::NEW_GROUP_NAME.with(|name_cell| {
+            NEW_GROUP_NAME.with(|name_cell| {
                 let mut name_ref = name_cell.borrow_mut();
                 ui.text_edit_singleline(&mut *name_ref);
                 if ui.button("Add Group").clicked() {

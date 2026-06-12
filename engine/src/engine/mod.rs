@@ -1,18 +1,21 @@
+pub mod action;
+pub mod app_change;
+pub mod gesture;
+pub mod hotplug;
+pub mod hscroll;
 pub mod inner;
 pub mod profile;
-pub mod gesture;
-pub mod hscroll;
-pub mod action;
-pub mod hotplug;
-pub mod app_change;
 
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering, AtomicU32, AtomicU64}};
 use std::collections::HashMap;
+use std::sync::{
+    atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+    Arc, Mutex,
+};
 use std::time::Instant;
 
 use crate::config::Config;
-use crate::input::{KeySimulator, MouseHook};
 use crate::detection::AppDetector;
+use crate::input::{KeySimulator, MouseHook};
 
 pub use self::inner::{EngineInner, GestureState};
 
@@ -31,6 +34,14 @@ impl Engine {
     pub fn new() -> Self {
         let config = Config::load();
         let key_simulator = KeySimulator::new();
+        if let Some(layout) = config
+            .settings
+            .device_layout_overrides
+            .get("keyboard_layout")
+            .and_then(|v| v.as_str())
+        {
+            key_simulator.set_keyboard_layout(layout);
+        }
         let current_profile = config.active_app_profile.clone();
 
         let invert_vscroll = config.settings.invert_vscroll;
@@ -82,6 +93,7 @@ impl Engine {
             cached_gesture_deadzone: AtomicU32::new(init_gesture_deadzone),
             cached_gesture_timeout_ms: AtomicU64::new(init_gesture_timeout_ms),
             cached_gesture_cooldown_ms: AtomicU64::new(init_gesture_cooldown_ms),
+            config_change_listener: Mutex::new(None),
         };
 
         let engine = Engine {
@@ -190,6 +202,18 @@ impl Engine {
 
     pub fn increment_config_generation(&self) {
         self.inner.config_generation.fetch_add(1, Ordering::Relaxed);
+        if let Ok(lock) = self.inner.config_change_listener.lock() {
+            if let Some(ref callback) = *lock {
+                callback();
+            }
+        }
+    }
+
+    pub fn set_config_change_listener<F>(&self, listener: F)
+    where
+        F: Fn() + Send + Sync + 'static,
+    {
+        *self.inner.config_change_listener.lock().unwrap() = Some(Box::new(listener));
     }
 
     pub fn device_connected(&self) -> bool {
@@ -216,10 +240,18 @@ impl Engine {
         let idx = *self.inner.selected_device_idx.lock().unwrap();
         if let Some(c) = clients.get(idx) {
             let layout = c.get_layout_key();
-            log::debug!("[Engine] Selected device layout: idx={}, name={}, layout={}", idx, c.device_name, layout);
+            log::debug!(
+                "[Engine] Selected device layout: idx={}, name={}, layout={}",
+                idx,
+                c.device_name,
+                layout
+            );
             layout
         } else {
-            log::debug!("[Engine] Selected device layout: idx={}, no client (returning generic)", idx);
+            log::debug!(
+                "[Engine] Selected device layout: idx={}, no client (returning generic)",
+                idx
+            );
             "generic".to_string()
         }
     }

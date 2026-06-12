@@ -1,6 +1,6 @@
-use std::path::PathBuf;
-use std::os::unix::net::{UnixListener, UnixStream};
 use std::io::Write;
+use std::os::unix::net::{UnixListener, UnixStream};
+use std::path::PathBuf;
 
 pub fn get_socket_path() -> PathBuf {
     let mut path = dirs::config_dir().unwrap_or_else(|| {
@@ -34,7 +34,10 @@ pub fn setup_single_instance(daemon_mode: bool) -> Option<UnixListener> {
                     match UnixListener::bind(&socket_path) {
                         Ok(listener) => Some(listener),
                         Err(err) => {
-                            eprintln!("Failed to bind to socket after removing stale file: {}", err);
+                            eprintln!(
+                                "Failed to bind to socket after removing stale file: {}",
+                                err
+                            );
                             None
                         }
                     }

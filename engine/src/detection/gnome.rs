@@ -44,7 +44,10 @@ pub fn get_active_app_pid_gnome_shell() -> Option<u32> {
         }
         Some(out) => {
             let stderr = String::from_utf8_lossy(&out.stderr);
-            if stderr.contains("doesn't exist") || stderr.contains("unknown method") || stderr.contains("InvalidArgs") {
+            if stderr.contains("doesn't exist")
+                || stderr.contains("unknown method")
+                || stderr.contains("InvalidArgs")
+            {
                 log::info!("[AppDetector] GNOME Shell Eval method is not supported (likely disabled). Disabling GNOME Eval fallback.");
                 GNOME_EVAL_SUPPORTED.store(false, Ordering::Relaxed);
             }

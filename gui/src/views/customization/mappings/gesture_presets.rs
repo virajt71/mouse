@@ -86,7 +86,9 @@ pub fn action_id_to_slot_display_name(action_id: &str) -> std::borrow::Cow<'_, s
         "maximize_window" => std::borrow::Cow::Borrowed("Maximize window"),
         "minimize_window" => std::borrow::Cow::Borrowed("Minimize window"),
         "alt_tab" => std::borrow::Cow::Borrowed("Switch application"),
-        "pan_left" | "pan_right" | "pan_up" | "pan_down" | "pan" => std::borrow::Cow::Borrowed("Pan"),
+        "pan_left" | "pan_right" | "pan_up" | "pan_down" | "pan" => {
+            std::borrow::Cow::Borrowed("Pan")
+        }
         "mouse_middle_click" => std::borrow::Cow::Borrowed("Middle button"),
         "rotate_left" | "rotate_right" | "rotate" => std::borrow::Cow::Borrowed("Rotate"),
         "zoom_in" => std::borrow::Cow::Borrowed("Zoom in"),

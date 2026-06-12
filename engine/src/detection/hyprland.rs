@@ -14,8 +14,7 @@ pub fn get_active_app_pid_hyprland() -> Option<u32> {
 
     match output {
         Some(out) if out.status.success() => {
-            let json: serde_json::Value =
-                serde_json::from_slice(&out.stdout).ok()?;
+            let json: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
             json.get("pid")?.as_u64().map(|p| p as u32)
         }
         Some(_) => None,

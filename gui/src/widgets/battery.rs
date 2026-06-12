@@ -1,5 +1,5 @@
-use eframe::egui;
 use crate::theme;
+use eframe::egui;
 
 pub fn draw_battery_widget(painter: &egui::Painter, rect: egui::Rect, level: f32) {
     let stroke_color = egui::Color32::from_rgb(0x66, 0x66, 0x66);

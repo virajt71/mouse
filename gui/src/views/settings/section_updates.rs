@@ -1,14 +1,19 @@
+use super::{render_spaced_header, section_card};
+use crate::theme;
+use crate::translation::tr;
+use crate::updater::{UpdateStatus, Updater};
+use crate::widgets::draw_refresh_icon;
 use eframe::egui;
-use egui::{vec2, Color32, Rect, RichText, Stroke, pos2};
+use egui::{pos2, vec2, Color32, Rect, RichText, Stroke};
 use mouser_engine::config::Config;
 use mouser_engine::Engine;
-use crate::updater::{Updater, UpdateStatus};
-use crate::translation::tr;
-use crate::theme;
-use crate::widgets::draw_refresh_icon;
-use super::{section_card, render_spaced_header};
 
-pub fn render_section_updates(ui: &mut egui::Ui, config: &mut Config, engine: &Engine, updater: &Updater) {
+pub fn render_section_updates(
+    ui: &mut egui::Ui,
+    config: &mut Config,
+    engine: &Engine,
+    updater: &Updater,
+) {
     section_card(ui, |ui| {
         // ── Section header ──
         ui.horizontal(|ui| {
@@ -68,10 +73,11 @@ pub fn render_section_updates(ui: &mut egui::Ui, config: &mut Config, engine: &E
                                 sha_url,
                                 bin_name,
                             );
-                        } else if let UpdateStatus::Idle
-                        | UpdateStatus::Failed(_) = status
-                        {
-                            updater.check_for_updates(ui.ctx().clone(), config.settings.install_updates);
+                        } else if let UpdateStatus::Idle | UpdateStatus::Failed(_) = status {
+                            updater.check_for_updates(
+                                ui.ctx().clone(),
+                                config.settings.install_updates,
+                            );
                         }
                     }
                 }
@@ -80,7 +86,9 @@ pub fn render_section_updates(ui: &mut egui::Ui, config: &mut Config, engine: &E
                     ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
                 }
 
-                let t = ui.ctx().animate_bool(response.id, config.settings.install_updates);
+                let t = ui
+                    .ctx()
+                    .animate_bool(response.id, config.settings.install_updates);
 
                 let inactive_fill = if ui.visuals().dark_mode {
                     Color32::from_rgb(0x2a, 0x2a, 0x2a)
@@ -295,7 +303,8 @@ pub fn render_section_updates(ui: &mut egui::Ui, config: &mut Config, engine: &E
                             .rounding(2.0),
                     );
                     if btn.clicked() {
-                        updater.check_for_updates(ui.ctx().clone(), config.settings.install_updates);
+                        updater
+                            .check_for_updates(ui.ctx().clone(), config.settings.install_updates);
                     }
                 }
                 _ => {}

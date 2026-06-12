@@ -1,9 +1,11 @@
-use anyhow::{anyhow, Result};
 use super::HidppClient;
+use anyhow::{anyhow, Result};
 
 impl HidppClient {
     pub fn set_control_reporting(&self, cid: u16, flags: u8) -> Result<()> {
-        let feat = self.feat_idx.ok_or_else(|| anyhow!("REPROG_V4 feature missing"))?;
+        let feat = self
+            .feat_idx
+            .ok_or_else(|| anyhow!("REPROG_V4 feature missing"))?;
         let hi = ((cid >> 8) & 0xFF) as u8;
         let lo = (cid & 0xFF) as u8;
         let resp = self.request(feat, 3, &[hi, lo, flags, 0x00, 0x00], 1000)?;

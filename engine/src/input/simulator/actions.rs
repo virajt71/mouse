@@ -1,7 +1,6 @@
-use evdev::Key;
-use super::KeySimulator;
-use super::key_map::KEY_MAP;
 use super::mouse_map::MOUSE_BTN_MAP;
+use super::KeySimulator;
+use evdev::Key;
 
 impl KeySimulator {
     pub fn execute_action(&self, action_id: &str) {
@@ -12,9 +11,10 @@ impl KeySimulator {
 
         if let Some(combo) = action_id.strip_prefix("custom:") {
             let mut keys = Vec::new();
+            let layout = self.get_keyboard_layout();
             for part in combo.split('+') {
                 let clean = part.trim().to_lowercase();
-                if let Some(&key) = (*KEY_MAP).get(clean.as_str()) {
+                if let Some(key) = super::key_map::get_key_by_layout(&clean, &layout) {
                     keys.push(key);
                 } else {
                     log::warn!("[KeySimulator] Unknown custom key name: {}", clean);
@@ -63,9 +63,7 @@ impl KeySimulator {
                 // KDE/Plasma standard fallback
                 Some(vec![Key::KEY_LEFTCTRL, Key::KEY_LEFTALT, Key::KEY_LEFT])
             }
-            "space_right" => {
-                Some(vec![Key::KEY_LEFTCTRL, Key::KEY_LEFTALT, Key::KEY_RIGHT])
-            }
+            "space_right" => Some(vec![Key::KEY_LEFTCTRL, Key::KEY_LEFTALT, Key::KEY_RIGHT]),
             "zoom_in" => Some(vec![Key::KEY_LEFTCTRL, Key::KEY_EQUAL]),
             "zoom_out" => Some(vec![Key::KEY_LEFTCTRL, Key::KEY_MINUS]),
             "tab_prev" => Some(vec![Key::KEY_LEFTCTRL, Key::KEY_PAGEUP]),

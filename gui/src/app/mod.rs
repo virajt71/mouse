@@ -39,15 +39,17 @@ pub struct MouserApp {
     pub(crate) preloaded_mouse_image: Option<egui::ColorImage>,
     pub(crate) preloaded_customization_mouse_image: Option<egui::ColorImage>,
     pub(crate) current_connection_type: Option<String>,
-    pub(crate) device_batteries: std::collections::HashMap<String, String>,
-    pub(crate) device_conn_types: std::collections::HashMap<String, String>,
     pub(crate) toast_message: Option<String>,
     pub(crate) toast_shown_at: Option<std::time::Instant>,
     pub(crate) last_known_profile: String,
 }
 
 impl MouserApp {
-    pub fn new(ctx: egui::Context, tray_icon: Option<tray_icon::TrayIcon>, engine: mouser_engine::Engine) -> Self {
+    pub fn new(
+        ctx: egui::Context,
+        tray_icon: Option<tray_icon::TrayIcon>,
+        engine: mouser_engine::Engine,
+    ) -> Self {
         let cached = mouser_engine::cache::load_device_cache();
         let config = engine.get_config();
         let gui_active_profile = config.active_app_profile.clone();
@@ -87,6 +89,12 @@ impl MouserApp {
             engine.active_profile_shared(),
         );
 
+        let repaint_ctx_config = ctx.clone();
+        engine.set_config_change_listener(move || {
+            repaint_ctx_config.request_repaint();
+        });
+
+
         Self {
             tray_icon,
             current_tray_icon_type: "mouse".to_string(),
@@ -114,8 +122,6 @@ impl MouserApp {
             preloaded_mouse_image: None,
             preloaded_customization_mouse_image: None,
             current_connection_type: None,
-            device_batteries: std::collections::HashMap::new(),
-            device_conn_types: std::collections::HashMap::new(),
             toast_message: None,
             toast_shown_at: None,
             last_known_profile: String::new(),
@@ -127,13 +133,13 @@ impl MouserApp {
         let current_gen = self.engine.config_generation();
         if current_gen != self.last_config_generation {
             let fresh = self.engine.get_config();
-            
+
             self.config.settings = fresh.settings;
             self.config.active_group = fresh.active_group;
             self.config.active_app_profile = fresh.active_app_profile;
             self.config.profile_groups = fresh.profile_groups;
             self.config.version = fresh.version;
-            
+
             self.last_config_generation = current_gen;
         }
     }

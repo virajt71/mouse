@@ -1,10 +1,10 @@
-use std::sync::Mutex;
-use std::time::Duration;
-use std::fs;
-use std::path::Path;
-use arboard::{Clipboard, ImageData};
 use super::network::{send_event_to_peer, FlowEvent};
 use super::FLOW_MANAGER;
+use arboard::{Clipboard, ImageData};
+use std::fs;
+use std::path::Path;
+use std::sync::Mutex;
+use std::time::Duration;
 
 lazy_static::lazy_static! {
     static ref LAST_TEXT: Mutex<String> = Mutex::new(String::new());
@@ -24,7 +24,10 @@ pub fn run_clipboard_loop() {
                     clipboard_opt = Some(c);
                 }
                 Err(e) => {
-                    log::warn!("[Flow Clipboard] Failed to initialize clipboard: {}. Retrying in 5s...", e);
+                    log::warn!(
+                        "[Flow Clipboard] Failed to initialize clipboard: {}. Retrying in 5s...",
+                        e
+                    );
                     std::thread::sleep(Duration::from_secs(5));
                     continue;
                 }
@@ -41,7 +44,10 @@ pub fn run_clipboard_loop() {
                     if text != *last && !text.is_empty() {
                         *last = text.clone();
 
-                        log::debug!("[Flow Clipboard] Local clipboard changed: text len={}", text.len());
+                        log::debug!(
+                            "[Flow Clipboard] Local clipboard changed: text len={}",
+                            text.len()
+                        );
 
                         // If text starts with file://, check if we should stream it as files
                         let event = if text.starts_with("file://") {
@@ -50,11 +56,15 @@ pub fn run_clipboard_loop() {
                             let path = Path::new(clean_path);
                             if path.is_file() {
                                 if let Ok(content) = fs::read(path) {
-                                    let filename = path.file_name()
+                                    let filename = path
+                                        .file_name()
                                         .unwrap_or_default()
                                         .to_string_lossy()
                                         .to_string();
-                                    Some(FlowEvent::FileTransfer { name: filename, content })
+                                    Some(FlowEvent::FileTransfer {
+                                        name: filename,
+                                        content,
+                                    })
                                 } else {
                                     Some(FlowEvent::ClipboardText(text))
                                 }
@@ -76,7 +86,10 @@ pub fn run_clipboard_loop() {
                 }
                 Err(arboard::Error::ContentNotAvailable) => {}
                 Err(e) => {
-                    log::debug!("[Flow Clipboard] Failed to read clipboard text: {}. Resetting context...", e);
+                    log::debug!(
+                        "[Flow Clipboard] Failed to read clipboard text: {}. Resetting context...",
+                        e
+                    );
                     clipboard_opt = None;
                 }
             }
@@ -90,7 +103,11 @@ pub fn run_clipboard_loop() {
                         let mut last_hash = LAST_IMG_HASH.lock().unwrap();
                         if hash != *last_hash && !img.bytes.is_empty() {
                             *last_hash = hash;
-                            log::debug!("[Flow Clipboard] Local clipboard changed: image size={}x{}", img.width, img.height);
+                            log::debug!(
+                                "[Flow Clipboard] Local clipboard changed: image size={}x{}",
+                                img.width,
+                                img.height
+                            );
                             if let Ok(png_bytes) = encode_rgba_to_png(&img) {
                                 let evt = FlowEvent::ClipboardImage(png_bytes);
                                 let conns = super::network::ACTIVE_CONNECTIONS.read().unwrap();
@@ -141,7 +158,7 @@ pub fn set_local_clipboard_image(png_bytes: Vec<u8>) -> anyhow::Result<()> {
         let (width, height) = rgba.dimensions();
         let mut clipboard = Clipboard::new()?;
         let raw_bytes = rgba.into_raw();
-        
+
         // Update local hash tracker to prevent echo loop
         use sha2::{Digest, Sha256};
         let hash = format!("{:x}", Sha256::digest(&raw_bytes));
@@ -167,6 +184,9 @@ pub fn save_flow_file(name: String, content: Vec<u8>) -> anyhow::Result<()> {
     // Set clipboard to uri-list of temporary file
     let file_uri = format!("file://{}", file_path.to_string_lossy());
     set_local_clipboard_text(file_uri)?;
-    log::info!("[Flow Clipboard] File '{}' received and set to clipboard.", name);
+    log::info!(
+        "[Flow Clipboard] File '{}' received and set to clipboard.",
+        name
+    );
     Ok(())
 }

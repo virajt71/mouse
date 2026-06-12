@@ -1,5 +1,5 @@
-use crate::ActiveView;
 use crate::theme;
+use crate::ActiveView;
 use eframe::egui;
 
 pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, active_view: &mut ActiveView, lang: &str) {
@@ -88,7 +88,10 @@ pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, active_view: &mut ActiveView
         let mut job = egui::text::LayoutJob::default();
         let mut chars = title_text.char_indices().peekable();
         while let Some((idx, _)) = chars.next() {
-            let next_idx = chars.peek().map(|(n_idx, _)| *n_idx).unwrap_or(title_text.len());
+            let next_idx = chars
+                .peek()
+                .map(|(n_idx, _)| *n_idx)
+                .unwrap_or(title_text.len());
             job.append(
                 &title_text[idx..next_idx],
                 1.5, // spaced caps effect
