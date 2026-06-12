@@ -142,13 +142,13 @@ impl eframe::App for MouserApp {
                                     let top_padding = ((height - content_height) / 2.0 - 20.0).max(0.0);
                                     ui.add_space(top_padding);
 
-                                    ui.horizontal(|ui| {
+                                    ui.horizontal_top(|ui| {
                                         let gap = 40.0;
                                         let mut total_width = 0.0;
                                         for (_, name, _) in &display_devices {
                                             let layout_key = crate::app::get_layout_key_from_name(name);
                                             let is_kbd = layout_key.contains("keys") || layout_key.contains("mechanical");
-                                            let card_w = if is_kbd { 480.0 } else { 220.0 };
+                                            let card_w = if is_kbd { 560.0 } else { 220.0 };
                                             total_width += card_w;
                                         }
                                         total_width += gap * (display_devices.len() - 1) as f32;

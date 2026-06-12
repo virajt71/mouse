@@ -158,7 +158,7 @@ pub fn show_known_device(
         let is_kbd = layout_key.contains("keys") || layout_key.contains("mechanical");
 
         let img_size = if is_kbd {
-            egui::vec2(480.0, 200.0)
+            egui::vec2(560.0, 220.0)
         } else {
             egui::vec2(220.0, 220.0)
         };
@@ -194,7 +194,14 @@ pub fn show_known_device(
             }
         }
 
-        let anim_size = img_size * scale;
+        let aspect_ratio = texture.size()[0] as f32 / texture.size()[1] as f32;
+        let anim_size = if aspect_ratio > (img_size.x / img_size.y) {
+            let w = img_size.x * scale;
+            egui::vec2(w, w / aspect_ratio)
+        } else {
+            let h = img_size.y * scale;
+            egui::vec2(h * aspect_ratio, h)
+        };
         let anim_rect = egui::Rect::from_center_size(mouse_rect.center(), anim_size);
 
         ui.put(

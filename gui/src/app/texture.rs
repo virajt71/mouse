@@ -48,14 +48,16 @@ impl MouserApp {
                     include_bytes!("../../../assets/images/logitech-keyboards/mx_keys/keyboard.png")
                 }
                 "mx_master_3" | "mx_master_3s" | "mx_master_2s" | "mx_master" => {
-                    include_bytes!("../../../assets/images/logitech-mice/mx_master_3/mouse.png")
+                    include_bytes!(
+                        "../../../assets/images/logitech-mice/mx_master_3/mouse.png"
+                    )
                 }
                 "mx_anywhere_3s" | "mx_anywhere_3" | "mx_anywhere" => {
                     include_bytes!("../../../assets/images/logitech-mice/mx_anywhere_3s/mouse.png")
                 }
                 "mx_mechanical" | "mx_mechanical_mini" => {
                     include_bytes!(
-                        "../../../assets/images/logitech-keyboards/mx_mechanical/keyboard.png"
+                        "../../../assets/images/logitech-keyboards/mx_mechanical/mx-mechanical-top-view-graphite-deu.webp"
                     )
                 }
                 _ => include_bytes!("../../../assets/images/mouse.png"),
