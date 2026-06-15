@@ -1,6 +1,6 @@
 use crate::theme;
-use crate::ActiveView;
 use crate::widgets::draw_settings_gear_icon;
+use crate::ActiveView;
 use eframe::egui;
 
 pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, active_view: &mut ActiveView, lang: &str) {

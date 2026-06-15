@@ -121,9 +121,7 @@ pub fn get_key_by_layout(key: &str, layout: &str) -> Option<Key> {
         },
 
         // AZERTY layouts
-        "AZERTY (French)"
-        | "French"
-        | "Belgian" => match key {
+        "AZERTY (French)" | "French" | "Belgian" => match key {
             "a" => Some(Key::KEY_Q),
             "q" => Some(Key::KEY_A),
             "z" => Some(Key::KEY_W),
@@ -269,7 +267,7 @@ mod tests {
         assert_eq!(get_key_by_layout("y", "QWERTZ (German)"), Some(Key::KEY_Z));
         assert_eq!(get_key_by_layout("z", "QWERTZ (German)"), Some(Key::KEY_Y));
         assert_eq!(get_key_by_layout("a", "QWERTZ (German)"), Some(Key::KEY_A));
-        
+
         assert_eq!(get_key_by_layout("y", "German"), Some(Key::KEY_Z));
         assert_eq!(get_key_by_layout("z", "German"), Some(Key::KEY_Y));
         assert_eq!(get_key_by_layout("y", "Hungarian"), Some(Key::KEY_Z));
@@ -296,7 +294,10 @@ mod tests {
     fn test_dvorak_mapping() {
         assert_eq!(get_key_by_layout("b", "Dvorak English"), Some(Key::KEY_N));
         assert_eq!(get_key_by_layout("c", "Dvorak English"), Some(Key::KEY_I));
-        assert_eq!(get_key_by_layout("z", "Dvorak English"), Some(Key::KEY_SLASH));
+        assert_eq!(
+            get_key_by_layout("z", "Dvorak English"),
+            Some(Key::KEY_SLASH)
+        );
     }
 
     #[test]
@@ -309,8 +310,14 @@ mod tests {
     #[test]
     fn test_bepo_mapping() {
         assert_eq!(get_key_by_layout("b", "French (BÉPO)"), Some(Key::KEY_Q));
-        assert_eq!(get_key_by_layout("w", "French (BÉPO)"), Some(Key::KEY_RIGHTBRACE));
-        assert_eq!(get_key_by_layout("z", "French (BÉPO)"), Some(Key::KEY_LEFTBRACE));
+        assert_eq!(
+            get_key_by_layout("w", "French (BÉPO)"),
+            Some(Key::KEY_RIGHTBRACE)
+        );
+        assert_eq!(
+            get_key_by_layout("z", "French (BÉPO)"),
+            Some(Key::KEY_LEFTBRACE)
+        );
     }
 
     #[test]

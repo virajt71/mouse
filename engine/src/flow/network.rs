@@ -11,6 +11,8 @@ lazy_static::lazy_static! {
     pub static ref CONNECTING_PEERS: RwLock<std::collections::HashSet<String>> = RwLock::new(std::collections::HashSet::new());
 }
 
+pub static IS_SEARCHING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub enum FlowEvent {
     MouseMove { dx: i32, dy: i32 },
@@ -112,6 +114,7 @@ pub fn run_discovery_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) 
 }
 
 fn thread_spawn_broadcast(socket: UdpSocket, engine_inner: Arc<crate::engine::inner::EngineInner>) {
+    use std::sync::atomic::Ordering;
     std::thread::spawn(move || loop {
         let (enabled, name) = {
             let cfg = engine_inner.config.lock().unwrap();
@@ -121,7 +124,9 @@ fn thread_spawn_broadcast(socket: UdpSocket, engine_inner: Arc<crate::engine::in
             )
         };
 
-        if enabled {
+        let searching = IS_SEARCHING.load(Ordering::SeqCst);
+
+        if enabled || searching {
             let msg = format!("MOUSER_DISCOVER:{}", name);
             let _ = socket.send_to(msg.as_bytes(), "255.255.255.255:50519");
         }

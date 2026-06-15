@@ -578,8 +578,6 @@ pub fn show(
         pos2(rect.min.x + 240.0, rect.max.y),
     );
 
-
-
     draw_sidebar(
         ui,
         sidebar_rect,
@@ -623,7 +621,12 @@ pub fn show(
                 );
             }
             SidebarTab::PointAndScroll => {
-                tabs::show_keyboard_backlighting_tab(&mut canvas_ui, engine, config, device_texture);
+                tabs::show_keyboard_backlighting_tab(
+                    &mut canvas_ui,
+                    engine,
+                    config,
+                    device_texture,
+                );
             }
             SidebarTab::Flow => {
                 tabs::show_keyboard_easy_switch_tab(&mut canvas_ui, engine, config);

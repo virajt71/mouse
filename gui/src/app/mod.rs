@@ -94,7 +94,6 @@ impl MouserApp {
             repaint_ctx_config.request_repaint();
         });
 
-
         Self {
             tray_icon,
             current_tray_icon_type: "mouse".to_string(),

@@ -222,7 +222,7 @@ impl Engine {
     pub fn cycle_backlight_effect(&self) {
         log::info!("[Engine] Cycle backlight effect triggered by Fn+Lightbulb");
         let active_profile = self.inner.active_profile_shared.lock().unwrap().clone();
-        
+
         let mut new_effect = String::from("Static");
         let mut new_enabled = String::from("true");
         let mut mappings = std::collections::HashMap::new();
@@ -230,12 +230,30 @@ impl Engine {
         {
             let cfg = self.inner.config.lock().unwrap();
             if let Some(profile) = cfg.get_profile(&active_profile) {
-                let current_effect = profile.mappings.get("backlight_effect").map(|s| s.as_str()).unwrap_or("Static");
-                let current_enabled = profile.mappings.get("backlight_enabled").map(|s| s.as_str()).unwrap_or("true");
+                let current_effect = profile
+                    .mappings
+                    .get("backlight_effect")
+                    .map(|s| s.as_str())
+                    .unwrap_or("Static");
+                let current_enabled = profile
+                    .mappings
+                    .get("backlight_enabled")
+                    .map(|s| s.as_str())
+                    .unwrap_or("true");
                 new_enabled = current_enabled.to_string();
 
-                let effects = ["Static", "Contrast", "Breathing", "Waves", "Reaction", "Random"];
-                let current_idx = effects.iter().position(|&x| x == current_effect).unwrap_or(0);
+                let effects = [
+                    "Static",
+                    "Contrast",
+                    "Breathing",
+                    "Waves",
+                    "Reaction",
+                    "Random",
+                ];
+                let current_idx = effects
+                    .iter()
+                    .position(|&x| x == current_effect)
+                    .unwrap_or(0);
                 let next_idx = (current_idx + 1) % effects.len();
                 new_effect = effects[next_idx].to_string();
 

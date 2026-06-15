@@ -1,10 +1,10 @@
 pub mod actions;
-pub mod emit;
-pub mod key_map;
-pub mod mouse_map;
-pub mod layout_translator;
 pub mod compose;
+pub mod emit;
 pub mod hangul;
+pub mod key_map;
+pub mod layout_translator;
+pub mod mouse_map;
 
 pub use self::mouse_map::{get_mouse_button_key, is_mouse_button_action};
 
