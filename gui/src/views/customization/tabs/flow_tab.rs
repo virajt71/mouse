@@ -138,7 +138,7 @@ pub fn show_flow_tab(ui: &mut egui::Ui, engine: &Engine, config: &mut Config) {
 
     if settings_dirty {
         let _ = config.save();
-        engine.increment_config_generation();
+        engine.reload_config();
     }
 }
 

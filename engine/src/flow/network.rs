@@ -220,6 +220,8 @@ pub fn connect_to_peer(
         return;
     };
 
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+
     // Read challenge
     let mut reader = BufReader::new(stream.try_clone().unwrap());
     let mut line = String::new();
@@ -271,6 +273,8 @@ pub fn connect_to_peer(
     if line.trim() != "MOUSER_OK" {
         return;
     }
+
+    let _ = stream.set_read_timeout(None);
 
     log::info!("[Flow Network] Connected to peer '{}'", name);
     {
@@ -393,6 +397,7 @@ fn handle_client(
         conns.insert(client_name.clone(), stream.try_clone()?);
     }
 
+    let _ = stream.set_read_timeout(None);
     process_peer_events(stream, client_name, engine_inner)
 }
 
