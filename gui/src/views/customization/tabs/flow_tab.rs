@@ -1081,12 +1081,36 @@ fn show_flow_config_screen(
                             theme::surface_color(ui.ctx())
                         };
 
+                        let is_connected = if is_local {
+                            true
+                        } else if !label.is_empty() {
+                            mouser_engine::flow::network::ACTIVE_CONNECTIONS.read().unwrap().contains_key(label)
+                        } else {
+                            false
+                        };
+
                         let border = if is_local {
                             theme::accent_color(ui.ctx())
                         } else if !label.is_empty() {
-                            theme::accent_color(ui.ctx())
+                            if is_connected {
+                                theme::accent_color(ui.ctx())
+                            } else {
+                                theme::border_color(ui.ctx())
+                            }
                         } else {
                             theme::border_color(ui.ctx())
+                        };
+
+                        let text_color = if is_local {
+                            theme::primary_text(ui.ctx())
+                        } else if !label.is_empty() {
+                            if is_connected {
+                                theme::primary_text(ui.ctx())
+                            } else {
+                                theme::muted_text(ui.ctx())
+                            }
+                        } else {
+                            theme::muted_text(ui.ctx())
                         };
 
                         ui.painter().rect_filled(r, 4.0, bg);
@@ -1104,7 +1128,7 @@ fn show_flow_config_screen(
                             egui::Align2::CENTER_CENTER,
                             &display_label,
                             egui::FontId::proportional(10.0),
-                            theme::primary_text(ui.ctx()),
+                            text_color,
                         );
 
                         if !is_local && res.clicked() {
@@ -1282,7 +1306,12 @@ fn show_flow_config_screen(
                                 // Check if this peer is already paired
                                 let paired = config.settings.flow_peers.iter().any(|p| p.name == *name && p.paired);
                                 if paired {
-                                    ui.label(RichText::new("Paired").color(theme::accent_color(ui.ctx())).size(10.5));
+                                    let is_connected = mouser_engine::flow::network::ACTIVE_CONNECTIONS.read().unwrap().contains_key(name);
+                                    if is_connected {
+                                        ui.label(RichText::new("Paired & Connected").color(theme::accent_color(ui.ctx())).size(10.5));
+                                    } else {
+                                        ui.label(RichText::new("Paired (Offline)").color(theme::muted_text(ui.ctx())).size(10.5));
+                                    }
                                 } else {
                                     if ui.button("Pair").clicked() {
                                         config.settings.flow_peers.push(FlowPeer {
@@ -1305,4 +1334,6 @@ fn show_flow_config_screen(
             });
         });
     });
+
+    ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
 }
