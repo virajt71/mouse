@@ -4,6 +4,7 @@ pub mod switching;
 
 use crate::config::Config;
 use std::sync::{Arc, Mutex, RwLock};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 lazy_static::lazy_static! {
     pub static ref FLOW_MANAGER: Arc<FlowManager> = Arc::new(FlowManager::new());
@@ -18,6 +19,12 @@ pub struct FlowManager {
     pub is_running: Mutex<bool>,
     pub engine_inner: Mutex<Option<Arc<crate::engine::inner::EngineInner>>>,
     pub current_controller: RwLock<Option<String>>,
+
+    // Cached configuration fields to avoid locking config on every mouse event
+    pub flow_enabled: AtomicBool,
+    pub flow_mouse_mode: RwLock<String>,
+    pub flow_hold_key: RwLock<String>,
+    pub flow_peers: RwLock<Vec<crate::config::FlowPeer>>,
 }
 
 impl FlowManager {
@@ -31,6 +38,10 @@ impl FlowManager {
             is_running: Mutex::new(false),
             engine_inner: Mutex::new(None),
             current_controller: RwLock::new(None),
+            flow_enabled: AtomicBool::new(false),
+            flow_mouse_mode: RwLock::new("software".to_string()),
+            flow_hold_key: RwLock::new("none".to_string()),
+            flow_peers: RwLock::new(Vec::new()),
         }
     }
 
@@ -43,11 +54,10 @@ impl FlowManager {
 
         log::info!("[Flow] Starting FlowManager background threads...");
 
-        // Update local screen dimensions from config
+        // Update cached config
         {
             let cfg = engine_inner.config.lock().unwrap();
-            *self.screen_width.write().unwrap() = cfg.settings.flow_screen_width;
-            *self.screen_height.write().unwrap() = cfg.settings.flow_screen_height;
+            self.update_config(&cfg);
         }
 
         // Store engine_inner
@@ -121,16 +131,21 @@ impl FlowManager {
         *self.current_controller.write().unwrap() = peer;
     }
 
+    pub fn update_config(&self, cfg: &Config) {
+        *self.screen_width.write().unwrap() = cfg.settings.flow_screen_width;
+        *self.screen_height.write().unwrap() = cfg.settings.flow_screen_height;
+        self.flow_enabled.store(cfg.settings.flow_enabled, Ordering::SeqCst);
+        *self.flow_mouse_mode.write().unwrap() = cfg.settings.flow_mouse_mode.clone();
+        *self.flow_hold_key.write().unwrap() = cfg.settings.flow_hold_key.clone();
+        *self.flow_peers.write().unwrap() = cfg.settings.flow_peers.clone();
+    }
+
     pub fn handle_raw_motion(
         &self,
         dx: i32,
         dy: i32,
-        config_lock: &Mutex<Config>,
     ) -> Option<String> {
-        let mouse_mode = {
-            let cfg = config_lock.lock().unwrap();
-            cfg.settings.flow_mouse_mode.clone()
-        };
+        let mouse_mode = self.flow_mouse_mode.read().unwrap().clone();
         if mouse_mode == "software" {
             return None;
         }
@@ -159,9 +174,9 @@ impl FlowManager {
         }
 
         if let Some((lx, ly)) = transition_to {
-            let cfg = config_lock.lock().unwrap();
-            if cfg.settings.flow_enabled {
-                for peer in &cfg.settings.flow_peers {
+            if self.flow_enabled.load(Ordering::SeqCst) {
+                let peers = self.flow_peers.read().unwrap();
+                for peer in peers.iter() {
                     if peer.paired && peer.layout_x == lx && peer.layout_y == ly {
                         // Reset virtual coordinates to opposite edge to prevent loop bouncing
                         if lx == -1 {

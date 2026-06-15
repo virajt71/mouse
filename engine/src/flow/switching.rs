@@ -1,6 +1,5 @@
 use super::FLOW_MANAGER;
-use crate::config::Config;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 use x11rb::connection::Connection;
 
@@ -14,13 +13,10 @@ pub fn run_edge_detection_loop(engine_inner: Arc<crate::engine::inner::EngineInn
             break;
         }
 
-        let (enabled, mouse_mode) = {
-            let cfg = engine_inner.config.lock().unwrap();
-            (
-                cfg.settings.flow_enabled,
-                cfg.settings.flow_mouse_mode.clone(),
-            )
-        };
+        let (enabled, mouse_mode) = (
+            FLOW_MANAGER.flow_enabled.load(Ordering::SeqCst),
+            FLOW_MANAGER.flow_mouse_mode.read().unwrap().clone(),
+        );
 
         if !enabled || mouse_mode != "software" {
             std::thread::sleep(Duration::from_millis(1000));
@@ -39,14 +35,11 @@ pub fn run_edge_detection_loop(engine_inner: Arc<crate::engine::inner::EngineInn
                         return;
                     }
 
-                    let (inner_enabled, inner_mouse_mode, hold_key) = {
-                        let cfg = engine_inner.config.lock().unwrap();
-                        (
-                            cfg.settings.flow_enabled,
-                            cfg.settings.flow_mouse_mode.clone(),
-                            cfg.settings.flow_hold_key.clone(),
-                        )
-                    };
+                    let (inner_enabled, inner_mouse_mode, hold_key) = (
+                        FLOW_MANAGER.flow_enabled.load(Ordering::SeqCst),
+                        FLOW_MANAGER.flow_mouse_mode.read().unwrap().clone(),
+                        FLOW_MANAGER.flow_hold_key.read().unwrap().clone(),
+                    );
 
                     if !inner_enabled || inner_mouse_mode != "software" {
                         break;
@@ -85,9 +78,9 @@ pub fn run_edge_detection_loop(engine_inner: Arc<crate::engine::inner::EngineInn
                                         if lx != 0 || ly != 0 {
                                             // Check if transition modifier key is satisfied
                                             if is_hold_key_satisfied(&hold_key) {
-                                                let cfg = engine_inner.config.lock().unwrap();
+                                                let peers = FLOW_MANAGER.flow_peers.read().unwrap();
                                                 if let Some(peer) =
-                                                    cfg.settings.flow_peers.iter().find(|p| {
+                                                    peers.iter().find(|p| {
                                                         p.paired
                                                             && p.layout_x == lx
                                                             && p.layout_y == ly
@@ -178,12 +171,10 @@ pub fn is_hold_key_satisfied(hold_key: &str) -> bool {
     true
 }
 
-pub fn get_peer_channel_index(peer_name: &str, config_lock: &Mutex<Config>) -> Option<u8> {
-    let cfg = config_lock.lock().unwrap();
+pub fn get_peer_channel_index(peer_name: &str) -> Option<u8> {
+    let peers = FLOW_MANAGER.flow_peers.read().unwrap();
     // In this implementation, we map peer order index (0, 1, 2) to channel index
-    if let Some(pos) = cfg
-        .settings
-        .flow_peers
+    if let Some(pos) = peers
         .iter()
         .position(|p| p.name == peer_name)
     {
