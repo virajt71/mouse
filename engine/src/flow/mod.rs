@@ -25,6 +25,8 @@ pub struct FlowManager {
     pub flow_mouse_mode: RwLock<String>,
     pub flow_hold_key: RwLock<String>,
     pub flow_peers: RwLock<Vec<crate::config::FlowPeer>>,
+    pub is_forwarding: AtomicBool,
+    pub flow_mouse_mode_hardware: AtomicBool,
 }
 
 impl FlowManager {
@@ -42,6 +44,8 @@ impl FlowManager {
             flow_mouse_mode: RwLock::new("software".to_string()),
             flow_hold_key: RwLock::new("none".to_string()),
             flow_peers: RwLock::new(Vec::new()),
+            is_forwarding: AtomicBool::new(false),
+            flow_mouse_mode_hardware: AtomicBool::new(false),
         }
     }
 
@@ -88,7 +92,7 @@ impl FlowManager {
     }
 
     pub fn is_forwarding_to_remote(&self) -> bool {
-        self.active_peer.read().unwrap().is_some()
+        self.is_forwarding.load(Ordering::SeqCst)
     }
 
     pub fn get_active_peer_name(&self) -> Option<String> {
@@ -98,6 +102,7 @@ impl FlowManager {
     pub fn set_active_peer(&self, peer: Option<String>) {
         let was_local = self.active_peer.read().unwrap().is_none();
         let going_remote = peer.is_some();
+        self.is_forwarding.store(going_remote, Ordering::SeqCst);
 
         if was_local && going_remote {
             // Flush modifiers before handing off
@@ -136,6 +141,7 @@ impl FlowManager {
         *self.screen_height.write().unwrap() = cfg.settings.flow_screen_height;
         self.flow_enabled.store(cfg.settings.flow_enabled, Ordering::SeqCst);
         *self.flow_mouse_mode.write().unwrap() = cfg.settings.flow_mouse_mode.clone();
+        self.flow_mouse_mode_hardware.store(cfg.settings.flow_mouse_mode == "hardware", Ordering::SeqCst);
         *self.flow_hold_key.write().unwrap() = cfg.settings.flow_hold_key.clone();
         *self.flow_peers.write().unwrap() = cfg.settings.flow_peers.clone();
     }
@@ -145,8 +151,7 @@ impl FlowManager {
         dx: i32,
         dy: i32,
     ) -> Option<String> {
-        let mouse_mode = self.flow_mouse_mode.read().unwrap().clone();
-        if mouse_mode == "software" {
+        if !self.flow_mouse_mode_hardware.load(Ordering::SeqCst) {
             return None;
         }
 

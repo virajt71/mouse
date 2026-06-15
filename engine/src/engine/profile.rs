@@ -48,7 +48,7 @@ impl Engine {
             let mut cfg = self.inner.config.lock().unwrap();
             cfg.active_app_profile = name.to_string();
             let _ = cfg.save();
-            self.increment_config_generation();
+            self.increment_config_generation(&cfg);
         }
         self.refresh_active_profile();
     }
@@ -73,7 +73,7 @@ impl Engine {
                     new_profile.apps = Vec::new();
                     group.profiles.insert(name.to_string(), new_profile);
                     let _ = cfg.save();
-                    self.increment_config_generation();
+                    self.increment_config_generation(&cfg);
                 }
             }
         }
@@ -93,7 +93,7 @@ impl Engine {
                     cfg.active_app_profile = "global".to_string();
                 }
                 let _ = cfg.save();
-                self.increment_config_generation();
+                self.increment_config_generation(&cfg);
             }
         }
         self.refresh_active_profile();
@@ -137,7 +137,7 @@ impl Engine {
                         profile.apps = vec![clean_exe];
                     }
                     let _ = cfg.save();
-                    self.increment_config_generation();
+                    self.increment_config_generation(&cfg);
                 }
             }
         }
@@ -158,7 +158,7 @@ impl Engine {
                         profile.mappings.insert(k, v);
                     }
                     let _ = cfg.save();
-                    self.increment_config_generation();
+                    self.increment_config_generation(&cfg);
                 }
             }
         }
@@ -278,7 +278,7 @@ impl Engine {
                 cfg.active_group = name.to_string();
                 cfg.active_app_profile = "global".to_string();
                 let _ = cfg.save();
-                self.increment_config_generation();
+                self.increment_config_generation(&cfg);
             }
         }
         self.refresh_active_profile();
@@ -308,7 +308,7 @@ impl Engine {
                 cfg.profile_groups
                     .insert(name.to_string(), crate::config::ProfileGroup { profiles });
                 let _ = cfg.save();
-                self.increment_config_generation();
+                self.increment_config_generation(&cfg);
             }
         }
     }
@@ -326,7 +326,7 @@ impl Engine {
                 cfg.active_app_profile = "global".to_string();
             }
             let _ = cfg.save();
-            self.increment_config_generation();
+            self.increment_config_generation(&cfg);
         }
         self.refresh_active_profile();
     }
@@ -363,7 +363,7 @@ impl Engine {
             cfg.settings.accent_color = accent_color;
             cfg.settings.hscroll_threshold = hscroll_threshold;
             let _ = cfg.save();
-            self.increment_config_generation();
+            self.increment_config_generation(&cfg);
         }
 
         self.inner
@@ -407,7 +407,7 @@ impl Engine {
                 serde_json::Value::String(layout.to_string()),
             );
             let _ = cfg.save();
-            self.increment_config_generation();
+            self.increment_config_generation(&cfg);
         }
         self.inner.key_simulator.set_keyboard_layout(layout);
     }
@@ -417,7 +417,7 @@ impl Engine {
         let (dpi, ss_mode, ss_enabled, ss_threshold, invert_hscroll, invert_vscroll, layout) = {
             let mut cfg = self.inner.config.lock().unwrap();
             *cfg = Config::load();
-            self.increment_config_generation();
+            self.increment_config_generation(&cfg);
             let layout = cfg
                 .settings
                 .device_layout_overrides

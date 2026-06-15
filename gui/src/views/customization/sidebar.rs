@@ -34,6 +34,7 @@ pub fn draw_sidebar(
             &[
                 (SidebarTab::Buttons, "KEYS"),
                 (SidebarTab::PointAndScroll, "BACKLIGHTING"),
+                (SidebarTab::Flow, "EASY-SWITCH"),
                 (SidebarTab::Settings, "SETTINGS"),
             ][..]
         } else {
@@ -41,6 +42,7 @@ pub fn draw_sidebar(
                 (SidebarTab::Buttons, "BUTTONS"),
                 (SidebarTab::PointAndScroll, "POINT AND SCROLL"),
                 (SidebarTab::Flow, "FLOW"),
+                (SidebarTab::Settings, "SETTINGS"),
             ][..]
         };
 
