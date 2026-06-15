@@ -20,6 +20,8 @@ pub struct FlowPeer {
     pub paired: bool,
     pub fingerprint: String,
     pub auto_reconnect: bool,
+    #[serde(default)]
+    pub channel_index: u8,
 }
 
 fn default_local_name() -> String {

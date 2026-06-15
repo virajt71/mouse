@@ -13,12 +13,9 @@ pub fn run_edge_detection_loop(engine_inner: Arc<crate::engine::inner::EngineInn
             break;
         }
 
-        let (enabled, mouse_mode) = (
-            FLOW_MANAGER.flow_enabled.load(Ordering::SeqCst),
-            FLOW_MANAGER.flow_mouse_mode.read().unwrap().clone(),
-        );
+        let enabled = FLOW_MANAGER.flow_enabled.load(Ordering::SeqCst);
 
-        if !enabled || mouse_mode != "software" {
+        if !enabled {
             std::thread::sleep(Duration::from_millis(1000));
             continue;
         }
@@ -35,13 +32,12 @@ pub fn run_edge_detection_loop(engine_inner: Arc<crate::engine::inner::EngineInn
                         return;
                     }
 
-                    let (inner_enabled, inner_mouse_mode, hold_key) = (
+                    let (inner_enabled, hold_key) = (
                         FLOW_MANAGER.flow_enabled.load(Ordering::SeqCst),
-                        FLOW_MANAGER.flow_mouse_mode.read().unwrap().clone(),
                         FLOW_MANAGER.flow_hold_key.read().unwrap().clone(),
                     );
 
-                    if !inner_enabled || inner_mouse_mode != "software" {
+                    if !inner_enabled {
                         break;
                     }
 
@@ -130,6 +126,13 @@ pub fn run_edge_detection_loop(engine_inner: Arc<crate::engine::inner::EngineInn
                                                     // Sync virtual coords for the transition
                                                     *FLOW_MANAGER.virtual_x.lock().unwrap() =
                                                         if lx == -1 { sw - 50 } else { 50 };
+
+                                                    let mode = FLOW_MANAGER.flow_mouse_mode.read().unwrap().clone();
+                                                    if mode == "hardware" {
+                                                        if let Some(idx) = crate::flow::switching::get_peer_channel_index(&peer.name) {
+                                                            crate::flow::switching::trigger_hidpp_channel_switch(idx);
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
@@ -173,15 +176,9 @@ pub fn is_hold_key_satisfied(hold_key: &str) -> bool {
 
 pub fn get_peer_channel_index(peer_name: &str) -> Option<u8> {
     let peers = FLOW_MANAGER.flow_peers.read().unwrap();
-    // In this implementation, we map peer order index (0, 1, 2) to channel index
-    if let Some(pos) = peers
-        .iter()
-        .position(|p| p.name == peer_name)
-    {
-        Some(pos as u8)
-    } else {
-        None
-    }
+    peers.iter()
+        .find(|p| p.name == peer_name)
+        .map(|p| p.channel_index)
 }
 
 pub fn trigger_hidpp_channel_switch(channel_idx: u8) {
