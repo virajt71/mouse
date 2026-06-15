@@ -13,7 +13,7 @@ pub const FEAT_REPROG_V4: u16 = 0x1B04;
 pub const FEAT_ADJ_DPI: u16 = 0x2201;
 pub const FEAT_SMART_SHIFT: u16 = 0x2110;
 pub const FEAT_SMART_SHIFT_ENHANCED: u16 = 0x2111;
-pub const FEAT_CHANGE_HOST: u16 = 0x0018;
+pub const FEAT_CHANGE_HOST: u16 = 0x1814;
 
 impl HidppClient {
     pub fn tx(&self, feat: u8, func: u8, params: &[u8]) -> Result<()> {

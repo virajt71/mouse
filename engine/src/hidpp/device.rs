@@ -202,4 +202,9 @@ mod tests {
         assert_eq!(get_layout_key_from_name("MX Anywhere 3"), "mx_anywhere_3");
         assert_eq!(get_layout_key_from_name("Some Generic Keyboard"), "generic");
     }
+
+    #[test]
+    fn test_feat_change_host_value() {
+        assert_eq!(crate::hidpp::protocol::FEAT_CHANGE_HOST, 0x1814);
+    }
 }

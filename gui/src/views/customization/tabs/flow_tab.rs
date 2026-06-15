@@ -98,6 +98,7 @@ pub fn show_flow_tab(ui: &mut egui::Ui, engine: &Engine, config: &mut Config) {
                     // Auto-pair discovered peers
                     for (name, (ip, _)) in &discovered {
                         if !config.settings.flow_peers.iter().any(|p| p.name == *name) {
+                            let default_ch = (config.settings.flow_peers.len() + 1) as u8 % 3;
                             config.settings.flow_peers.push(FlowPeer {
                                 name: name.clone(),
                                 ip: ip.clone(),
@@ -107,6 +108,7 @@ pub fn show_flow_tab(ui: &mut egui::Ui, engine: &Engine, config: &mut Config) {
                                 paired: true,
                                 fingerprint: "".to_string(),
                                 auto_reconnect: true,
+                                channel_index: default_ch,
                             });
                         }
                     }
@@ -1314,16 +1316,39 @@ fn show_flow_config_screen(
                                 ui.label(RichText::new(format!("{} ({})", name, ip)).color(theme::primary_text(ui.ctx())).size(11.0));
                                 
                                 // Check if this peer is already paired
-                                let paired = config.settings.flow_peers.iter().any(|p| p.name == *name && p.paired);
-                                if paired {
+                                let paired_idx = config.settings.flow_peers.iter().position(|p| p.name == *name && p.paired);
+                                if let Some(idx_in_peers) = paired_idx {
                                     let is_connected = active_connections.contains(name);
                                     if is_connected {
-                                        ui.label(RichText::new("Paired & Connected").color(theme::accent_color(ui.ctx())).size(10.5));
+                                        ui.label(RichText::new("Connected").color(theme::accent_color(ui.ctx())).size(10.5));
                                     } else {
-                                        ui.label(RichText::new("Paired (Offline)").color(theme::muted_text(ui.ctx())).size(10.5));
+                                        ui.label(RichText::new("Offline").color(theme::muted_text(ui.ctx())).size(10.5));
                                     }
+
+                                    ui.add_space(5.0);
+                                    ui.label(RichText::new("Channel:").size(10.5));
+
+                                    let mut ch_idx = config.settings.flow_peers[idx_in_peers].channel_index;
+                                    egui::ComboBox::from_id_salt(format!("ch_combo_{}", name))
+                                        .selected_text(format!("Channel {}", ch_idx + 1))
+                                        .width(90.0)
+                                        .show_ui(ui, |ui| {
+                                            if ui.selectable_value(&mut ch_idx, 0, "Channel 1").clicked() {
+                                                config.settings.flow_peers[idx_in_peers].channel_index = 0;
+                                                *settings_dirty = true;
+                                            }
+                                            if ui.selectable_value(&mut ch_idx, 1, "Channel 2").clicked() {
+                                                config.settings.flow_peers[idx_in_peers].channel_index = 1;
+                                                *settings_dirty = true;
+                                            }
+                                            if ui.selectable_value(&mut ch_idx, 2, "Channel 3").clicked() {
+                                                config.settings.flow_peers[idx_in_peers].channel_index = 2;
+                                                *settings_dirty = true;
+                                            }
+                                        });
                                 } else {
                                     if ui.button("Pair").clicked() {
+                                        let default_ch = (config.settings.flow_peers.len() + 1) as u8 % 3;
                                         config.settings.flow_peers.push(FlowPeer {
                                             name: name.clone(),
                                             ip: ip.clone(),
@@ -1333,6 +1358,7 @@ fn show_flow_config_screen(
                                             paired: true,
                                             fingerprint: "".to_string(),
                                             auto_reconnect: true,
+                                            channel_index: default_ch,
                                         });
                                         *settings_dirty = true;
                                     }
