@@ -1,0 +1,166 @@
+pub fn compose_char(dead_key: &str, follow_ch: char) -> Option<char> {
+    match dead_key {
+        "dead_grave" => match follow_ch {
+            'a' => Some('à'),
+            'e' => Some('è'),
+            'i' => Some('ì'),
+            'o' => Some('ò'),
+            'u' => Some('ù'),
+            'A' => Some('À'),
+            'E' => Some('È'),
+            'I' => Some('Ì'),
+            'O' => Some('Ò'),
+            'U' => Some('Ù'),
+            _ => None,
+        },
+        "dead_acute" => match follow_ch {
+            'a' => Some('á'),
+            'e' => Some('é'),
+            'i' => Some('í'),
+            'o' => Some('ó'),
+            'u' => Some('ú'),
+            'y' => Some('ý'),
+            'c' => Some('ć'),
+            'n' => Some('ń'),
+            's' => Some('ś'),
+            'z' => Some('ź'),
+            'A' => Some('Á'),
+            'E' => Some('É'),
+            'I' => Some('Í'),
+            'O' => Some('Ó'),
+            'U' => Some('Ú'),
+            'Y' => Some('Ý'),
+            'C' => Some('Ć'),
+            'N' => Some('Ń'),
+            'S' => Some('Ś'),
+            'Z' => Some('Ź'),
+            _ => None,
+        },
+        "dead_circumflex" => match follow_ch {
+            'a' => Some('â'),
+            'e' => Some('ê'),
+            'i' => Some('î'),
+            'o' => Some('ô'),
+            'u' => Some('û'),
+            'A' => Some('Â'),
+            'E' => Some('Ê'),
+            'I' => Some('Î'),
+            'O' => Some('Ô'),
+            'U' => Some('Û'),
+            _ => None,
+        },
+        "dead_tilde" => match follow_ch {
+            'a' => Some('ã'),
+            'n' => Some('ñ'),
+            'o' => Some('õ'),
+            'A' => Some('Ã'),
+            'N' => Some('Ñ'),
+            'O' => Some('Õ'),
+            _ => None,
+        },
+        "dead_diaeresis" => match follow_ch {
+            'a' => Some('ä'),
+            'e' => Some('ë'),
+            'i' => Some('ï'),
+            'o' => Some('ö'),
+            'u' => Some('ü'),
+            'y' => Some('ÿ'),
+            'A' => Some('Ä'),
+            'E' => Some('Ë'),
+            'I' => Some('Ï'),
+            'O' => Some('Ö'),
+            'U' => Some('Ü'),
+            'Y' => Some('Ÿ'),
+            _ => None,
+        },
+        "dead_cedilla" => match follow_ch {
+            'c' => Some('ç'),
+            's' => Some('ş'),
+            't' => Some('ţ'),
+            'C' => Some('Ç'),
+            'S' => Some('Ş'),
+            'T' => Some('Ţ'),
+            _ => None,
+        },
+        "dead_caron" => match follow_ch {
+            'c' => Some('č'),
+            's' => Some('š'),
+            'z' => Some('ž'),
+            'd' => Some('ď'),
+            't' => Some('ť'),
+            'n' => Some('ň'),
+            'e' => Some('ě'),
+            'r' => Some('ř'),
+            'C' => Some('Č'),
+            'S' => Some('Š'),
+            'Z' => Some('Ž'),
+            'D' => Some('Ď'),
+            'T' => Some('Ť'),
+            'N' => Some('Ň'),
+            'E' => Some('Ě'),
+            'R' => Some('Ř'),
+            _ => None,
+        },
+        "dead_macron" => match follow_ch {
+            'a' => Some('ā'),
+            'e' => Some('ē'),
+            'i' => Some('ī'),
+            'o' => Some('ō'),
+            'u' => Some('ū'),
+            'A' => Some('Ā'),
+            'E' => Some('Ē'),
+            'I' => Some('Ī'),
+            'O' => Some('Ō'),
+            'U' => Some('Ū'),
+            _ => None,
+        },
+        "dead_ogonek" => match follow_ch {
+            'a' => Some('ą'),
+            'e' => Some('ę'),
+            'i' => Some('į'),
+            'u' => Some('ų'),
+            'A' => Some('Ą'),
+            'E' => Some('Ę'),
+            'I' => Some('Į'),
+            'U' => Some('Ų'),
+            _ => None,
+        },
+        "dead_abovering" => match follow_ch {
+            'a' => Some('å'),
+            'u' => Some('ů'),
+            'A' => Some('Å'),
+            'U' => Some('Ů'),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+pub fn get_dead_key_standalone(dead_key: &str) -> char {
+    match dead_key {
+        "dead_grave" => '`',
+        "dead_acute" => '\'',
+        "dead_circumflex" => '^',
+        "dead_tilde" => '~',
+        "dead_diaeresis" => '"',
+        "dead_cedilla" => ',',
+        "dead_caron" => 'ˇ',
+        "dead_macron" => '¯',
+        "dead_ogonek" => '˛',
+        "dead_abovering" => '°',
+        _ => ' ',
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compose() {
+        assert_eq!(compose_char("dead_acute", 'a'), Some('á'));
+        assert_eq!(compose_char("dead_diaeresis", 'u'), Some('ü'));
+        assert_eq!(compose_char("dead_grave", 'z'), None);
+        assert_eq!(get_dead_key_standalone("dead_circumflex"), '^');
+    }
+}

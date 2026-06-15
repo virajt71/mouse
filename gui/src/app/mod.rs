@@ -146,39 +146,5 @@ impl MouserApp {
 }
 
 pub fn get_layout_key_from_name(name: &str) -> String {
-    let name = name.to_lowercase();
-    if name.contains("mechanical") || name.contains("mchncl") {
-        return "mx_mechanical".to_string();
-    }
-    if name.contains("master 3s") {
-        "mx_master_3s".to_string()
-    } else if name.contains("master 3") || name.contains("master 4") {
-        "mx_master_3".to_string()
-    } else if name.contains("master 2") || name.contains("master 2s") {
-        "mx_master_2s".to_string()
-    } else if name.contains("master") {
-        "mx_master".to_string()
-    } else if name.contains("anywhere 3s") {
-        "mx_anywhere_3s".to_string()
-    } else if name.contains("anywhere 3") {
-        "mx_anywhere_3".to_string()
-    } else if name.contains("anywhere") {
-        "mx_anywhere".to_string()
-    } else if name.contains("vertical") {
-        "mx_vertical".to_string()
-    } else if name.contains("ergo") {
-        "mx_ergo".to_string()
-    } else if name.contains("mx keys mini") {
-        "mx_keys_mini".to_string()
-    } else if name.contains("mx keys s") {
-        "mx_keys_s".to_string()
-    } else if name.contains("mx keys") {
-        "mx_keys".to_string()
-    } else if name.contains("mx mechanical mini") {
-        "mx_mechanical_mini".to_string()
-    } else if name.contains("mx mechanical") {
-        "mx_mechanical".to_string()
-    } else {
-        "generic".to_string()
-    }
+    mouser_engine::hidpp::device::get_layout_key_from_name(name)
 }

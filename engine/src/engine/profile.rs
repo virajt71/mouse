@@ -38,6 +38,8 @@ impl Engine {
         self.inner
             .block_hscroll_arc
             .store(hscroll_blocked, Ordering::SeqCst);
+
+        self.apply_keyboard_backlight();
     }
 
     pub fn select_profile(&self, name: &str) {
@@ -162,8 +164,9 @@ impl Engine {
         }
         log::info!("[Engine] Saved mappings, refreshing active profile...");
         self.refresh_active_profile();
+    }
 
-        // Apply backlight effect/enabled to keyboard if they changed
+    pub fn apply_keyboard_backlight(&self) {
         let (backlight_effect, backlight_enabled) = {
             let cfg = self.inner.config.lock().unwrap();
             let active_profile = cfg.active_app_profile.clone();
@@ -176,6 +179,12 @@ impl Engine {
             }
         };
 
+        log::debug!(
+            "[Engine] Applying keyboard backlight settings: effect={:?}, enabled={:?}",
+            backlight_effect,
+            backlight_enabled
+        );
+
         let inner_clone = self.inner.clone();
         thread::spawn(move || {
             let mut clients = inner_clone.hid_clients.lock().unwrap();
@@ -185,10 +194,24 @@ impl Engine {
                     if layout.starts_with("mx_keys") || layout.starts_with("mx_mechanical") {
                         if let Some(ref enabled_str) = backlight_enabled {
                             let enabled = enabled_str == "true";
-                            let _ = client.set_backlight_enabled(enabled);
+                            if let Err(e) = client.set_backlight_enabled(enabled) {
+                                log::warn!(
+                                    "[Engine] Failed to set backlight enabled to {} on '{}': {}",
+                                    enabled,
+                                    client.device_name,
+                                    e
+                                );
+                            }
                         }
                         if let Some(ref effect) = backlight_effect {
-                            let _ = client.set_backlight_effect(effect);
+                            if let Err(e) = client.set_backlight_effect(effect) {
+                                log::warn!(
+                                    "[Engine] Failed to set backlight effect to '{}' on '{}': {}",
+                                    effect,
+                                    client.device_name,
+                                    e
+                                );
+                            }
                         }
                     }
                 }

@@ -125,6 +125,15 @@ impl KeyboardHook {
                 let mut fds = [PollFd::new(unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) }, PollFlags::POLLIN)];
 
                 let mut pressed_keys = std::collections::HashSet::new();
+                let mut intercepted_keys = std::collections::HashSet::new();
+                let mut shift_pressed = false;
+                let mut ctrl_pressed = false;
+                let mut alt_pressed = false;
+                let mut alt_gr_pressed = false;
+                let mut meta_pressed = false;
+
+                let mut active_dead_key: Option<&'static str> = None;
+                let mut hangul_composer = super::simulator::hangul::HangulComposer::new();
 
                 while running.load(Ordering::SeqCst) {
                     let timeout = PollTimeout::try_from(Duration::from_millis(200)).unwrap_or(PollTimeout::NONE);
@@ -148,6 +157,25 @@ impl KeyboardHook {
                                             let key_code = event.code();
                                             let down = event.value() != 0;
 
+                                            // Update modifier states
+                                            if key_code == Key::KEY_LEFTSHIFT.0 || key_code == Key::KEY_RIGHTSHIFT.0 {
+                                                shift_pressed = down;
+                                            } else if key_code == Key::KEY_LEFTCTRL.0 || key_code == Key::KEY_RIGHTCTRL.0 {
+                                                ctrl_pressed = down;
+                                            } else if key_code == Key::KEY_LEFTALT.0 {
+                                                alt_pressed = down;
+                                            } else if key_code == Key::KEY_RIGHTALT.0 {
+                                                alt_gr_pressed = down;
+                                            } else if key_code == Key::KEY_LEFTMETA.0 || key_code == Key::KEY_RIGHTMETA.0 {
+                                                meta_pressed = down;
+                                            }
+
+                                            // Reset composition engine on shortcut triggers
+                                            if ctrl_pressed || alt_pressed || meta_pressed {
+                                                active_dead_key = None;
+                                                hangul_composer.reset();
+                                            }
+
                                             if key_code == Key::KEY_KBDILLUMTOGGLE.0 {
                                                 if event.value() == 1 {
                                                     log::info!("[KeyboardHook] Captured Fn + Lightbulb (KEY_KBDILLUMTOGGLE). Cycling backlight effect...");
@@ -155,44 +183,133 @@ impl KeyboardHook {
                                                 }
                                                 should_forward = false;
                                             } else {
-                                                // Map F1-F12 and other customizable keys
-                                                let key_name = match key_code {
-                                                    k if k == Key::KEY_F1.0 => Some("f1"),
-                                                    k if k == Key::KEY_F2.0 => Some("f2"),
-                                                    k if k == Key::KEY_F3.0 => Some("f3"),
-                                                    k if k == Key::KEY_F4.0 => Some("f4"),
-                                                    k if k == Key::KEY_F5.0 => Some("f5"),
-                                                    k if k == Key::KEY_F6.0 => Some("f6"),
-                                                    k if k == Key::KEY_F7.0 => Some("f7"),
-                                                    k if k == Key::KEY_F8.0 => Some("f8"),
-                                                    k if k == Key::KEY_F9.0 => Some("f9"),
-                                                    k if k == Key::KEY_F10.0 => Some("f10"),
-                                                    k if k == Key::KEY_F11.0 => Some("f11"),
-                                                    k if k == Key::KEY_F12.0 => Some("f12"),
-                                                    k if k == Key::KEY_INSERT.0 => Some("insert"),
-                                                    k if k == Key::KEY_HOME.0 => Some("home"),
-                                                    k if k == Key::KEY_PAGEUP.0 => Some("pageup"),
-                                                    k if k == Key::KEY_DELETE.0 => Some("delete"),
-                                                    k if k == Key::KEY_END.0 => Some("end"),
-                                                    k if k == Key::KEY_PAGEDOWN.0 => Some("pagedown"),
-                                                    k if k == Key::KEY_CALC.0 => Some("calculator"),
-                                                    k if k == Key::KEY_COFFEE.0 => Some("screenlock"),
-                                                    k if k == Key::KEY_SEARCH.0 => Some("search"),
-                                                    k if k == Key::KEY_SUSPEND.0 || k == Key::KEY_SLEEP.0 => Some("lockpower"),
-                                                    _ => None,
-                                                };
+                                                // Language keyboard translation
+                                                let layout = key_simulator.get_keyboard_layout();
+                                                let is_lang = super::simulator::layout_translator::is_language_layout(&layout);
 
-                                                if let Some(name) = key_name {
-                                                    let mapping = {
-                                                        mappings.lock().unwrap().get(name).cloned()
+                                                if is_lang && !ctrl_pressed && !alt_pressed && !meta_pressed {
+                                                    if down {
+                                                        if layout == "Korean (2-set) Hangul" {
+                                                            if key_code == Key::KEY_BACKSPACE.0 {
+                                                                hangul_composer.reset();
+                                                            } else if let Some(unicode_str) = super::simulator::layout_translator::translate_key(&layout, key_code, shift_pressed, alt_gr_pressed) {
+                                                                for ch in unicode_str.chars() {
+                                                                    match hangul_composer.feed(ch) {
+                                                                        super::simulator::hangul::HangulAction::Update { backspaces, text } => {
+                                                                            for _ in 0..backspaces {
+                                                                                key_simulator.send_key_combo(&[Key::KEY_BACKSPACE], 5);
+                                                                            }
+                                                                            for tc in text.chars() {
+                                                                                key_simulator.type_unicode_char(tc);
+                                                                            }
+                                                                        }
+                                                                        super::simulator::hangul::HangulAction::ResetAndType(raw_ch) => {
+                                                                            key_simulator.type_unicode_char(raw_ch);
+                                                                        }
+                                                                    }
+                                                                }
+                                                                intercepted_keys.insert(key_code);
+                                                                should_forward = false;
+                                                            }
+                                                        } else {
+                                                            hangul_composer.reset();
+
+                                                            if key_code == Key::KEY_BACKSPACE.0 {
+                                                                active_dead_key = None;
+                                                            } else if let Some(unicode_str) = super::simulator::layout_translator::translate_key(&layout, key_code, shift_pressed, alt_gr_pressed) {
+                                                                if unicode_str.starts_with("dead_") {
+                                                                    active_dead_key = Some(unicode_str);
+                                                                } else {
+                                                                    if let Some(dead_key_name) = active_dead_key.take() {
+                                                                        for ch in unicode_str.chars() {
+                                                                            if let Some(comp_ch) = super::simulator::compose::compose_char(dead_key_name, ch) {
+                                                                                key_simulator.type_unicode_char(comp_ch);
+                                                                            } else {
+                                                                                let standalone = super::simulator::compose::get_dead_key_standalone(dead_key_name);
+                                                                                key_simulator.type_unicode_char(standalone);
+                                                                                if ch != ' ' {
+                                                                                    key_simulator.type_unicode_char(ch);
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    } else {
+                                                                        // Mirror brackets for RTL layouts
+                                                                        let is_rtl = super::simulator::layout_translator::is_rtl_layout(&layout);
+                                                                        for ch in unicode_str.chars() {
+                                                                            let target_ch = if is_rtl {
+                                                                                match ch {
+                                                                                    '(' => ')',
+                                                                                    ')' => '(',
+                                                                                    '[' => ']',
+                                                                                    ']' => '[',
+                                                                                    '{' => '}',
+                                                                                    '}' => '{',
+                                                                                    '<' => '>',
+                                                                                    '>' => '<',
+                                                                                    other => other,
+                                                                                }
+                                                                            } else {
+                                                                                ch
+                                                                            };
+                                                                            key_simulator.type_unicode_char(target_ch);
+                                                                        }
+                                                                    }
+                                                                }
+                                                                intercepted_keys.insert(key_code);
+                                                                should_forward = false;
+                                                            } else {
+                                                                // If a key has no translation, flush dead key first if active
+                                                                if let Some(dead_key_name) = active_dead_key.take() {
+                                                                    let standalone = super::simulator::compose::get_dead_key_standalone(dead_key_name);
+                                                                    key_simulator.type_unicode_char(standalone);
+                                                                }
+                                                            }
+                                                        }
+                                                    } else if intercepted_keys.remove(&key_code) {
+                                                        should_forward = false;
+                                                    }
+                                                }
+
+                                                if should_forward {
+                                                    // Map F1-F12 and other customizable keys
+                                                    let key_name = match key_code {
+                                                        k if k == Key::KEY_F1.0 => Some("f1"),
+                                                        k if k == Key::KEY_F2.0 => Some("f2"),
+                                                        k if k == Key::KEY_F3.0 => Some("f3"),
+                                                        k if k == Key::KEY_F4.0 => Some("f4"),
+                                                        k if k == Key::KEY_F5.0 => Some("f5"),
+                                                        k if k == Key::KEY_F6.0 => Some("f6"),
+                                                        k if k == Key::KEY_F7.0 => Some("f7"),
+                                                        k if k == Key::KEY_F8.0 => Some("f8"),
+                                                        k if k == Key::KEY_F9.0 => Some("f9"),
+                                                        k if k == Key::KEY_F10.0 => Some("f10"),
+                                                        k if k == Key::KEY_F11.0 => Some("f11"),
+                                                        k if k == Key::KEY_F12.0 => Some("f12"),
+                                                        k if k == Key::KEY_INSERT.0 => Some("insert"),
+                                                        k if k == Key::KEY_HOME.0 => Some("home"),
+                                                        k if k == Key::KEY_PAGEUP.0 => Some("pageup"),
+                                                        k if k == Key::KEY_DELETE.0 => Some("delete"),
+                                                        k if k == Key::KEY_END.0 => Some("end"),
+                                                        k if k == Key::KEY_PAGEDOWN.0 => Some("pagedown"),
+                                                        k if k == Key::KEY_CALC.0 => Some("calculator"),
+                                                        k if k == Key::KEY_COFFEE.0 => Some("screenlock"),
+                                                        k if k == Key::KEY_SEARCH.0 => Some("search"),
+                                                        k if k == Key::KEY_SUSPEND.0 || k == Key::KEY_SLEEP.0 => Some("lockpower"),
+                                                        _ => None,
                                                     };
 
-                                                    if let Some(action_id) = mapping {
-                                                        if action_id != "none" {
-                                                            if down {
-                                                                key_simulator.execute_action(&action_id);
+                                                    if let Some(name) = key_name {
+                                                        let mapping = {
+                                                            mappings.lock().unwrap().get(name).cloned()
+                                                        };
+
+                                                        if let Some(action_id) = mapping {
+                                                            if action_id != "none" {
+                                                                if down {
+                                                                    key_simulator.execute_action(&action_id);
+                                                                }
+                                                                should_forward = false;
                                                             }
-                                                            should_forward = false;
                                                         }
                                                     }
                                                 }
