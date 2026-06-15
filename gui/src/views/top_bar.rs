@@ -1,5 +1,6 @@
 use crate::theme;
 use crate::ActiveView;
+use crate::widgets::draw_settings_gear_icon;
 use eframe::egui;
 
 pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, active_view: &mut ActiveView, lang: &str) {
@@ -304,34 +305,4 @@ pub fn show(ui: &mut egui::Ui, ctx: &egui::Context, active_view: &mut ActiveView
     if back_clicked {
         *active_view = ActiveView::EmptyState;
     }
-}
-
-fn draw_settings_gear_icon(ui: &mut egui::Ui, rect: egui::Rect, color: egui::Color32) {
-    let painter = ui.painter();
-    let center = rect.center();
-    let r_out = 6.5; // Outer radius of the gear body
-    let r_in = 4.0; // Inner radius of the gear body
-    let r_hole = 2.0; // Center hole radius
-    let num_teeth = 8;
-
-    // Draw outer body outline & filled area
-    painter.circle_stroke(center, r_out, egui::Stroke::new(1.5, color));
-    painter.circle_filled(center, r_out, color);
-
-    // Draw center hole to cut out the inner area
-    let bg_color = theme::app_bg(ui.ctx());
-    painter.circle_filled(center, r_hole, bg_color);
-
-    // Draw teeth/spokes
-    let stroke = egui::Stroke::new(2.2, color);
-    for i in 0..num_teeth {
-        let angle = (i as f32) * std::f32::consts::TAU / (num_teeth as f32);
-        let direction = egui::vec2(angle.cos(), angle.sin());
-        let p_start = center + direction * r_in;
-        let p_end = center + direction * (r_out + 2.0);
-        painter.line_segment([p_start, p_end], stroke);
-    }
-
-    // Re-draw center hole to keep it clean (in case spokes overlap it)
-    painter.circle_filled(center, r_hole, bg_color);
 }

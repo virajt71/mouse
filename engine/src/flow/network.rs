@@ -353,19 +353,26 @@ fn handle_client(
     let client_name = response_parts[1].to_string();
     let client_hash = response_parts[2];
 
-    let is_paired = {
+    let peer_pin = {
         let cfg = engine_inner.config.lock().unwrap();
         cfg.settings
             .flow_peers
             .iter()
-            .any(|p| p.name == client_name && p.paired)
+            .find(|p| p.name == client_name)
+            .map(|p| {
+                if p.fingerprint.is_empty() {
+                    "123456".to_string()
+                } else {
+                    p.fingerprint.clone()
+                }
+            })
+            .unwrap_or("123456".to_string())
     };
 
-    let pin = "123456";
-    let input_str = format!("{}{}", salt, pin);
+    let input_str = format!("{}{}", salt, peer_pin);
     let expected_hash = format!("{:x}", sha2::Sha256::digest(input_str.as_bytes()));
 
-    if !is_paired && client_hash != expected_hash {
+    if client_hash != expected_hash {
         stream.write_all(b"MOUSER_FAIL\n")?;
         return Ok(());
     }

@@ -6,7 +6,6 @@ pub mod section_updates;
 use crate::theme;
 use crate::translation::tr;
 use crate::updater::Updater;
-use crate::widgets::draw_tech_corners;
 use eframe::egui;
 use egui::{Color32, Stroke};
 use mouser_engine::config::Config;
@@ -108,7 +107,7 @@ pub fn section_card<R>(
     let glow_color = theme::accent_color(ui.ctx());
     let color = theme::lerp_color(border_color, glow_color, t);
 
-    draw_tech_corners(ui.painter(), res.response.rect, color, 8.0);
+    theme::draw_tech_corners(ui.painter(), res.response.rect, color, 8.0);
 
     res
 }
