@@ -200,10 +200,8 @@ impl Engine {
         self.inner.config_generation.load(Ordering::Relaxed)
     }
 
-    pub fn increment_config_generation(&self) {
-        if let Ok(cfg) = self.inner.config.lock() {
-            crate::flow::FLOW_MANAGER.update_config(&cfg);
-        }
+    pub fn increment_config_generation(&self, cfg: &Config) {
+        crate::flow::FLOW_MANAGER.update_config(cfg);
         self.inner.config_generation.fetch_add(1, Ordering::Relaxed);
         if let Ok(lock) = self.inner.config_change_listener.lock() {
             if let Some(ref callback) = *lock {

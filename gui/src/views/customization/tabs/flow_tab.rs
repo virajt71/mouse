@@ -79,9 +79,10 @@ pub fn show_flow_tab(ui: &mut egui::Ui, engine: &Engine, config: &mut Config) {
                     start_time
                 };
 
-                let discovered = mouser_engine::flow::network::DISCOVERED_PEERS
-                    .read()
-                    .unwrap();
+                let discovered: Vec<(String, (String, std::time::Instant))> = {
+                    let map = mouser_engine::flow::network::DISCOVERED_PEERS.read().unwrap();
+                    map.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+                };
 
                 let cancel_clicked =
                     show_flow_searching_screen(ui, &config.settings.flow_local_name);
@@ -95,7 +96,7 @@ pub fn show_flow_tab(ui: &mut egui::Ui, engine: &Engine, config: &mut Config) {
                     mouser_engine::flow::network::IS_SEARCHING
                         .store(false, std::sync::atomic::Ordering::SeqCst);
                     // Auto-pair discovered peers
-                    for (name, (ip, _)) in discovered.iter() {
+                    for (name, (ip, _)) in &discovered {
                         if !config.settings.flow_peers.iter().any(|p| p.name == *name) {
                             config.settings.flow_peers.push(FlowPeer {
                                 name: name.clone(),
@@ -1009,6 +1010,16 @@ fn show_flow_config_screen(
     config: &mut Config,
     settings_dirty: &mut bool,
 ) {
+    let active_connections: std::collections::HashSet<String> = {
+        let conns = mouser_engine::flow::network::ACTIVE_CONNECTIONS.read().unwrap();
+        conns.keys().cloned().collect()
+    };
+
+    let discovered: Vec<(String, (String, std::time::Instant))> = {
+        let map = mouser_engine::flow::network::DISCOVERED_PEERS.read().unwrap();
+        map.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+    };
+
     ui.horizontal(|ui| {
         ui.add_space(20.0);
         ui.vertical(|ui| {
@@ -1084,7 +1095,7 @@ fn show_flow_config_screen(
                         let is_connected = if is_local {
                             true
                         } else if !label.is_empty() {
-                            mouser_engine::flow::network::ACTIVE_CONNECTIONS.read().unwrap().contains_key(label)
+                            active_connections.contains(label)
                         } else {
                             false
                         };
@@ -1295,18 +1306,17 @@ fn show_flow_config_screen(
                     ui.add_space(8.0);
 
                     // Display list of discovered peers from network
-                    let discovered = mouser_engine::flow::network::DISCOVERED_PEERS.read().unwrap();
                     if discovered.is_empty() {
                         ui.label(RichText::new("No computers found on local subnet. Make sure they are running Mouser-RS and connected to the same network.").color(theme::muted_text(ui.ctx())).size(10.5));
                     } else {
-                        for (name, (ip, _)) in discovered.iter() {
+                        for (name, (ip, _)) in &discovered {
                             ui.horizontal(|ui| {
                                 ui.label(RichText::new(format!("{} ({})", name, ip)).color(theme::primary_text(ui.ctx())).size(11.0));
                                 
                                 // Check if this peer is already paired
                                 let paired = config.settings.flow_peers.iter().any(|p| p.name == *name && p.paired);
                                 if paired {
-                                    let is_connected = mouser_engine::flow::network::ACTIVE_CONNECTIONS.read().unwrap().contains_key(name);
+                                    let is_connected = active_connections.contains(name);
                                     if is_connected {
                                         ui.label(RichText::new("Paired & Connected").color(theme::accent_color(ui.ctx())).size(10.5));
                                     } else {
