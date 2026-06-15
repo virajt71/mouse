@@ -298,16 +298,16 @@ fn trigger_auto_connect(
     peer_ip: &str,
     engine_inner: &Arc<crate::engine::inner::EngineInner>,
 ) {
-    let (is_paired, auto_reconnect) = {
+    let (flow_enabled, is_paired, auto_reconnect) = {
         let cfg = engine_inner.config.lock().unwrap();
         if let Some(p) = cfg.settings.flow_peers.iter().find(|p| p.name == peer_name) {
-            (p.paired, p.auto_reconnect)
+            (cfg.settings.flow_enabled, p.paired, p.auto_reconnect)
         } else {
-            (false, false)
+            (false, false, false)
         }
     };
 
-    if is_paired && auto_reconnect {
+    if flow_enabled && is_paired && auto_reconnect {
         let already_connected = {
             let conns = ACTIVE_CONNECTIONS.read().unwrap();
             conns.contains_key(peer_name)
@@ -332,7 +332,7 @@ fn handle_client(
     mut stream: TcpStream,
     engine_inner: Arc<crate::engine::inner::EngineInner>,
 ) -> anyhow::Result<()> {
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(30)));
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut line = String::new();
 
@@ -557,13 +557,22 @@ fn process_peer_events(
                     *FLOW_MANAGER.virtual_x.lock().unwrap() = target_x;
                     *FLOW_MANAGER.virtual_y.lock().unwrap() = target_y;
 
-                    let _ = std::process::Command::new("xdotool")
-                        .args([
-                            "mousemove",
-                            &format!("{}", target_x),
-                            &format!("{}", target_y),
-                        ])
-                        .spawn();
+                     if let Ok((conn, screen_num)) = x11rb::rust_connection::RustConnection::connect(None) {
+                         use x11rb::connection::Connection;
+                         use x11rb::protocol::xproto::ConnectionExt;
+                         let screen = &conn.setup().roots[screen_num];
+                         let _ = conn.warp_pointer(
+                             x11rb::NONE,
+                             screen.root,
+                             0,
+                             0,
+                             0,
+                             0,
+                             target_x as i16,
+                             target_y as i16,
+                         );
+                         let _ = conn.flush();
+                     }
                 }
             }
         }
@@ -572,6 +581,14 @@ fn process_peer_events(
     {
         let mut conns = ACTIVE_CONNECTIONS.write().unwrap();
         conns.remove(&client_name);
+    }
+    let active = FLOW_MANAGER.get_active_peer_name();
+    if active.as_deref() == Some(&client_name) {
+        FLOW_MANAGER.set_active_peer(None);
+        log::info!(
+            "[Flow Network] Peer '{}' disconnected — returning control to local.",
+            client_name
+        );
     }
     if FLOW_MANAGER.get_current_controller().as_ref() == Some(&client_name) {
         FLOW_MANAGER.set_current_controller(None);

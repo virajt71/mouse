@@ -115,15 +115,18 @@ pub fn run_edge_detection_loop(engine_inner: Arc<crate::engine::inner::EngineInn
                                                             } else {
                                                                 ry
                                                             };
-                                                            let _ = std::process::Command::new(
-                                                                "xdotool",
-                                                            )
-                                                            .args([
-                                                                "mousemove",
-                                                                &format!("{}", rx_target),
-                                                                &format!("{}", ry_target),
-                                                            ])
-                                                            .spawn();
+                                                            use x11rb::protocol::xproto::ConnectionExt;
+                                                            let _ = conn.warp_pointer(
+                                                                x11rb::NONE,
+                                                                root,
+                                                                0,
+                                                                0,
+                                                                0,
+                                                                0,
+                                                                rx_target as i16,
+                                                                ry_target as i16,
+                                                            );
+                                                            let _ = conn.flush();
                                                             continue;
                                                         }
                                                     }

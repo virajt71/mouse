@@ -11,28 +11,6 @@ pub struct Profile {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct FlowPeerEntry {
-    pub name: String,
-    pub address: String,
-    pub position: String, // "left" | "right" | "above" | "below"
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct FlowSettings {
-    pub enabled: bool,
-    pub listen_port: u16,
-    pub cert_path: String,
-    pub peers: Vec<FlowPeerEntry>,
-    pub edge_margin_px: i32,
-    pub edge_dwell_ms: u64,
-    pub switch_delay_ms: u64,
-    pub clipboard_sync: bool,
-    pub normalize_pointer_speed: bool,
-    pub mdns_discovery: bool,
-    pub local_name: String,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct FlowPeer {
     pub name: String,
     pub ip: String,
@@ -51,24 +29,6 @@ fn default_local_name() -> String {
         hostname
     } else {
         "Computer".to_string()
-    }
-}
-
-impl Default for FlowSettings {
-    fn default() -> Self {
-        FlowSettings {
-            enabled: false,
-            listen_port: 24650,
-            cert_path: "~/.config/mouser-rs/flow_cert.pem".to_string(),
-            peers: vec![],
-            edge_margin_px: 2,
-            edge_dwell_ms: 50,
-            switch_delay_ms: 0,
-            clipboard_sync: true,
-            normalize_pointer_speed: true,
-            mdns_discovery: false,
-            local_name: default_local_name(),
-        }
     }
 }
 
@@ -117,8 +77,6 @@ pub struct Config {
     pub active_app_profile: String,
     pub profile_groups: HashMap<String, ProfileGroup>,
     pub settings: Settings,
-    #[serde(default)]
-    pub flow: FlowSettings,
 }
 
 impl Default for Config {
@@ -206,7 +164,6 @@ impl Default for Config {
             active_app_profile: "global".to_string(),
             profile_groups,
             settings,
-            flow: FlowSettings::default(),
         }
     }
 }
@@ -242,25 +199,6 @@ impl Config {
                     }
                     if cfg.version == 12 {
                         cfg.version = 13;
-                        cfg.flow.enabled = cfg.settings.flow_enabled;
-                        cfg.flow.local_name = cfg.settings.flow_local_name.clone();
-                        cfg.flow.peers.clear();
-                        for peer in &cfg.settings.flow_peers {
-                            let position = if peer.layout_x == -1 {
-                                "left"
-                            } else if peer.layout_x == 1 {
-                                "right"
-                            } else if peer.layout_y == -1 {
-                                "above"
-                            } else {
-                                "below"
-                            };
-                            cfg.flow.peers.push(FlowPeerEntry {
-                                name: peer.name.clone(),
-                                address: format!("{}:{}", peer.ip, peer.port),
-                                position: position.to_string(),
-                            });
-                        }
                         let _ = cfg.save();
                         return cfg;
                     }
@@ -297,7 +235,6 @@ impl Config {
                         active_app_profile,
                         profile_groups,
                         settings: old_cfg.settings,
-                        flow: FlowSettings::default(),
                     };
                     let _ = new_cfg.save();
                     return new_cfg;
@@ -317,14 +254,7 @@ impl Config {
             || cfg.settings.flow_local_name == "Computer"
             || cfg.settings.flow_local_name.is_empty()
         {
-            cfg.settings.flow_local_name = hostname.clone();
-        }
-        if cfg.flow.local_name == "Computer 1"
-            || cfg.flow.local_name == "Computer 2"
-            || cfg.flow.local_name == "Computer"
-            || cfg.flow.local_name.is_empty()
-        {
-            cfg.flow.local_name = hostname;
+            cfg.settings.flow_local_name = hostname;
         }
         cfg
     }

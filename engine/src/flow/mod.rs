@@ -127,6 +127,14 @@ impl FlowManager {
         dy: i32,
         config_lock: &Mutex<Config>,
     ) -> Option<String> {
+        let mouse_mode = {
+            let cfg = config_lock.lock().unwrap();
+            cfg.settings.flow_mouse_mode.clone()
+        };
+        if mouse_mode == "software" {
+            return None;
+        }
+
         let mut vx = self.virtual_x.lock().unwrap();
         let mut vy = self.virtual_y.lock().unwrap();
 
