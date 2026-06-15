@@ -130,6 +130,8 @@ impl MouseHook {
                 let mut fds = [PollFd::new(unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) }, PollFlags::POLLIN)];
 
                 let mut pressed_keys = std::collections::HashSet::new();
+                let mut pending_dx = 0i32;
+                let mut pending_dy = 0i32;
 
                 while running.load(Ordering::SeqCst) {
                     let timeout = PollTimeout::try_from(Duration::from_millis(200)).unwrap_or(PollTimeout::NONE);
@@ -177,9 +179,11 @@ impl MouseHook {
                                                     EventType::RELATIVE => {
                                                         let code = RelativeAxisType(event.code());
                                                         if code == RelativeAxisType::REL_X {
-                                                            Some(crate::flow::network::FlowEvent::MouseMove { dx: event.value(), dy: 0 })
+                                                            pending_dx += event.value();
+                                                            None
                                                         } else if code == RelativeAxisType::REL_Y {
-                                                            Some(crate::flow::network::FlowEvent::MouseMove { dx: 0, dy: event.value() })
+                                                            pending_dy += event.value();
+                                                            None
                                                         } else if code == RelativeAxisType::REL_WHEEL {
                                                             Some(crate::flow::network::FlowEvent::MouseScroll { horizontal: false, delta: event.value() })
                                                         } else if code == RelativeAxisType::REL_HWHEEL {
@@ -187,6 +191,15 @@ impl MouseHook {
                                                         } else {
                                                             None
                                                         }
+                                                    }
+                                                    EventType::SYNCHRONIZATION => {
+                                                        if pending_dx != 0 || pending_dy != 0 {
+                                                            let evt = crate::flow::network::FlowEvent::MouseMove { dx: pending_dx, dy: pending_dy };
+                                                            let _ = crate::flow::network::send_event_to_peer(&peer_name, &evt);
+                                                            pending_dx = 0;
+                                                            pending_dy = 0;
+                                                        }
+                                                        None
                                                     }
                                                     _ => None,
                                                 };
@@ -196,6 +209,8 @@ impl MouseHook {
                                             }
                                             should_forward = false;
                                         } else {
+                                            pending_dx = 0;
+                                            pending_dy = 0;
                                             match event.event_type() {
                                                 EventType::KEY => {
                                                     let key = Key(event.code());
