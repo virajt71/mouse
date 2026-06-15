@@ -1,7 +1,7 @@
 use super::{render_spaced_header, section_card};
 use crate::theme;
 use crate::translation::tr;
-use crate::widgets::{draw_rgb_palette_icon, draw_tech_corners};
+use crate::widgets::draw_rgb_palette_icon;
 use eframe::egui;
 use egui::{pos2, vec2, Color32, Rect, Stroke};
 use mouser_engine::config::Config;
@@ -543,7 +543,7 @@ where
         theme::accent_color(ui.ctx()),
         is_sel_anim.max(is_hov_anim),
     );
-    draw_tech_corners(ui.painter(), rect, corner_color, 6.0);
+    theme::draw_tech_corners(ui.painter(), rect, corner_color, 6.0);
 
     response.clicked()
 }

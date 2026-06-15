@@ -194,10 +194,6 @@ impl Engine {
                 }
             }
         });
-
-        log::info!("[Engine] Refreshed active profile, restarting keyboard hooks...");
-        let _ = self.restart_keyboard_hooks();
-        log::info!("[Engine] Keyboard hooks restarted successfully!");
     }
 
     pub fn cycle_backlight_effect(&self) {
@@ -409,7 +405,6 @@ impl Engine {
             .store(invert_hscroll, Ordering::SeqCst);
 
         self.refresh_active_profile();
-        let _ = self.restart_keyboard_hooks();
 
         let inner_clone = self.inner.clone();
         thread::spawn(move || {

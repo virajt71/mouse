@@ -63,7 +63,7 @@ impl Engine {
             selected_device_idx: Mutex::new(0),
             running: AtomicBool::new(false),
             current_profile: Mutex::new(current_profile.clone()),
-            active_mappings: Mutex::new(HashMap::new()),
+            active_mappings: Arc::new(Mutex::new(HashMap::new())),
             active_profile_shared: Arc::new(Mutex::new(current_profile)),
             last_detected_exe: Mutex::new(String::new()),
 

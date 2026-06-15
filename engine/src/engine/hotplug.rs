@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -15,9 +14,7 @@ lazy_static::lazy_static! {
 
 impl Engine {
     pub fn restart_keyboard_hooks(&self) -> anyhow::Result<()> {
-        let mappings = Arc::new(std::sync::Mutex::new(
-            self.inner.config.lock().unwrap().get_active_mappings(),
-        ));
+        let mappings = self.inner.active_mappings.clone();
         let mut kb_hooks = self.inner.keyboard_hooks.lock().unwrap();
         for hook in kb_hooks.iter_mut() {
             hook.stop();
@@ -152,9 +149,7 @@ impl Engine {
                                     // Remove any existing dead hook for this path
                                     kb_hooks.retain(|h| h.device_path() != Some(path));
 
-                                    let mappings = Arc::new(std::sync::Mutex::new(
-                                        inner.config.lock().unwrap().get_active_mappings()
-                                    ));
+                                    let mappings = inner.active_mappings.clone();
                                     let mut hook = KeyboardHook::new();
                                     match hook.start(
                                         path.clone(),

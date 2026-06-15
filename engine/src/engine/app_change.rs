@@ -61,7 +61,6 @@ impl Engine {
             self.inner
                 .block_hscroll_arc
                 .store(hscroll_blocked, Ordering::SeqCst);
-            let _ = self.restart_keyboard_hooks();
         }
     }
 }

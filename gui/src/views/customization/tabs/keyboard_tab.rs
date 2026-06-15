@@ -39,28 +39,28 @@ pub fn show_keyboard_keys_tab(
     // 6 Nav keys: Ins, Home, PgUp, Del, End, PgDn
     // 4 Numpad keys: Calculator, ScreenLock, Search, LockPower
     let key_mappings = &[
-        (CustomizingButton::F1, 0.0755, 0.11, 0.032, 0.075),
-        (CustomizingButton::F2, 0.124, 0.11, 0.032, 0.075),
-        (CustomizingButton::F3, 0.1725, 0.11, 0.032, 0.075),
-        (CustomizingButton::F4, 0.221, 0.11, 0.032, 0.075),
-        (CustomizingButton::F5, 0.2695, 0.11, 0.032, 0.075),
-        (CustomizingButton::F6, 0.318, 0.11, 0.032, 0.075),
-        (CustomizingButton::F7, 0.3665, 0.11, 0.032, 0.075),
-        (CustomizingButton::F8, 0.415, 0.11, 0.032, 0.075),
-        (CustomizingButton::F9, 0.4635, 0.11, 0.032, 0.075),
-        (CustomizingButton::F10, 0.512, 0.11, 0.032, 0.075),
-        (CustomizingButton::F11, 0.5605, 0.11, 0.032, 0.075),
-        (CustomizingButton::F12, 0.609, 0.11, 0.032, 0.075),
+        (CustomizingButton::F1, 0.055, 0.15, 0.033, 0.10),
+        (CustomizingButton::F2, 0.100, 0.15, 0.033, 0.10),
+        (CustomizingButton::F3, 0.142, 0.15, 0.033, 0.10),
+        (CustomizingButton::F4, 0.190, 0.15, 0.033, 0.10),
+        (CustomizingButton::F5, 0.235, 0.15, 0.033, 0.10),
+        (CustomizingButton::F6, 0.280, 0.15, 0.033, 0.10),
+        (CustomizingButton::F7, 0.315, 0.15, 0.033, 0.10),
+        (CustomizingButton::F8, 0.360, 0.15, 0.033, 0.10),
+        (CustomizingButton::F9, 0.400, 0.15, 0.033, 0.10),
+        (CustomizingButton::F10, 0.445, 0.15, 0.033, 0.10),
+        (CustomizingButton::F11, 0.490, 0.15, 0.033, 0.10),
+        (CustomizingButton::F12, 0.535, 0.15, 0.033, 0.10),
         (CustomizingButton::Ins, 0.725, 0.31, 0.032, 0.075),
         (CustomizingButton::Home, 0.762, 0.31, 0.032, 0.075),
         (CustomizingButton::PgUp, 0.799, 0.31, 0.032, 0.075),
         (CustomizingButton::Del, 0.725, 0.47, 0.032, 0.075),
         (CustomizingButton::End, 0.762, 0.47, 0.032, 0.075),
         (CustomizingButton::PgDn, 0.799, 0.47, 0.032, 0.075),
-        (CustomizingButton::Calculator, 0.842, 0.11, 0.032, 0.075),
-        (CustomizingButton::ScreenLock, 0.879, 0.11, 0.032, 0.075),
-        (CustomizingButton::Search, 0.916, 0.11, 0.032, 0.075),
-        (CustomizingButton::LockPower, 0.953, 0.11, 0.032, 0.075),
+        (CustomizingButton::Calculator, 0.842, 0.15, 0.033, 0.10),
+        (CustomizingButton::ScreenLock, 0.879, 0.15, 0.033, 0.10),
+        (CustomizingButton::Search, 0.916, 0.15, 0.033, 0.10),
+        (CustomizingButton::LockPower, 0.953, 0.15, 0.033, 0.10),
     ];
 
     // Draw overlays on keyboard keys
@@ -533,7 +533,7 @@ pub fn show_keyboard_backlighting_tab(
         // Highlighted keys outlines on standard keyboard image
         // 1. Bulb key highlight (to the right of F12)
         let b_rx = 0.655;
-        let b_ry = 0.11;
+        let b_ry = 0.20;
         let b_rw = 0.032;
         let b_rh = 0.075;
         let bulb_rect = Rect::from_min_max(
