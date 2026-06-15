@@ -22,6 +22,7 @@
   - **Quick Select** - Dropdown selector in the profiles settings panel lists all detected applications for fast association.
   - **Toast Notifications** - Displays modern, animated, and fading toast alerts at the bottom-right corner of the screen when the active profile changes.
 - **DPI Control** - Set and persist DPI directly via the HID++ protocol.
+- **Keyboard Backlight Control** - Configure backlight enabled state and apply effects (Static, Contrast, Breathing, Waves, Reaction, Random) for supported keyboards (including MX Keys and MX Mechanical series). Accurately applies active profile backlight settings upon device connection and profile switches.
 - **SmartShift** - Toggle and tune Logitech's SmartShift (free-spin ↔ ratchet scroll wheel) threshold.
 - **Horizontal Scroll** - Map horizontal scroll tilt to browser Back / Forward or any key combo. Configurable threshold and inversion.
 - **Vertical Scroll Inversion** - Optionally invert the scroll wheel direction.
@@ -465,6 +466,25 @@ Logs are written to the platform log directory (typically `~/.local/share/Mouser
   }
 }
 ```
+
+---
+
+## Troubleshooting
+
+### HID++ /dev/hidraw* Permission Issues
+If Mouser-RS does not detect your Logitech device, or fails to send DPI/backlight commands, check that the `/dev/hidraw*` files are accessible.
+Ensure you have run the Linux permissions setup:
+```sh
+cd packaging/linux
+sudo sh install-linux-permissions.sh
+```
+This script adds the correct udev rules allowing the `input` group to access the raw HID devices. After installing, make sure your user is in the `input` group (and `plugdev` group on some distros) and reconnect the device.
+
+### Keyboard Hook Conflicts
+Mouser-RS grabs the keyboard exclusively via `evdev` to capture media keys and intercept shortcuts. If you run multiple input mapping tools (like Solaar, Kmonad, or Keyd) simultaneously, they might conflict over exclusive grabs on the same keyboard input event device.
+If the keyboard is not responding or keyboard grabs fail:
+1. Ensure no other key remapping tool has exclusively grabbed the physical keyboard device.
+2. Check the logs at `~/.config/Mouser/logs/` to see which event path failed to grab.
 
 ---
 

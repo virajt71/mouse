@@ -117,42 +117,46 @@ impl HidppClient {
     }
 
     pub fn get_layout_key(&self) -> String {
-        let name = self.device_name.to_lowercase();
-        if name.contains("mechanical") || name.contains("mchncl") {
-            return "mx_mechanical".to_string();
-        }
-        if name.contains("master 3s") {
-            "mx_master_3s".to_string()
-        } else if name.contains("master 3") || name.contains("master 4") {
-            "mx_master_3".to_string()
-        } else if name.contains("master 2") || name.contains("master 2s") {
-            "mx_master_2s".to_string()
-        } else if name.contains("master") {
-            "mx_master".to_string()
-        } else if name.contains("anywhere 3s") {
-            "mx_anywhere_3s".to_string()
-        } else if name.contains("anywhere 3") {
-            "mx_anywhere_3".to_string()
-        } else if name.contains("anywhere") {
-            "mx_anywhere".to_string()
-        } else if name.contains("vertical") {
-            "mx_vertical".to_string()
-        } else if name.contains("ergo") {
-            "mx_ergo".to_string()
-        } else if name.contains("mx keys mini") {
-            "mx_keys_mini".to_string()
-        } else if name.contains("mx keys s") {
-            "mx_keys_s".to_string()
-        } else if name.contains("mx keys") {
-            "mx_keys".to_string()
-        } else if name.contains("mx mechanical mini") {
-            "mx_mechanical_mini".to_string()
-        } else if name.contains("mx mechanical") {
-            "mx_mechanical".to_string()
-        } else {
-            "generic".to_string()
-        }
+        get_layout_key_from_name(&self.device_name)
     }
+}
+
+pub fn get_layout_key_from_name(name: &str) -> String {
+    let name = name.to_lowercase();
+    if name.contains("mx mechanical mini") {
+        "mx_mechanical_mini".to_string()
+    } else if name.contains("mx mechanical") || name.contains("mechanical") || name.contains("mchncl") {
+        "mx_mechanical".to_string()
+    } else if name.contains("master 3s") {
+        "mx_master_3s".to_string()
+    } else if name.contains("master 3") || name.contains("master 4") {
+        "mx_master_3".to_string()
+    } else if name.contains("master 2") || name.contains("master 2s") {
+        "mx_master_2s".to_string()
+    } else if name.contains("master") {
+        "mx_master".to_string()
+    } else if name.contains("anywhere 3s") {
+        "mx_anywhere_3s".to_string()
+    } else if name.contains("anywhere 3") {
+        "mx_anywhere_3".to_string()
+    } else if name.contains("anywhere") {
+        "mx_anywhere".to_string()
+    } else if name.contains("vertical") {
+        "mx_vertical".to_string()
+    } else if name.contains("ergo") {
+        "mx_ergo".to_string()
+    } else if name.contains("mx keys mini") {
+        "mx_keys_mini".to_string()
+    } else if name.contains("mx keys s") {
+        "mx_keys_s".to_string()
+    } else if name.contains("mx keys") {
+        "mx_keys".to_string()
+    } else {
+        "generic".to_string()
+    }
+}
+
+impl HidppClient {
 
     pub fn switch_host_channel(&self, channel_index: u8) -> Result<()> {
         let idx = self
@@ -168,5 +172,23 @@ impl HidppClient {
         } else {
             Err(anyhow!("Change host command failed"))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_layout_key_from_name() {
+        assert_eq!(get_layout_key_from_name("MX Mechanical Mini"), "mx_mechanical_mini");
+        assert_eq!(get_layout_key_from_name("MX Mechanical Keyboard"), "mx_mechanical");
+        assert_eq!(get_layout_key_from_name("Logitech Mechanical"), "mx_mechanical");
+        assert_eq!(get_layout_key_from_name("MX Keys Mini"), "mx_keys_mini");
+        assert_eq!(get_layout_key_from_name("MX Keys S"), "mx_keys_s");
+        assert_eq!(get_layout_key_from_name("MX Keys"), "mx_keys");
+        assert_eq!(get_layout_key_from_name("MX Master 3S"), "mx_master_3s");
+        assert_eq!(get_layout_key_from_name("MX Anywhere 3"), "mx_anywhere_3");
+        assert_eq!(get_layout_key_from_name("Some Generic Keyboard"), "generic");
     }
 }

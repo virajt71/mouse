@@ -254,6 +254,7 @@ impl Engine {
 
                                         if new_keyboard_found {
                                             let _ = engine_clone.restart_keyboard_hooks();
+                                            engine_clone.apply_keyboard_backlight();
                                         }
                                     }
 
