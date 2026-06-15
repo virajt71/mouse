@@ -421,16 +421,13 @@ fn process_peer_events(
                     FLOW_MANAGER.set_current_controller(Some(client_name.clone()));
                     if let Some(ref inner) = *FLOW_MANAGER.engine_inner.lock().unwrap() {
                         let is_paired = {
-                            let cfg = inner.config.lock().unwrap();
-                            cfg.settings
-                                .flow_peers
-                                .iter()
-                                .any(|p| p.name == client_name && p.paired)
+                            let peers = FLOW_MANAGER.flow_peers.read().unwrap();
+                            peers.iter().any(|p| p.name == client_name && p.paired)
                         };
 
                         if is_paired {
                             if let Some(target) =
-                                FLOW_MANAGER.handle_raw_motion(dx, dy, &inner.config)
+                                FLOW_MANAGER.handle_raw_motion(dx, dy)
                             {
                                 if target == client_name {
                                     log::info!(
