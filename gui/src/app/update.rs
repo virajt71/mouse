@@ -8,6 +8,15 @@ impl eframe::App for MouserApp {
         // Keep in sync with the engine's config state periodically
         self.reload_config();
 
+        // Clear the network searching flag if flow tab is not active
+        let is_searching_active = self.active_view == ActiveView::Customization
+            && self.customization_tab == crate::views::customization::SidebarTab::Flow;
+
+        if !is_searching_active {
+            mouser_engine::flow::network::IS_SEARCHING
+                .store(false, std::sync::atomic::Ordering::SeqCst);
+        }
+
         // ── Startup centering / update check ────────────────────────────────
         if !self.window_initialized {
             if let Some(monitor) = ctx.input(|i| i.viewport().monitor_size) {

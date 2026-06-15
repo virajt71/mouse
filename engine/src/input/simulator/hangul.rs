@@ -1,13 +1,16 @@
 const CHOSEONG_LIST: &[char] = &[
-    'ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'
+    'ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ',
+    'ㅌ', 'ㅍ', 'ㅎ',
 ];
 
 const JUNGSEONG_LIST: &[char] = &[
-    'ㅏ', 'ㅐ', 'ㅑ', 'ㅒ', 'ㅓ', 'ㅔ', 'ㅕ', 'ㅖ', 'ㅗ', 'ㅘ', 'ㅙ', 'ㅚ', 'ㅛ', 'ㅜ', 'ㅝ', 'ㅞ', 'ㅟ', 'ㅠ', 'ㅡ', 'ㅢ', 'ㅣ'
+    'ㅏ', 'ㅐ', 'ㅑ', 'ㅒ', 'ㅓ', 'ㅔ', 'ㅕ', 'ㅖ', 'ㅗ', 'ㅘ', 'ㅙ', 'ㅚ', 'ㅛ', 'ㅜ', 'ㅝ', 'ㅞ',
+    'ㅟ', 'ㅠ', 'ㅡ', 'ㅢ', 'ㅣ',
 ];
 
 const JONGSEONG_LIST: &[char] = &[
-    '\0', 'ㄱ', 'ㄲ', 'ㄳ', 'ㄴ', 'ㄵ', 'ㄶ', 'ㄷ', 'ㄹ', 'ㄺ', 'ㄻ', 'ㄼ', 'ㄽ', 'ㄾ', 'ㄿ', 'ㅀ', 'ㅁ', 'ㅂ', 'ㅄ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'
+    '\0', 'ㄱ', 'ㄲ', 'ㄳ', 'ㄴ', 'ㄵ', 'ㄶ', 'ㄷ', 'ㄹ', 'ㄺ', 'ㄻ', 'ㄼ', 'ㄽ', 'ㄾ', 'ㄿ', 'ㅀ',
+    'ㅁ', 'ㅂ', 'ㅄ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ',
 ];
 
 #[derive(Debug, Clone, Default)]
@@ -104,25 +107,37 @@ impl HangulComposer {
             match (self.choseong, self.jungseong, self.jongseong) {
                 (None, _, _) => {
                     self.choseong = Some(ch);
-                    HangulAction::Update { backspaces: 0, text: ch.to_string() }
+                    HangulAction::Update {
+                        backspaces: 0,
+                        text: ch.to_string(),
+                    }
                 }
                 (Some(_cho), None, _) => {
                     // Two consonants back-to-back without vowel: commit previous and start new
                     self.reset();
                     self.choseong = Some(ch);
-                    HangulAction::Update { backspaces: 0, text: ch.to_string() }
+                    HangulAction::Update {
+                        backspaces: 0,
+                        text: ch.to_string(),
+                    }
                 }
                 (Some(cho), Some(jung), None) => {
                     // Check if consonant can be jongseong
                     if JONGSEONG_LIST.contains(&ch) {
                         self.jongseong = Some(ch);
                         let sy = make_syllable(cho, jung, Some(ch));
-                        HangulAction::Update { backspaces: 1, text: sy.to_string() }
+                        HangulAction::Update {
+                            backspaces: 1,
+                            text: sy.to_string(),
+                        }
                     } else {
                         // Consonant cannot be jongseong (like ㄸ, ㅃ, ㅉ)
                         self.reset();
                         self.choseong = Some(ch);
-                        HangulAction::Update { backspaces: 0, text: ch.to_string() }
+                        HangulAction::Update {
+                            backspaces: 0,
+                            text: ch.to_string(),
+                        }
                     }
                 }
                 (Some(cho), Some(jung), Some(jong)) => {
@@ -130,35 +145,51 @@ impl HangulComposer {
                     if let Some(comb) = combine_jongseongs(jong, ch) {
                         self.jongseong = Some(comb);
                         let sy = make_syllable(cho, jung, Some(comb));
-                        HangulAction::Update { backspaces: 1, text: sy.to_string() }
+                        HangulAction::Update {
+                            backspaces: 1,
+                            text: sy.to_string(),
+                        }
                     } else {
                         // Cannot combine, commit previous syllable and start new
                         self.reset();
                         self.choseong = Some(ch);
-                        HangulAction::Update { backspaces: 0, text: ch.to_string() }
+                        HangulAction::Update {
+                            backspaces: 0,
+                            text: ch.to_string(),
+                        }
                     }
                 }
             }
         } else if is_vowel(ch) {
             match (self.choseong, self.jungseong, self.jongseong) {
-                (None, None, _) => {
-                    HangulAction::Update { backspaces: 0, text: ch.to_string() }
-                }
+                (None, None, _) => HangulAction::Update {
+                    backspaces: 0,
+                    text: ch.to_string(),
+                },
                 (Some(cho), None, _) => {
                     // Combine consonant + vowel
                     self.jungseong = Some(ch);
                     let sy = make_syllable(cho, ch, None);
-                    HangulAction::Update { backspaces: 1, text: sy.to_string() }
+                    HangulAction::Update {
+                        backspaces: 1,
+                        text: sy.to_string(),
+                    }
                 }
                 (Some(cho), Some(jung), None) => {
                     // Combine compound vowel
                     if let Some(comb) = combine_vowels(jung, ch) {
                         self.jungseong = Some(comb);
                         let sy = make_syllable(cho, comb, None);
-                        HangulAction::Update { backspaces: 1, text: sy.to_string() }
+                        HangulAction::Update {
+                            backspaces: 1,
+                            text: sy.to_string(),
+                        }
                     } else {
                         self.reset();
-                        HangulAction::Update { backspaces: 0, text: ch.to_string() }
+                        HangulAction::Update {
+                            backspaces: 0,
+                            text: ch.to_string(),
+                        }
                     }
                 }
                 (Some(cho), Some(jung), Some(jong)) => {
@@ -171,7 +202,10 @@ impl HangulComposer {
                         self.choseong = Some(second);
                         self.jungseong = Some(ch);
                         self.jongseong = None;
-                        HangulAction::Update { backspaces: 1, text: format!("{}{}", sy1, sy2) }
+                        HangulAction::Update {
+                            backspaces: 1,
+                            text: format!("{}{}", sy1, sy2),
+                        }
                     } else {
                         // Previous syllable drops jongseong completely
                         let sy1 = make_syllable(cho, jung, None);
@@ -180,12 +214,18 @@ impl HangulComposer {
                         self.choseong = Some(jong);
                         self.jungseong = Some(ch);
                         self.jongseong = None;
-                        HangulAction::Update { backspaces: 1, text: format!("{}{}", sy1, sy2) }
+                        HangulAction::Update {
+                            backspaces: 1,
+                            text: format!("{}{}", sy1, sy2),
+                        }
                     }
                 }
                 _ => {
                     self.reset();
-                    HangulAction::Update { backspaces: 0, text: ch.to_string() }
+                    HangulAction::Update {
+                        backspaces: 0,
+                        text: ch.to_string(),
+                    }
                 }
             }
         } else {
@@ -208,24 +248,32 @@ mod tests {
         if let HangulAction::Update { backspaces, text } = composer.feed('ㄱ') {
             assert_eq!(backspaces, 0);
             assert_eq!(text, "ㄱ");
-        } else { panic!(); }
+        } else {
+            panic!();
+        }
 
         // 2. feed 'ㅏ' -> "가"
         if let HangulAction::Update { backspaces, text } = composer.feed('ㅏ') {
             assert_eq!(backspaces, 1);
             assert_eq!(text, "가");
-        } else { panic!(); }
+        } else {
+            panic!();
+        }
 
         // 3. feed 'ㅇ' -> "강"
         if let HangulAction::Update { backspaces, text } = composer.feed('ㅇ') {
             assert_eq!(backspaces, 1);
             assert_eq!(text, "강");
-        } else { panic!(); }
+        } else {
+            panic!();
+        }
 
         // 4. feed 'ㅏ' -> consonant migration: "가아"
         if let HangulAction::Update { backspaces, text } = composer.feed('ㅏ') {
             assert_eq!(backspaces, 1);
             assert_eq!(text, "가아");
-        } else { panic!(); }
+        } else {
+            panic!();
+        }
     }
 }

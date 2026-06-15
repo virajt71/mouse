@@ -60,4 +60,3 @@ pub struct EngineInner {
 
     pub config_change_listener: Mutex<Option<Box<dyn Fn() + Send + Sync + 'static>>>,
 }
-

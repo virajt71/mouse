@@ -125,7 +125,10 @@ pub fn get_layout_key_from_name(name: &str) -> String {
     let name = name.to_lowercase();
     if name.contains("mx mechanical mini") {
         "mx_mechanical_mini".to_string()
-    } else if name.contains("mx mechanical") || name.contains("mechanical") || name.contains("mchncl") {
+    } else if name.contains("mx mechanical")
+        || name.contains("mechanical")
+        || name.contains("mchncl")
+    {
         "mx_mechanical".to_string()
     } else if name.contains("master 3s") {
         "mx_master_3s".to_string()
@@ -157,7 +160,6 @@ pub fn get_layout_key_from_name(name: &str) -> String {
 }
 
 impl HidppClient {
-
     pub fn switch_host_channel(&self, channel_index: u8) -> Result<()> {
         let idx = self
             .change_host_idx
@@ -181,9 +183,18 @@ mod tests {
 
     #[test]
     fn test_get_layout_key_from_name() {
-        assert_eq!(get_layout_key_from_name("MX Mechanical Mini"), "mx_mechanical_mini");
-        assert_eq!(get_layout_key_from_name("MX Mechanical Keyboard"), "mx_mechanical");
-        assert_eq!(get_layout_key_from_name("Logitech Mechanical"), "mx_mechanical");
+        assert_eq!(
+            get_layout_key_from_name("MX Mechanical Mini"),
+            "mx_mechanical_mini"
+        );
+        assert_eq!(
+            get_layout_key_from_name("MX Mechanical Keyboard"),
+            "mx_mechanical"
+        );
+        assert_eq!(
+            get_layout_key_from_name("Logitech Mechanical"),
+            "mx_mechanical"
+        );
         assert_eq!(get_layout_key_from_name("MX Keys Mini"), "mx_keys_mini");
         assert_eq!(get_layout_key_from_name("MX Keys S"), "mx_keys_s");
         assert_eq!(get_layout_key_from_name("MX Keys"), "mx_keys");

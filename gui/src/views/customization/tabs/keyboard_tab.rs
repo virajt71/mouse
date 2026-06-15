@@ -6,7 +6,7 @@ use crate::views::customization::popups::{
     draw_button_action_popup, draw_record_shortcut_ui, PopupView,
 };
 use eframe::egui;
-use egui::{pos2, vec2, Color32, Rect, Stroke, RichText};
+use egui::{pos2, vec2, Color32, Rect, RichText, Stroke};
 use mouser_engine::config::Config;
 use mouser_engine::Engine;
 
@@ -279,7 +279,8 @@ fn toggle_switch(ui: &mut egui::Ui, enabled: &mut bool) -> egui::Response {
         *enabled = !*enabled;
         response.mark_changed();
     }
-    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, *enabled, ""));
+    response
+        .widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, *enabled, ""));
 
     let how_on = ui.ctx().animate_bool(response.id, *enabled);
     let painter = ui.painter();
@@ -298,7 +299,12 @@ fn toggle_switch(ui: &mut egui::Ui, enabled: &mut bool) -> egui::Response {
     response
 }
 
-fn draw_custom_radio(ui: &mut egui::Ui, selected: &mut String, value: &str, label: &str) -> egui::Response {
+fn draw_custom_radio(
+    ui: &mut egui::Ui,
+    selected: &mut String,
+    value: &str,
+    label: &str,
+) -> egui::Response {
     let is_selected = *selected == value;
     let size = vec2(180.0, 26.0);
     let (rect, mut res) = ui.allocate_exact_size(size, egui::Sense::click());
@@ -318,8 +324,13 @@ fn draw_custom_radio(ui: &mut egui::Ui, selected: &mut String, value: &str, labe
     let circle_radius = 6.0;
 
     // Draw outer circle
-    let circle_color = if is_selected { active_color } else { inactive_color };
-    ui.painter().circle_stroke(circle_center, circle_radius, Stroke::new(1.5, circle_color));
+    let circle_color = if is_selected {
+        active_color
+    } else {
+        inactive_color
+    };
+    ui.painter()
+        .circle_stroke(circle_center, circle_radius, Stroke::new(1.5, circle_color));
 
     // Draw inner dot if selected
     if is_selected {
@@ -327,7 +338,11 @@ fn draw_custom_radio(ui: &mut egui::Ui, selected: &mut String, value: &str, labe
     }
 
     // Draw label text
-    let text_color = if is_selected { active_color } else { theme::primary_text(ctx) };
+    let text_color = if is_selected {
+        active_color
+    } else {
+        theme::primary_text(ctx)
+    };
     let text_pos = pos2(rect.min.x + 24.0, rect.center().y);
     ui.painter().text(
         text_pos,

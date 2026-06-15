@@ -143,11 +143,15 @@ impl HidppClient {
     }
 
     pub fn read_backlight_state(&self, feat_idx: u8) -> Result<BacklightState> {
-        let resp = self.request(feat_idx, 0x00, &[], 1000)?
+        let resp = self
+            .request(feat_idx, 0x00, &[], 1000)?
             .ok_or_else(|| anyhow!("No reply from device for backlight state read"))?;
-        
+
         if resp.len() < 12 {
-            return Err(anyhow!("Backlight state response too short: expected at least 12 bytes, got {}", resp.len()));
+            return Err(anyhow!(
+                "Backlight state response too short: expected at least 12 bytes, got {}",
+                resp.len()
+            ));
         }
 
         let enabled = resp[0];
@@ -171,21 +175,26 @@ impl HidppClient {
         })
     }
 
-    pub fn write_backlight_state(&self, feat_idx: u8, state: &BacklightState, effect_id: u8) -> Result<()> {
+    pub fn write_backlight_state(
+        &self,
+        feat_idx: u8,
+        state: &BacklightState,
+        effect_id: u8,
+    ) -> Result<()> {
         let mut params = [0u8; 10];
         params[0] = state.enabled;
         params[1] = state.options;
         params[2] = effect_id;
         params[3] = state.level;
-        
+
         let dho_bytes = state.dho.to_le_bytes();
         params[4] = dho_bytes[0];
         params[5] = dho_bytes[1];
-        
+
         let dhi_bytes = state.dhi.to_le_bytes();
         params[6] = dhi_bytes[0];
         params[7] = dhi_bytes[1];
-        
+
         let dpow_bytes = state.dpow.to_le_bytes();
         params[8] = dpow_bytes[0];
         params[9] = dpow_bytes[1];
@@ -199,8 +208,12 @@ impl HidppClient {
     }
 
     pub fn set_backlight_effect(&self, effect: &str) -> Result<()> {
-        log::info!("[HID++] Attempting to set backlight effect on '{}' to {}", self.device_name, effect);
-        
+        log::info!(
+            "[HID++] Attempting to set backlight effect on '{}' to {}",
+            self.device_name,
+            effect
+        );
+
         if let Some(feat_idx) = self.find_feature(0x1982) {
             let mut state = self.read_backlight_state(feat_idx)?;
             let effect_id = match effect {
@@ -215,7 +228,10 @@ impl HidppClient {
             state.enabled = 1;
             state.options = (state.options & 0x07) | (0x03 << 3); // Force manual mode for level
             self.write_backlight_state(feat_idx, &state, effect_id)?;
-            log::info!("[HID++] Backlight effect '{}' successfully sent to device (0x1982)", effect);
+            log::info!(
+                "[HID++] Backlight effect '{}' successfully sent to device (0x1982)",
+                effect
+            );
             Ok(())
         } else if let Some(feat_idx) = self.find_feature(0x8070) {
             let effect_id = match effect {
@@ -230,19 +246,30 @@ impl HidppClient {
             let params = [effect_id, 0x00, 0x00, 0x00, 0x00];
             let resp = self.request(feat_idx, 3, &params, 1000)?;
             if resp.is_some() {
-                log::info!("[HID++] Backlight effect '{}' successfully sent to device (0x8070)", effect);
+                log::info!(
+                    "[HID++] Backlight effect '{}' successfully sent to device (0x8070)",
+                    effect
+                );
                 Ok(())
             } else {
-                Err(anyhow!("Failed to apply backlight effect to device (0x8070)"))
+                Err(anyhow!(
+                    "Failed to apply backlight effect to device (0x8070)"
+                ))
             }
         } else {
-            Err(anyhow!("No backlight control feature (0x1982 or 0x8070) found on this device"))
+            Err(anyhow!(
+                "No backlight control feature (0x1982 or 0x8070) found on this device"
+            ))
         }
     }
 
     pub fn set_backlight_enabled(&self, enabled: bool) -> Result<()> {
-        log::info!("[HID++] Attempting to set backlight enabled to {} on '{}'", enabled, self.device_name);
-        
+        log::info!(
+            "[HID++] Attempting to set backlight enabled to {} on '{}'",
+            enabled,
+            self.device_name
+        );
+
         if let Some(feat_idx) = self.find_feature(0x1982) {
             let mut state = self.read_backlight_state(feat_idx)?;
             state.enabled = if enabled { 1 } else { 0 };
@@ -250,22 +277,31 @@ impl HidppClient {
                 state.options = (state.options & 0x07) | (0x03 << 3); // Force manual mode for level
             }
             self.write_backlight_state(feat_idx, &state, 0xFF)?; // 0xFF keeps current effect
-            log::info!("[HID++] Backlight enabled state {} successfully sent to device (0x1982)", enabled);
+            log::info!(
+                "[HID++] Backlight enabled state {} successfully sent to device (0x1982)",
+                enabled
+            );
             Ok(())
         } else if let Some(feat_idx) = self.find_feature(0x8070) {
             let params = [enabled as u8, 0x00, 0x00];
             let resp = self.request(feat_idx, 1, &params, 1000)?;
             if resp.is_some() {
-                log::info!("[HID++] Backlight enabled state {} successfully sent to device (0x8070)", enabled);
+                log::info!(
+                    "[HID++] Backlight enabled state {} successfully sent to device (0x8070)",
+                    enabled
+                );
                 Ok(())
             } else {
-                Err(anyhow!("Failed to apply backlight state to device (0x8070)"))
+                Err(anyhow!(
+                    "Failed to apply backlight state to device (0x8070)"
+                ))
             }
         } else {
-            Err(anyhow!("No backlight control feature (0x1982 or 0x8070) found on this device"))
+            Err(anyhow!(
+                "No backlight control feature (0x1982 or 0x8070) found on this device"
+            ))
         }
     }
-
 
     pub fn poll_events(&mut self) -> Result<Vec<HidppEvent>> {
         if self.device.is_none() {

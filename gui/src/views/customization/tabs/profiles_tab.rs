@@ -1,10 +1,15 @@
+use crate::theme;
 use eframe::egui;
 use egui::{Color32, RichText};
-use mouser_engine::Engine;
 use mouser_engine::config::Config;
-use crate::theme;
+use mouser_engine::Engine;
 
-pub fn show_profiles_settings_tab(ui: &mut egui::Ui, engine: &Engine, config: &mut Config, is_keyboard: bool) {
+pub fn show_profiles_settings_tab(
+    ui: &mut egui::Ui,
+    engine: &Engine,
+    config: &mut Config,
+    is_keyboard: bool,
+) {
     if is_keyboard {
         ui.horizontal(|ui| {
             ui.add_space(40.0);
