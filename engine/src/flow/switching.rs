@@ -116,6 +116,12 @@ pub fn run_edge_detection_loop(engine_inner: Arc<crate::engine::inner::EngineInn
                                                                 ry_target as i16,
                                                             );
                                                             let _ = conn.flush();
+                                                            let mode = FLOW_MANAGER.flow_mouse_mode.read().unwrap().clone();
+                                                            if mode == "hardware" {
+                                                                if let Some(idx) = crate::flow::switching::get_peer_channel_index(&peer.name) {
+                                                                    crate::flow::switching::trigger_hidpp_channel_switch(idx);
+                                                                }
+                                                            }
                                                             continue;
                                                         }
                                                     }
