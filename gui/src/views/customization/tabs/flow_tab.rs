@@ -1296,6 +1296,25 @@ fn show_flow_config_screen(
                                 *settings_dirty = true;
                             }
                         }
+
+                        ui.add_space(8.0);
+                        if let Some(monitor) = ui.ctx().input(|i| i.viewport().monitor_size) {
+                            let scale = ui.ctx().pixels_per_point();
+                            let detected_w = (monitor.x * scale).round() as i32;
+                            let detected_h = (monitor.y * scale).round() as i32;
+                            let btn_label = format!("Auto-detect ({}x{})", detected_w, detected_h);
+                            if ui.button(btn_label).clicked() {
+                                config.settings.flow_screen_width = detected_w;
+                                config.settings.flow_screen_height = detected_h;
+                                *settings_dirty = true;
+                            }
+                        } else {
+                            if ui.button("Auto-detect").clicked() {
+                                config.settings.flow_screen_width = 1920;
+                                config.settings.flow_screen_height = 1080;
+                                *settings_dirty = true;
+                            }
+                        }
                     });
 
                     ui.add_space(20.0);

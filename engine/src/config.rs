@@ -3,14 +3,16 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[serde(default)]
 pub struct Profile {
     pub label: String,
     pub apps: Vec<String>,
     pub mappings: HashMap<String, String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+#[serde(default)]
 pub struct FlowPeer {
     pub name: String,
     pub ip: String,
@@ -35,6 +37,7 @@ fn default_local_name() -> String {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(default)]
 pub struct Settings {
     pub start_minimized: bool,
     pub start_at_login: bool,
@@ -67,12 +70,50 @@ pub struct Settings {
     pub flow_keyboard_linking: bool,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+impl Default for Settings {
+    fn default() -> Self {
+        Settings {
+            start_minimized: true,
+            start_at_login: false,
+            hscroll_threshold: 1,
+            invert_hscroll: false,
+            invert_vscroll: false,
+            dpi: 1000,
+            smart_shift_mode: "ratchet".to_string(),
+            smart_shift_enabled: false,
+            smart_shift_threshold: 25,
+            gesture_threshold: 50,
+            gesture_deadzone: 40,
+            gesture_timeout_ms: 3000,
+            gesture_cooldown_ms: 500,
+            appearance_mode: "system".to_string(),
+            debug_mode: false,
+            device_layout_overrides: HashMap::new(),
+            language: "en".to_string(),
+            ignore_trackpad: true,
+            accent_color: "#8b5cf6".to_string(),
+            install_updates: true,
+            // Flow settings default
+            flow_enabled: false,
+            flow_local_name: default_local_name(),
+            flow_peers: vec![],
+            flow_screen_width: 1920,
+            flow_screen_height: 1080,
+            flow_hold_key: "none".to_string(),
+            flow_mouse_mode: "software".to_string(),
+            flow_keyboard_linking: true,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[serde(default)]
 pub struct ProfileGroup {
     pub profiles: HashMap<String, Profile>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(default)]
 pub struct Config {
     pub version: i32,
     pub active_group: String,
@@ -128,44 +169,12 @@ impl Default for Config {
         let mut profile_groups = HashMap::new();
         profile_groups.insert("default".to_string(), ProfileGroup { profiles });
 
-        let settings = Settings {
-            start_minimized: true,
-            start_at_login: false,
-            hscroll_threshold: 1,
-            invert_hscroll: false,
-            invert_vscroll: false,
-            dpi: 1000,
-            smart_shift_mode: "ratchet".to_string(),
-            smart_shift_enabled: false,
-            smart_shift_threshold: 25,
-            gesture_threshold: 50,
-            gesture_deadzone: 40,
-            gesture_timeout_ms: 3000,
-            gesture_cooldown_ms: 500,
-            appearance_mode: "system".to_string(),
-            debug_mode: false,
-            device_layout_overrides: HashMap::new(),
-            language: "en".to_string(),
-            ignore_trackpad: true,
-            accent_color: "#8b5cf6".to_string(),
-            install_updates: true,
-            // Flow settings default
-            flow_enabled: false,
-            flow_local_name: default_local_name(),
-            flow_peers: vec![],
-            flow_screen_width: 1920,
-            flow_screen_height: 1080,
-            flow_hold_key: "none".to_string(),
-            flow_mouse_mode: "software".to_string(),
-            flow_keyboard_linking: true,
-        };
-
         Config {
             version: 13,
             active_group: "default".to_string(),
             active_app_profile: "global".to_string(),
             profile_groups,
-            settings,
+            settings: Settings::default(),
         }
     }
 }
@@ -191,57 +200,83 @@ pub fn get_log_dir() -> PathBuf {
 }
 
 impl Config {
+    fn try_migrate_v11(content: &str) -> Option<Self> {
+        #[derive(serde::Deserialize)]
+        struct OldConfig {
+            version: i32,
+            active_profile: String,
+            profiles: HashMap<String, Profile>,
+            settings: Settings,
+        }
+
+        if let Ok(old_cfg) = serde_json::from_str::<OldConfig>(content) {
+            let mut profile_groups = HashMap::new();
+            let mut profiles = old_cfg.profiles;
+            if let Some(default_profile) = profiles.remove("default") {
+                let mut global_profile = default_profile;
+                global_profile.label = "Default (All Apps)".to_string();
+                profiles.insert("global".to_string(), global_profile);
+            }
+            profile_groups.insert("default".to_string(), ProfileGroup { profiles });
+
+            let active_app_profile = if old_cfg.active_profile == "default" {
+                "global".to_string()
+            } else {
+                old_cfg.active_profile
+            };
+
+            let new_cfg = Config {
+                version: 13,
+                active_group: "default".to_string(),
+                active_app_profile,
+                profile_groups,
+                settings: old_cfg.settings,
+            };
+            let _ = new_cfg.save();
+            log::info!("[Config] Successfully migrated v11 config to v13.");
+            Some(new_cfg)
+        } else {
+            None
+        }
+    }
+
     fn load_raw() -> Self {
         let path = get_config_path();
         if path.exists() {
             if let Ok(content) = fs::read_to_string(&path) {
-                if let Ok(mut cfg) = serde_json::from_str::<Config>(&content) {
-                    if cfg.version == 13 {
-                        return cfg;
-                    }
-                    if cfg.version == 12 {
+                match serde_json::from_str::<Config>(&content) {
+                    Ok(mut cfg) => {
+                        if cfg.version == 13 {
+                            return cfg;
+                        }
+                        if cfg.version == 12 {
+                            cfg.version = 13;
+                            let _ = cfg.save();
+                            return cfg;
+                        }
+                        if cfg.version < 12 {
+                            if let Some(migrated) = Self::try_migrate_v11(&content) {
+                                return migrated;
+                            }
+                        }
+                        // If it successfully deserialized but has some other/unexpected version,
+                        // we still return it to keep settings, but bump the version to 13.
+                        log::warn!("[Config] Loaded config with version {}, upgrading version to 13.", cfg.version);
                         cfg.version = 13;
                         let _ = cfg.save();
                         return cfg;
                     }
-                }
-
-                // Fallback / migration from v11
-                #[derive(serde::Deserialize)]
-                struct OldConfig {
-                    version: i32,
-                    active_profile: String,
-                    profiles: HashMap<String, Profile>,
-                    settings: Settings,
-                }
-
-                if let Ok(old_cfg) = serde_json::from_str::<OldConfig>(&content) {
-                    let mut profile_groups = HashMap::new();
-                    let mut profiles = old_cfg.profiles;
-                    if let Some(default_profile) = profiles.remove("default") {
-                        let mut global_profile = default_profile;
-                        global_profile.label = "Default (All Apps)".to_string();
-                        profiles.insert("global".to_string(), global_profile);
+                    Err(e) => {
+                        log::warn!("[Config] Failed to parse config.json: {}. Attempting fallback.", e);
+                        if let Some(migrated) = Self::try_migrate_v11(&content) {
+                            return migrated;
+                        }
+                        // Create a backup of the invalid configuration file to prevent permanent loss.
+                        let mut backup_path = path.clone();
+                        backup_path.set_extension("json.bak");
+                        log::warn!("[Config] Copying corrupted config to {:?}", backup_path);
+                        let _ = fs::copy(&path, backup_path);
                     }
-                    profile_groups.insert("default".to_string(), ProfileGroup { profiles });
-
-                    let active_app_profile = if old_cfg.active_profile == "default" {
-                        "global".to_string()
-                    } else {
-                        old_cfg.active_profile
-                    };
-
-                    let new_cfg = Config {
-                        version: 13,
-                        active_group: "default".to_string(),
-                        active_app_profile,
-                        profile_groups,
-                        settings: old_cfg.settings,
-                    };
-                    let _ = new_cfg.save();
-                    return new_cfg;
-                } else {
-                    log::warn!("[Config] Failed to parse config.json, using defaults.");
                 }
             }
         }
@@ -419,4 +454,49 @@ mod tests {
         let brave_p = group.profiles.get("Brave Web Browser").unwrap();
         assert_eq!(brave_p.mappings.get("xbutton2").unwrap(), "play_pause");
     }
+
+    #[test]
+    fn test_config_with_missing_fields() {
+        let incomplete_json = r##"{
+          "version": 13,
+          "active_group": "default",
+          "active_app_profile": "global",
+          "profile_groups": {
+            "default": {
+              "profiles": {
+                "global": {
+                  "label": "Default (All Apps)",
+                  "mappings": {
+                    "xbutton1": "alt_tab"
+                  }
+                }
+              }
+            }
+          },
+          "settings": {
+            "start_minimized": true,
+            "dpi": 1000
+          }
+        }"##;
+
+        let parsed: Config = serde_json::from_str(incomplete_json).unwrap();
+        
+        // Check that specified fields are parsed correctly
+        assert_eq!(parsed.settings.start_minimized, true);
+        assert_eq!(parsed.settings.dpi, 1000);
+        
+        // Check that missing fields got their default values
+        assert_eq!(parsed.settings.start_at_login, false);
+        assert_eq!(parsed.settings.language, "en");
+        assert_eq!(parsed.settings.accent_color, "#8b5cf6");
+        assert_eq!(parsed.settings.flow_enabled, false);
+        assert_eq!(parsed.settings.flow_keyboard_linking, true);
+
+        // Check profiles missing apps list got empty vec
+        let group = parsed.profile_groups.get("default").unwrap();
+        let global_p = group.profiles.get("global").unwrap();
+        assert!(global_p.apps.is_empty());
+        assert_eq!(global_p.mappings.get("xbutton1").unwrap(), "alt_tab");
+    }
 }
+
