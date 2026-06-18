@@ -4,6 +4,7 @@ pub mod gesture;
 pub mod hotplug;
 pub mod hscroll;
 pub mod inner;
+pub mod modifier_state;
 pub mod profile;
 
 use std::collections::HashMap;
@@ -18,6 +19,7 @@ use crate::detection::AppDetector;
 use crate::input::{KeySimulator, MouseHook};
 
 pub use self::inner::{EngineInner, GestureState};
+pub use self::modifier_state::ModifierState;
 
 #[derive(Clone)]
 pub struct Engine {
@@ -72,6 +74,7 @@ impl Engine {
             invert_hscroll_arc: Arc::new(AtomicBool::new(invert_hscroll)),
             block_hscroll_arc: Arc::new(AtomicBool::new(false)),
             gesture_active_arc: Arc::new(AtomicBool::new(false)),
+            modifier_state: ModifierState::new(),
 
             gesture_tracking: AtomicBool::new(false),
             gesture_triggered: AtomicBool::new(false),

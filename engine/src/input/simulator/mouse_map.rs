@@ -1,8 +1,8 @@
 use evdev::Key;
 use std::collections::HashMap;
 
-lazy_static::lazy_static! {
-    pub static ref MOUSE_BTN_MAP: HashMap<&'static str, Key> = {
+pub static MOUSE_BTN_MAP: std::sync::LazyLock<HashMap<&'static str, Key>> =
+    std::sync::LazyLock::new(|| {
         let mut m = HashMap::new();
         m.insert("mouse_left_click", Key::BTN_LEFT);
         m.insert("mouse_right_click", Key::BTN_RIGHT);
@@ -11,8 +11,7 @@ lazy_static::lazy_static! {
         m.insert("mouse_forward_click", Key::BTN_EXTRA);
         m.insert("advanced_click", Key::BTN_LEFT);
         m
-    };
-}
+    });
 
 pub fn is_mouse_button_action(action_id: &str) -> bool {
     MOUSE_BTN_MAP.contains_key(action_id)

@@ -5,11 +5,12 @@ use std::net::{TcpListener, TcpStream, UdpSocket};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
-lazy_static::lazy_static! {
-    pub static ref DISCOVERED_PEERS: RwLock<HashMap<String, (String, Instant)>> = RwLock::new(HashMap::new());
-    pub static ref ACTIVE_CONNECTIONS: RwLock<HashMap<String, TcpStream>> = RwLock::new(HashMap::new());
-    pub static ref CONNECTING_PEERS: RwLock<std::collections::HashSet<String>> = RwLock::new(std::collections::HashSet::new());
-}
+pub static DISCOVERED_PEERS: std::sync::LazyLock<RwLock<HashMap<String, (String, Instant)>>> =
+    std::sync::LazyLock::new(|| RwLock::new(HashMap::new()));
+pub static ACTIVE_CONNECTIONS: std::sync::LazyLock<RwLock<HashMap<String, TcpStream>>> =
+    std::sync::LazyLock::new(|| RwLock::new(HashMap::new()));
+pub static CONNECTING_PEERS: std::sync::LazyLock<RwLock<std::collections::HashSet<String>>> =
+    std::sync::LazyLock::new(|| RwLock::new(std::collections::HashSet::new()));
 
 pub static IS_SEARCHING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 

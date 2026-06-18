@@ -85,7 +85,7 @@ impl AppDetector {
                         }
                         None => {
                             if !tool_warned {
-                                log::info!(
+                                log::debug!(
                                     "[AppDetector] Active window connection is not an XWayland client or GNOME D-Bus query returned empty. \
                                      Per-app profile switching falls back to default for native Wayland windows."
                                 );

@@ -8,9 +8,8 @@ use super::Engine;
 use crate::hidpp::HidppClient;
 use crate::input::{KeyboardHook, MouseHook};
 
-lazy_static::lazy_static! {
-    static ref CONNECTING_PATHS: Mutex<HashSet<String>> = Mutex::new(HashSet::new());
-}
+static CONNECTING_PATHS: std::sync::LazyLock<Mutex<HashSet<String>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashSet::new()));
 
 impl Engine {
     pub fn restart_keyboard_hooks(&self) -> anyhow::Result<()> {
@@ -30,6 +29,7 @@ impl Engine {
                     self.inner.key_simulator.device(),
                     self.inner.key_simulator.clone(),
                     self.clone(),
+                    self.inner.modifier_state.clone(),
                 )
                 .is_ok()
             {
@@ -164,6 +164,7 @@ impl Engine {
                         inner.key_simulator.device(),
                         inner.key_simulator.clone(),
                         self.clone(),
+                        inner.modifier_state.clone(),
                     ) {
                         Ok(()) => {
                             log::info!("[Engine] Keyboard hook started successfully for {}.", path);
@@ -194,6 +195,15 @@ impl Engine {
     }
 
     fn check_hid_hotplug(&self) {
+        /// RAII guard: removes `path` from `CONNECTING_PATHS` when dropped.
+        /// Guarantees cleanup on any return path — including future early returns.
+        struct ConnGuard(String);
+        impl Drop for ConnGuard {
+            fn drop(&mut self) {
+                CONNECTING_PATHS.lock().unwrap().remove(&self.0);
+            }
+        }
+
         let inner = &self.inner;
         let mut api_lock = inner.hid_api.lock().unwrap();
         if api_lock.is_none() {
@@ -230,12 +240,12 @@ impl Engine {
                 let path_str_clone = path_str.clone();
 
                 std::thread::spawn(move || {
+                    // Guard guarantees removal from CONNECTING_PATHS on any return path.
+                    let _guard = ConnGuard(path_str_clone.clone());
+
                     let api_temp = match hidapi::HidApi::new() {
                         Ok(a) => a,
-                        Err(_) => {
-                            CONNECTING_PATHS.lock().unwrap().remove(&path_str_clone);
-                            return;
-                        }
+                        Err(_) => return,
                     };
 
                     let mut new_client = HidppClient::new();
@@ -276,8 +286,7 @@ impl Engine {
                             engine_clone.apply_keyboard_backlight();
                         }
                     }
-
-                    CONNECTING_PATHS.lock().unwrap().remove(&path_str_clone);
+                    // _guard drops here → path removed from CONNECTING_PATHS
                 });
             }
         }

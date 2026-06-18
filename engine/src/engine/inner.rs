@@ -9,6 +9,8 @@ use crate::detection::AppDetector;
 use crate::hidpp::HidppClient;
 use crate::input::{KeySimulator, KeyboardHook, MouseHook};
 
+use super::modifier_state::ModifierState;
+
 pub struct GestureState {
     pub delta_x: f32,
     pub delta_y: f32,
@@ -38,6 +40,9 @@ pub struct EngineInner {
     pub blocked_buttons_arc: Arc<Mutex<Vec<Key>>>,
     pub invert_vscroll_arc: Arc<AtomicBool>,
     pub invert_hscroll_arc: Arc<AtomicBool>,
+    /// True when hscroll_left/right mapping is "none" — raw REL_HWHEEL passes through to the compositor.
+    /// When false (an action is mapped), the engine handles hscroll via handle_hscroll_event and
+    /// raw hscroll is suppressed so the action does not double-fire (§3.1).
     pub block_hscroll_arc: Arc<AtomicBool>,
     pub gesture_active_arc: Arc<AtomicBool>,
 
@@ -57,6 +62,10 @@ pub struct EngineInner {
     pub cached_gesture_deadzone: AtomicU32,
     pub cached_gesture_timeout_ms: AtomicU64,
     pub cached_gesture_cooldown_ms: AtomicU64,
+
+    /// Modifier key state updated by KeyboardHook threads.
+    /// Used by the flow switcher to gate edge transitions on hold-key (§4.2).
+    pub modifier_state: Arc<ModifierState>,
 
     pub config_change_listener: Mutex<Option<Box<dyn Fn() + Send + Sync + 'static>>>,
 }

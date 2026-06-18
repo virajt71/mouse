@@ -2531,7 +2531,6 @@ dependencies = [
  "evdev",
  "hidapi",
  "image",
- "lazy_static",
  "log",
  "mdns-sd",
  "nix 0.29.0",
