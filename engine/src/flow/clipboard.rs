@@ -9,12 +9,23 @@ use std::time::Duration;
 lazy_static::lazy_static! {
     static ref LAST_TEXT: Mutex<String> = Mutex::new(String::new());
     static ref LAST_IMG_HASH: Mutex<String> = Mutex::new(String::new());
+    static ref LAST_IMG_SIG: Mutex<u64> = Mutex::new(0);
+}
+
+fn fast_image_sig(img: &ImageData) -> u64 {
+    let head: &[u8] = &img.bytes[..64.min(img.bytes.len())];
+    let mut h = img.width as u64 ^ ((img.height as u64) << 32);
+    for (i, &b) in head.iter().enumerate() {
+        h ^= (b as u64) << (i % 56);
+    }
+    h
 }
 
 pub fn run_clipboard_loop() {
     log::info!("[Flow Clipboard] Clipboard monitoring thread running...");
 
     let mut clipboard_opt = None;
+    let mut backoff = Duration::from_secs(1);
 
     loop {
         if clipboard_opt.is_none() {
@@ -22,13 +33,16 @@ pub fn run_clipboard_loop() {
                 Ok(c) => {
                     log::info!("[Flow Clipboard] Clipboard initialized successfully.");
                     clipboard_opt = Some(c);
+                    backoff = Duration::from_secs(1);
                 }
                 Err(e) => {
                     log::warn!(
-                        "[Flow Clipboard] Failed to initialize clipboard: {}. Retrying in 5s...",
-                        e
+                        "[Flow Clipboard] Failed to initialize clipboard: {}. Retrying in {:?}...",
+                        e,
+                        backoff
                     );
-                    std::thread::sleep(Duration::from_secs(5));
+                    std::thread::sleep(backoff);
+                    backoff = (backoff * 2).min(Duration::from_secs(30));
                     continue;
                 }
             }
@@ -98,22 +112,29 @@ pub fn run_clipboard_loop() {
                 let clipboard = clipboard_opt.as_mut().unwrap();
                 match clipboard.get_image() {
                     Ok(img) => {
-                        use sha2::{Digest, Sha256};
-                        let hash = format!("{:x}", Sha256::digest(img.bytes.as_ref()));
-                        let mut last_hash = LAST_IMG_HASH.lock().unwrap();
-                        if hash != *last_hash && !img.bytes.is_empty() {
-                            *last_hash = hash;
-                            log::debug!(
-                                "[Flow Clipboard] Local clipboard changed: image size={}x{}",
-                                img.width,
-                                img.height
-                            );
-                            if let Ok(png_bytes) = encode_rgba_to_png(&img) {
-                                let evt = FlowEvent::ClipboardImage(png_bytes);
-                                let conns = super::network::ACTIVE_CONNECTIONS.read().unwrap();
-                                for peer_name in conns.keys() {
-                                    let _ = send_event_to_peer(peer_name, &evt);
+                        let sig = fast_image_sig(&img);
+                        let mut last_sig = LAST_IMG_SIG.lock().unwrap();
+                        if sig != *last_sig && !img.bytes.is_empty() {
+                            use sha2::{Digest, Sha256};
+                            let hash = format!("{:x}", Sha256::digest(img.bytes.as_ref()));
+                            let mut last_hash = LAST_IMG_HASH.lock().unwrap();
+                            if hash != *last_hash {
+                                *last_hash = hash;
+                                *last_sig = sig;
+                                log::debug!(
+                                    "[Flow Clipboard] Local clipboard changed: image size={}x{}",
+                                    img.width,
+                                    img.height
+                                );
+                                if let Ok(png_bytes) = encode_rgba_to_png(&img) {
+                                    let evt = FlowEvent::ClipboardImage(png_bytes);
+                                    let conns = super::network::ACTIVE_CONNECTIONS.read().unwrap();
+                                    for peer_name in conns.keys() {
+                                        let _ = send_event_to_peer(peer_name, &evt);
+                                    }
                                 }
+                            } else {
+                                *last_sig = sig;
                             }
                         }
                     }
@@ -169,6 +190,7 @@ pub fn set_local_clipboard_image(png_bytes: Vec<u8>) -> anyhow::Result<()> {
             height: height as usize,
             bytes: std::borrow::Cow::Owned(raw_bytes),
         };
+        *LAST_IMG_SIG.lock().unwrap() = fast_image_sig(&img_data);
         clipboard.set_image(img_data)?;
         log::info!("[Flow Clipboard] Clipboard image synchronized from remote.");
     }

@@ -30,7 +30,7 @@ pub struct EngineInner {
     pub selected_device_idx: Mutex<usize>,
     pub running: AtomicBool,
     pub current_profile: Mutex<String>,
-    pub active_mappings: Arc<Mutex<HashMap<String, String>>>,
+    pub active_mappings: Arc<std::sync::RwLock<HashMap<String, std::sync::Arc<str>>>>,
     pub active_profile_shared: Arc<Mutex<String>>,
     pub last_detected_exe: Mutex<String>,
 

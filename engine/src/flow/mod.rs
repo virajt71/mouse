@@ -3,8 +3,8 @@ pub mod network;
 pub mod switching;
 
 use crate::config::Config;
-use std::sync::{Arc, Mutex, RwLock};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, RwLock};
 
 lazy_static::lazy_static! {
     pub static ref FLOW_MANAGER: Arc<FlowManager> = Arc::new(FlowManager::new());
@@ -30,6 +30,7 @@ pub struct FlowManager {
 }
 
 impl FlowManager {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         FlowManager {
             active_peer: RwLock::new(None),
@@ -139,18 +140,16 @@ impl FlowManager {
     pub fn update_config(&self, cfg: &Config) {
         *self.screen_width.write().unwrap() = cfg.settings.flow_screen_width;
         *self.screen_height.write().unwrap() = cfg.settings.flow_screen_height;
-        self.flow_enabled.store(cfg.settings.flow_enabled, Ordering::SeqCst);
+        self.flow_enabled
+            .store(cfg.settings.flow_enabled, Ordering::SeqCst);
         *self.flow_mouse_mode.write().unwrap() = cfg.settings.flow_mouse_mode.clone();
-        self.flow_mouse_mode_hardware.store(cfg.settings.flow_mouse_mode == "hardware", Ordering::SeqCst);
+        self.flow_mouse_mode_hardware
+            .store(cfg.settings.flow_mouse_mode == "hardware", Ordering::SeqCst);
         *self.flow_hold_key.write().unwrap() = cfg.settings.flow_hold_key.clone();
         *self.flow_peers.write().unwrap() = cfg.settings.flow_peers.clone();
     }
 
-    pub fn handle_raw_motion(
-        &self,
-        dx: i32,
-        dy: i32,
-    ) -> Option<String> {
+    pub fn handle_raw_motion(&self, dx: i32, dy: i32) -> Option<String> {
         if !self.flow_mouse_mode_hardware.load(Ordering::SeqCst) {
             return None;
         }

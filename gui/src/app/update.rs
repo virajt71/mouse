@@ -55,8 +55,6 @@ impl eframe::App for MouserApp {
             self.paired_devices = update.paired_devices;
             self.battery_pct = update.battery_pct;
             self.has_active_hidpp_battery = Some(update.has_active_hidpp_battery);
-
-            self.last_known_profile = update.active_profile.clone();
         }
 
         // Evaluate and lock/freeze connection type on device connect
@@ -84,23 +82,12 @@ impl eframe::App for MouserApp {
         }
 
         // Update system tray icon based on connection type transition
-        let active_conn = if let Some(ref conn) = self.current_connection_type {
-            if conn == "bluetooth" {
-                "bluetooth"
-            } else {
-                "mouse"
-            }
-        } else {
-            "mouse"
-        };
+        let active_conn = "mouse";
 
         if active_conn != self.current_tray_icon_type {
             if let Some(ref tray) = self.tray_icon {
-                let new_icon = match active_conn {
-                    "bluetooth" => crate::theme::create_bluetooth_tray_icon(),
-                    _ => crate::theme::create_mouse_tray_icon(),
-                };
-                let _ = tray.set_icon(Some(new_icon));
+                let new_icon = crate::theme::create_mouse_tray_icon();
+                tray.set_icon(new_icon);
             }
             self.current_tray_icon_type = active_conn.to_string();
         }
@@ -138,7 +125,7 @@ impl eframe::App for MouserApp {
                     }
                     match self.active_view {
                         ActiveView::EmptyState => {
-                            let mut display_devices = self.paired_devices.clone();
+                            let mut display_devices = (*self.paired_devices).clone();
                             if display_devices.is_empty() && self.has_active_hidpp_battery.unwrap_or(false) {
                                 display_devices.push(("00:00:00:00:00:00".to_string(), "MX Master 3".to_string(), true));
                             }
@@ -224,7 +211,9 @@ impl eframe::App for MouserApp {
                                                             mac.clone(),
                                                         ),
                                                     );
-                                                    self.paired_devices.retain(|(m, _, _)| m != &mac);
+                                                     let mut devices = (*self.paired_devices).clone();
+                                                     devices.retain(|(m, _, _)| m != &mac);
+                                                     self.paired_devices = std::sync::Arc::new(devices);
                                                 }
                                                 crate::views::empty_state::DeviceCardAction::Customize => {
                                                     if let Some((_, name, _)) = display_devices.iter().find(|(m, _, _)| m == &mac) {

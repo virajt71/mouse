@@ -187,7 +187,14 @@ impl CustomizingButton {
         }
     }
 
-    pub fn other_options(self) -> Vec<UniversalButtonOption> {
+    pub fn other_options(self) -> &'static [UniversalButtonOption] {
+        use std::sync::OnceLock;
+        static OTHER_OPTIONS_THUMB: OnceLock<Vec<UniversalButtonOption>> = OnceLock::new();
+        static OTHER_OPTIONS_FORWARD: OnceLock<Vec<UniversalButtonOption>> = OnceLock::new();
+        static OTHER_OPTIONS_BACK: OnceLock<Vec<UniversalButtonOption>> = OnceLock::new();
+        static OTHER_OPTIONS_TOP: OnceLock<Vec<UniversalButtonOption>> = OnceLock::new();
+        static OTHER_OPTIONS_MIDDLE: OnceLock<Vec<UniversalButtonOption>> = OnceLock::new();
+
         match self {
             Self::F1
             | Self::F2
@@ -210,64 +217,74 @@ impl CustomizingButton {
             | Self::Calculator
             | Self::ScreenLock
             | Self::Search
-            | Self::LockPower => vec![],
+            | Self::LockPower => &[],
             _ => {
-                let recommended = self.recommended_options();
-                let all_options = &[
-                    UniversalButtonOption::Gesture,
-                    UniversalButtonOption::ActionCenter,
-                    UniversalButtonOption::AdvancedClick,
-                    UniversalButtonOption::Back,
-                    UniversalButtonOption::BrightnessDown,
-                    UniversalButtonOption::BrightnessUp,
-                    UniversalButtonOption::Calculator,
-                    UniversalButtonOption::ChangePointerSpeed,
-                    UniversalButtonOption::CloseWindow,
-                    UniversalButtonOption::Copy,
-                    UniversalButtonOption::Cut,
-                    UniversalButtonOption::DesktopLeft,
-                    UniversalButtonOption::DesktopRight,
-                    UniversalButtonOption::Dictation,
-                    UniversalButtonOption::DoNothing,
-                    UniversalButtonOption::Emoji,
-                    UniversalButtonOption::EmojisMenu,
-                    UniversalButtonOption::Forward,
-                    UniversalButtonOption::InputLanguage,
-                    UniversalButtonOption::Lock,
-                    UniversalButtonOption::MaximizeWindow,
-                    UniversalButtonOption::MiddleButton,
-                    UniversalButtonOption::MinimizeWindow,
-                    UniversalButtonOption::MuteUnmuteSpeaker,
-                    UniversalButtonOption::NewBrowserTab,
-                    UniversalButtonOption::Next,
-                    UniversalButtonOption::OpenApplication,
-                    UniversalButtonOption::OpenFile,
-                    UniversalButtonOption::OpenFolder,
-                    UniversalButtonOption::Paste,
-                    UniversalButtonOption::PlayPause,
-                    UniversalButtonOption::Previous,
-                    UniversalButtonOption::PrintScreen,
-                    UniversalButtonOption::Redo,
-                    UniversalButtonOption::RightCtrl,
-                    UniversalButtonOption::ScreenCapture,
-                    UniversalButtonOption::ScreenSnip,
-                    UniversalButtonOption::ShiftWheelMode,
-                    UniversalButtonOption::ShowHideDesktop,
-                    UniversalButtonOption::SwitchApplication,
-                    UniversalButtonOption::TaskView,
-                    UniversalButtonOption::ThisPC,
-                    UniversalButtonOption::Undo,
-                    UniversalButtonOption::VolumeDown,
-                    UniversalButtonOption::VolumeUp,
-                    UniversalButtonOption::ZoomIn,
-                    UniversalButtonOption::ZoomOut,
-                ];
+                let cell = match self {
+                    Self::Thumb => &OTHER_OPTIONS_THUMB,
+                    Self::Forward => &OTHER_OPTIONS_FORWARD,
+                    Self::Back => &OTHER_OPTIONS_BACK,
+                    Self::Top => &OTHER_OPTIONS_TOP,
+                    Self::Middle => &OTHER_OPTIONS_MIDDLE,
+                    _ => return &[],
+                };
+                cell.get_or_init(|| {
+                    let recommended = self.recommended_options();
+                    let all_options = &[
+                        UniversalButtonOption::Gesture,
+                        UniversalButtonOption::ActionCenter,
+                        UniversalButtonOption::AdvancedClick,
+                        UniversalButtonOption::Back,
+                        UniversalButtonOption::BrightnessDown,
+                        UniversalButtonOption::BrightnessUp,
+                        UniversalButtonOption::Calculator,
+                        UniversalButtonOption::ChangePointerSpeed,
+                        UniversalButtonOption::CloseWindow,
+                        UniversalButtonOption::Copy,
+                        UniversalButtonOption::Cut,
+                        UniversalButtonOption::DesktopLeft,
+                        UniversalButtonOption::DesktopRight,
+                        UniversalButtonOption::Dictation,
+                        UniversalButtonOption::DoNothing,
+                        UniversalButtonOption::Emoji,
+                        UniversalButtonOption::EmojisMenu,
+                        UniversalButtonOption::Forward,
+                        UniversalButtonOption::InputLanguage,
+                        UniversalButtonOption::Lock,
+                        UniversalButtonOption::MaximizeWindow,
+                        UniversalButtonOption::MiddleButton,
+                        UniversalButtonOption::MinimizeWindow,
+                        UniversalButtonOption::MuteUnmuteSpeaker,
+                        UniversalButtonOption::NewBrowserTab,
+                        UniversalButtonOption::Next,
+                        UniversalButtonOption::OpenApplication,
+                        UniversalButtonOption::OpenFile,
+                        UniversalButtonOption::OpenFolder,
+                        UniversalButtonOption::Paste,
+                        UniversalButtonOption::PlayPause,
+                        UniversalButtonOption::Previous,
+                        UniversalButtonOption::PrintScreen,
+                        UniversalButtonOption::Redo,
+                        UniversalButtonOption::RightCtrl,
+                        UniversalButtonOption::ScreenCapture,
+                        UniversalButtonOption::ScreenSnip,
+                        UniversalButtonOption::ShiftWheelMode,
+                        UniversalButtonOption::ShowHideDesktop,
+                        UniversalButtonOption::SwitchApplication,
+                        UniversalButtonOption::TaskView,
+                        UniversalButtonOption::ThisPC,
+                        UniversalButtonOption::Undo,
+                        UniversalButtonOption::VolumeDown,
+                        UniversalButtonOption::VolumeUp,
+                        UniversalButtonOption::ZoomIn,
+                        UniversalButtonOption::ZoomOut,
+                    ];
 
-                all_options
-                    .iter()
-                    .copied()
-                    .filter(|opt| !recommended.contains(opt))
-                    .collect()
+                    all_options
+                        .iter()
+                        .copied()
+                        .filter(|opt| !recommended.contains(opt))
+                        .collect()
+                })
             }
         }
     }

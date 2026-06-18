@@ -68,7 +68,7 @@ impl KeyboardHook {
     pub fn start(
         &mut self,
         dev_path: String,
-        mappings: Arc<std::sync::Mutex<HashMap<String, String>>>,
+        mappings: Arc<std::sync::RwLock<HashMap<String, std::sync::Arc<str>>>>,
         uinput_device: Arc<std::sync::Mutex<Option<evdev::uinput::VirtualDevice>>>,
         key_simulator: KeySimulator,
         engine: crate::engine::Engine,
@@ -300,11 +300,11 @@ impl KeyboardHook {
 
                                                     if let Some(name) = key_name {
                                                         let mapping = {
-                                                            mappings.lock().unwrap().get(name).cloned()
+                                                            mappings.read().unwrap().get(name).cloned()
                                                         };
 
                                                         if let Some(action_id) = mapping {
-                                                            if action_id != "none" {
+                                                            if &*action_id != "none" {
                                                                 if down {
                                                                     key_simulator.execute_action(&action_id);
                                                                 }

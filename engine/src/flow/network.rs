@@ -426,9 +426,7 @@ fn process_peer_events(
                         };
 
                         if is_paired {
-                            if let Some(target) =
-                                FLOW_MANAGER.handle_raw_motion(dx, dy)
-                            {
+                            if let Some(target) = FLOW_MANAGER.handle_raw_motion(dx, dy) {
                                 if target == client_name {
                                     log::info!(
                                         "[Flow Network] Edge transition back to controller '{}'",
@@ -559,22 +557,24 @@ fn process_peer_events(
                     *FLOW_MANAGER.virtual_x.lock().unwrap() = target_x;
                     *FLOW_MANAGER.virtual_y.lock().unwrap() = target_y;
 
-                     if let Ok((conn, screen_num)) = x11rb::rust_connection::RustConnection::connect(None) {
-                         use x11rb::connection::Connection;
-                         use x11rb::protocol::xproto::ConnectionExt;
-                         let screen = &conn.setup().roots[screen_num];
-                         let _ = conn.warp_pointer(
-                             x11rb::NONE,
-                             screen.root,
-                             0,
-                             0,
-                             0,
-                             0,
-                             target_x as i16,
-                             target_y as i16,
-                         );
-                         let _ = conn.flush();
-                     }
+                    if let Ok((conn, screen_num)) =
+                        x11rb::rust_connection::RustConnection::connect(None)
+                    {
+                        use x11rb::connection::Connection;
+                        use x11rb::protocol::xproto::ConnectionExt;
+                        let screen = &conn.setup().roots[screen_num];
+                        let _ = conn.warp_pointer(
+                            x11rb::NONE,
+                            screen.root,
+                            0,
+                            0,
+                            0,
+                            0,
+                            target_x as i16,
+                            target_y as i16,
+                        );
+                        let _ = conn.flush();
+                    }
                 }
             }
         }
@@ -603,11 +603,14 @@ fn process_peer_events(
 }
 
 pub fn send_event_to_peer(peer_name: &str, event: &FlowEvent) -> anyhow::Result<()> {
-    let conns = ACTIVE_CONNECTIONS.read().unwrap();
-    if let Some(mut stream) = conns.get(peer_name) {
+    let stream = {
+        let conns = ACTIVE_CONNECTIONS.read().unwrap();
+        conns.get(peer_name).map(|s| s.try_clone())
+    };
+    if let Some(Ok(mut s)) = stream {
         let serialized = serde_json::to_string(event)?;
-        stream.write_all(format!("{}\n", serialized).as_bytes())?;
-        stream.flush()?;
+        s.write_all(format!("{}\n", serialized).as_bytes())?;
+        s.flush()?;
     }
     Ok(())
 }

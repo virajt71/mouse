@@ -309,7 +309,7 @@ impl HidppClient {
         }
 
         let mut events = Vec::new();
-        match self.rx(0) {
+        match self.rx(16) {
             Err(e) => {
                 log::info!(
                     "[HID++] Device '{}' disconnected: {}. Will reconnect automatically.",

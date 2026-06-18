@@ -8,7 +8,8 @@ impl KeySimulator {
     pub fn send_key_combo(&self, keys: &[Key], hold_ms: u64) {
         self.get_device(|dev_opt| {
             if let Some(dev) = dev_opt {
-                let mut press_events = Vec::new();
+                let mut press_events: smallvec::SmallVec<[InputEvent; 8]> =
+                    smallvec::SmallVec::new();
                 for &key in keys {
                     press_events.push(InputEvent::new(EventType::KEY, key.0, 1));
                 }
@@ -19,7 +20,8 @@ impl KeySimulator {
                     thread::sleep(Duration::from_millis(hold_ms));
                 }
 
-                let mut release_events = Vec::new();
+                let mut release_events: smallvec::SmallVec<[InputEvent; 8]> =
+                    smallvec::SmallVec::new();
                 for &key in keys.iter().rev() {
                     release_events.push(InputEvent::new(EventType::KEY, key.0, 0));
                 }
@@ -110,6 +112,7 @@ impl KeySimulator {
         });
     }
 
+    #[allow(clippy::vec_init_then_push)]
     pub fn type_unicode_char(&self, ch: char) {
         let hex = format!("{:x}", ch as u32);
         self.get_device(|dev_opt| {

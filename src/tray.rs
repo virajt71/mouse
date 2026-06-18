@@ -1,9 +1,13 @@
 use eframe::egui;
 use engine::Engine;
 
-pub fn setup_tray(ctx: egui::Context, engine: Engine) -> Option<tray_icon::TrayIcon> {
+pub fn setup_tray(ctx: egui::Context, engine: Engine) -> Option<gui::app::MouserTray> {
     #[cfg(target_os = "linux")]
     {
+        #[allow(deprecated)]
+        let (sender, receiver) =
+            gtk::glib::MainContext::channel::<tray_icon::Icon>(gtk::glib::Priority::default());
+
         // Spawn a dedicated thread for GTK tray icon initialization and event loop
         let engine_clone = engine.clone();
         std::thread::spawn({
@@ -26,12 +30,17 @@ pub fn setup_tray(ctx: egui::Context, engine: Engine) -> Option<tray_icon::TrayI
                 let open_id = open_item.id().clone();
                 let quit_id = quit_item.id().clone();
 
-                let _tray = tray_icon::TrayIconBuilder::new()
+                let tray = tray_icon::TrayIconBuilder::new()
                     .with_menu(Box::new(tray_menu))
                     .with_tooltip("Mouser-rs")
                     .with_icon(gui::theme::create_mouse_tray_icon())
                     .build()
                     .expect("Failed to build tray icon");
+
+                receiver.attach(None, move |icon| {
+                    let _ = tray.set_icon(Some(icon));
+                    gtk::glib::ControlFlow::Continue
+                });
 
                 // Spawn menu event listener thread
                 let engine_q = engine_clone.clone();
@@ -57,7 +66,7 @@ pub fn setup_tray(ctx: egui::Context, engine: Engine) -> Option<tray_icon::TrayI
                 gtk::main();
             }
         });
-        None
+        Some(gui::app::MouserTray::new(sender))
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -104,6 +113,6 @@ pub fn setup_tray(ctx: egui::Context, engine: Engine) -> Option<tray_icon::TrayI
                 }
             }
         });
-        Some(icon)
+        Some(gui::app::MouserTray::new(icon))
     }
 }

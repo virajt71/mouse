@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+#![allow(clippy::manual_range_contains, clippy::invisible_characters)]
 pub mod battery;
 pub mod bluetooth;
 pub mod cache;

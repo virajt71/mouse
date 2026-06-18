@@ -55,7 +55,13 @@ impl Engine {
             drop(last_exe);
 
             *self.inner.active_profile_shared.lock().unwrap() = profile_name;
-            *self.inner.active_mappings.lock().unwrap() = mappings.clone();
+            {
+                let mappings_arc: std::collections::HashMap<String, std::sync::Arc<str>> = mappings
+                    .iter()
+                    .map(|(k, v)| (k.clone(), std::sync::Arc::from(v.as_str())))
+                    .collect();
+                *self.inner.active_mappings.write().unwrap() = mappings_arc;
+            }
             let (blocked, hscroll_blocked) = compute_blocked_buttons(&mappings);
             *self.inner.blocked_buttons_arc.lock().unwrap() = blocked;
             self.inner
