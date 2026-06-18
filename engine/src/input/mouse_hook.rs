@@ -268,7 +268,10 @@ impl MouseHook {
                                                         horizontal: true,
                                                         delta: value,
                                                     });
-                                                    // Write directly to uinput with inverted value if not blocked
+                                                    // Only forward raw REL_HWHEEL to uinput when no engine action is
+                                                    // mapped for hscroll. When block_hscroll=true, the engine handles
+                                                    // the scroll via handle_hscroll_event and raw forwarding is
+                                                    // suppressed to prevent double-firing (§3.1).
                                                     if !block_hscroll.load(Ordering::SeqCst) {
                                                         if let Some(uinput_lock) = uinput_device.lock().unwrap().as_mut() {
                                                             let evs = [

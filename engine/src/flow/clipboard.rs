@@ -6,11 +6,12 @@ use std::path::Path;
 use std::sync::Mutex;
 use std::time::Duration;
 
-lazy_static::lazy_static! {
-    static ref LAST_TEXT: Mutex<String> = Mutex::new(String::new());
-    static ref LAST_IMG_HASH: Mutex<String> = Mutex::new(String::new());
-    static ref LAST_IMG_SIG: Mutex<u64> = Mutex::new(0);
-}
+static LAST_TEXT: std::sync::LazyLock<Mutex<String>> =
+    std::sync::LazyLock::new(|| Mutex::new(String::new()));
+static LAST_IMG_HASH: std::sync::LazyLock<Mutex<String>> =
+    std::sync::LazyLock::new(|| Mutex::new(String::new()));
+static LAST_IMG_SIG: std::sync::LazyLock<Mutex<u64>> =
+    std::sync::LazyLock::new(|| Mutex::new(0));
 
 fn fast_image_sig(img: &ImageData) -> u64 {
     let head: &[u8] = &img.bytes[..64.min(img.bytes.len())];

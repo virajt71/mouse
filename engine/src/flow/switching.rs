@@ -175,13 +175,16 @@ pub fn run_edge_detection_loop(engine_inner: Arc<crate::engine::inner::EngineInn
 }
 
 pub fn is_hold_key_satisfied(hold_key: &str) -> bool {
-    if hold_key == "none" {
+    if hold_key == "none" || hold_key.is_empty() {
         return true;
     }
-    // Query modifier keys state from keyboard hook
-    // In this implementation, we return true to allow transition.
-    // If keyboard hook exposes modifiers, we can hook it.
-    true
+    // Query the shared ModifierState populated by KeyboardHook threads.
+    if let Some(ref inner) = *FLOW_MANAGER.engine_inner.lock().unwrap() {
+        inner.modifier_state.is_satisfied(hold_key)
+    } else {
+        // No engine inner available yet — allow transition.
+        true
+    }
 }
 
 pub fn get_peer_channel_index(peer_name: &str) -> Option<u8> {

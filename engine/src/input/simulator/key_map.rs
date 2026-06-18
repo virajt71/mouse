@@ -1,8 +1,8 @@
 use evdev::Key;
 use std::collections::HashMap;
 
-lazy_static::lazy_static! {
-    pub static ref KEY_MAP: HashMap<&'static str, Key> = {
+pub static KEY_MAP: std::sync::LazyLock<HashMap<&'static str, Key>> =
+    std::sync::LazyLock::new(|| {
         let mut m = HashMap::new();
         m.insert("ctrl", Key::KEY_LEFTCTRL);
         m.insert("crtl", Key::KEY_LEFTCTRL);
@@ -97,8 +97,7 @@ lazy_static::lazy_static! {
         m.insert("brightnessdown", Key::KEY_BRIGHTNESSDOWN);
 
         m
-    };
-}
+    });
 
 pub fn get_key_by_layout(key: &str, layout: &str) -> Option<Key> {
     match layout {

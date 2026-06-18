@@ -6,9 +6,9 @@ use crate::config::Config;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
-lazy_static::lazy_static! {
-    pub static ref FLOW_MANAGER: Arc<FlowManager> = Arc::new(FlowManager::new());
-}
+#[allow(non_upper_case_globals)]
+pub static FLOW_MANAGER: std::sync::LazyLock<Arc<FlowManager>> =
+    std::sync::LazyLock::new(|| Arc::new(FlowManager::new()));
 
 pub struct FlowManager {
     pub active_peer: RwLock<Option<String>>, // None means local input is active

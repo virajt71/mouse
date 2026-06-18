@@ -73,3 +73,122 @@ fn test_gesture_state_transitions() {
     assert_eq!(state.delta_x, 0.0);
     assert_eq!(state.delta_y, 0.0);
 }
+
+// §6.2 — get_profile_for_app edge cases
+#[test]
+fn test_profile_matching_empty_exe() {
+    let config = Config::default();
+    // Empty string should always fall back to "global"
+    assert_eq!(config.get_profile_for_app(""), "global");
+}
+
+#[test]
+fn test_profile_matching_whitespace_exe() {
+    let config = Config::default();
+    // Whitespace-only exe should fall back to "global"
+    assert_eq!(config.get_profile_for_app("   "), "global");
+}
+
+#[test]
+fn test_profile_matching_mixed_case() {
+    let mut config = Config::default();
+    let mut profiles = HashMap::new();
+    profiles.insert(
+        "global".to_string(),
+        Profile {
+            label: "Default".to_string(),
+            apps: vec![],
+            mappings: HashMap::new(),
+        },
+    );
+    profiles.insert(
+        "vscode_profile".to_string(),
+        Profile {
+            label: "VS Code".to_string(),
+            apps: vec!["code".to_string()],
+            mappings: HashMap::new(),
+        },
+    );
+    config
+        .profile_groups
+        .insert("default".to_string(), ProfileGroup { profiles });
+    config.normalize_apps();
+
+    // Mixed case should normalize to lowercase before matching
+    assert_eq!(config.get_profile_for_app("CODE"), "vscode_profile");
+    assert_eq!(config.get_profile_for_app("Code"), "vscode_profile");
+    assert_eq!(config.get_profile_for_app("code"), "vscode_profile");
+}
+
+#[test]
+fn test_profile_matching_no_match_returns_global() {
+    let mut config = Config::default();
+    let mut profiles = HashMap::new();
+    profiles.insert(
+        "global".to_string(),
+        Profile {
+            label: "Default".to_string(),
+            apps: vec![],
+            mappings: HashMap::new(),
+        },
+    );
+    profiles.insert(
+        "chrome_profile".to_string(),
+        Profile {
+            label: "Chrome".to_string(),
+            apps: vec!["chrome".to_string()],
+            mappings: HashMap::new(),
+        },
+    );
+    config
+        .profile_groups
+        .insert("default".to_string(), ProfileGroup { profiles });
+    config.normalize_apps();
+
+    // Non-matching exe should return "global"
+    assert_eq!(config.get_profile_for_app("gimp"), "global");
+    assert_eq!(config.get_profile_for_app("terminal"), "global");
+}
+
+// §6.1 — Gesture button clear regression (§3.2 fix)
+#[test]
+fn test_gesture_button_cleared_after_up() {
+    let engine = Engine::new();
+
+    // Simulate an up event when gesture was never activated.
+    // Before the §3.2 fix, this left state.button populated.
+    engine.handle_gesture_up();
+
+    let state = engine.inner.gesture_state.lock().unwrap();
+    // button must be None after any up event, even on an idle engine
+    assert!(
+        state.button.is_none(),
+        "gesture button should be None after handle_gesture_up, got {:?}",
+        state.button
+    );
+}
+
+#[test]
+fn test_normalize_apps_idempotent() {
+    let mut config = Config::default();
+    let mut profiles = HashMap::new();
+    profiles.insert(
+        "global".to_string(),
+        Profile {
+            label: "Default".to_string(),
+            apps: vec!["chrome".to_string(), "firefox".to_string()],
+            mappings: HashMap::new(),
+        },
+    );
+    config
+        .profile_groups
+        .insert("default".to_string(), ProfileGroup { profiles });
+
+    // Already normalized — calling twice should be a no-op
+    config.normalize_apps();
+    config.normalize_apps();
+
+    let group = config.profile_groups.get("default").unwrap();
+    let global = group.profiles.get("global").unwrap();
+    assert_eq!(global.apps, vec!["chrome", "firefox"]);
+}

@@ -62,6 +62,10 @@ pub struct Settings {
     // Flow settings
     pub flow_enabled: bool,
     pub flow_local_name: String,
+    /// Set to true when the user has explicitly chosen a custom flow name.
+    /// When false, the hostname is auto-populated on load.
+    #[serde(default)]
+    pub flow_name_user_set: bool,
     pub flow_peers: Vec<FlowPeer>,
     pub flow_screen_width: i32,
     pub flow_screen_height: i32,
@@ -96,6 +100,7 @@ impl Default for Settings {
             // Flow settings default
             flow_enabled: false,
             flow_local_name: default_local_name(),
+            flow_name_user_set: false,
             flow_peers: vec![],
             flow_screen_width: 1920,
             flow_screen_height: 1080,
@@ -255,18 +260,12 @@ impl Config {
                         if cfg.version == 13 {
                             return cfg;
                         }
-                        if cfg.version == 12 {
-                            cfg.version = 13;
-                            let _ = cfg.save();
-                            return cfg;
-                        }
-                        if cfg.version < 12 {
+                        if cfg.version < 13 {
                             if let Some(migrated) = Self::try_migrate_v11(&content) {
                                 return migrated;
                             }
                         }
-                        // If it successfully deserialized but has some other/unexpected version,
-                        // we still return it to keep settings, but bump the version to 13.
+                        // Successfully deserialized but unexpected version — bump to 13.
                         log::warn!(
                             "[Config] Loaded config with version {}, upgrading version to 13.",
                             cfg.version
@@ -297,13 +296,11 @@ impl Config {
 
     pub fn load() -> Self {
         let mut cfg = Self::load_raw();
-        let hostname = default_local_name();
-        if cfg.settings.flow_local_name == "Computer 1"
-            || cfg.settings.flow_local_name == "Computer 2"
-            || cfg.settings.flow_local_name == "Computer"
-            || cfg.settings.flow_local_name.is_empty()
-        {
-            cfg.settings.flow_local_name = hostname;
+        // Only auto-populate the hostname when the user hasn't explicitly set a custom name.
+        // The old approach compared against a hardcoded list of strings ("Computer 1", etc.)
+        // which incorrectly overwrote legitimate hostnames (§7.4).
+        if !cfg.settings.flow_name_user_set || cfg.settings.flow_local_name.is_empty() {
+            cfg.settings.flow_local_name = default_local_name();
         }
         cfg.normalize_apps();
         cfg
@@ -324,6 +321,14 @@ impl Config {
     pub fn normalize_apps(&mut self) {
         for group in self.profile_groups.values_mut() {
             for profile in group.profiles.values_mut() {
+                // Skip if already normalized (trim + lowercase already applied).
+                if profile
+                    .apps
+                    .iter()
+                    .all(|a| a.as_str() == a.trim() && a.as_str() == a.to_lowercase().as_str())
+                {
+                    continue;
+                }
                 profile.apps = profile
                     .apps
                     .iter()

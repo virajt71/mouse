@@ -7,6 +7,7 @@ use std::thread;
 use std::time::Duration;
 
 use super::simulator::KeySimulator;
+use crate::engine::modifier_state::ModifierState;
 
 pub struct KeyboardHook {
     device_path: Option<String>,
@@ -72,6 +73,7 @@ impl KeyboardHook {
         uinput_device: Arc<std::sync::Mutex<Option<evdev::uinput::VirtualDevice>>>,
         key_simulator: KeySimulator,
         engine: crate::engine::Engine,
+        modifier_state: Arc<ModifierState>,
     ) -> Result<()> {
         if self.running.load(Ordering::SeqCst) {
             return Ok(());
@@ -157,17 +159,23 @@ impl KeyboardHook {
                                             let key_code = event.code();
                                             let down = event.value() != 0;
 
-                                            // Update modifier states
+                                            // Update shared modifier state atomics (OR semantics across hooks).
+                                            // Update local booleans too for intra-thread logic below.
                                             if key_code == Key::KEY_LEFTSHIFT.0 || key_code == Key::KEY_RIGHTSHIFT.0 {
                                                 shift_pressed = down;
+                                                modifier_state.shift.store(down, Ordering::SeqCst);
                                             } else if key_code == Key::KEY_LEFTCTRL.0 || key_code == Key::KEY_RIGHTCTRL.0 {
                                                 ctrl_pressed = down;
+                                                modifier_state.ctrl.store(down, Ordering::SeqCst);
                                             } else if key_code == Key::KEY_LEFTALT.0 {
                                                 alt_pressed = down;
+                                                modifier_state.alt.store(down, Ordering::SeqCst);
                                             } else if key_code == Key::KEY_RIGHTALT.0 {
                                                 alt_gr_pressed = down;
+                                                // AltGr (Right Alt) is not a flow modifier — don't set alt atomic
                                             } else if key_code == Key::KEY_LEFTMETA.0 || key_code == Key::KEY_RIGHTMETA.0 {
                                                 meta_pressed = down;
+                                                modifier_state.meta.store(down, Ordering::SeqCst);
                                             }
 
                                             // Reset composition engine on shortcut triggers

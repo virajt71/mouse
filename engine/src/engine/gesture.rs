@@ -273,21 +273,29 @@ impl Engine {
 
     pub fn handle_gesture_up(&self) {
         log::debug!("[Engine] Gesture track: button up");
+
+        // Always clear button and input_source — even if gesture_active was already false.
+        // Without this, a stale `button` leaks into the next gesture cycle (§3.2).
+        let triggered;
+        let btn_key;
+        {
+            let mut state = self.inner.gesture_state.lock().unwrap();
+            btn_key = state
+                .button
+                .take()
+                .unwrap_or_else(|| "gesture".to_string());
+            state.input_source = None;
+            triggered = self.inner.gesture_triggered.load(Ordering::SeqCst);
+        }
+
         if !self.inner.gesture_active_arc.swap(false, Ordering::SeqCst) {
+            // Was already inactive — button has been cleared above, nothing else to do.
             return;
         }
-        let triggered = self.inner.gesture_triggered.load(Ordering::SeqCst);
+
         self.inner.gesture_tracking.store(false, Ordering::SeqCst);
 
         if !triggered {
-            let btn_key = {
-                let state = self.inner.gesture_state.lock().unwrap();
-                state
-                    .button
-                    .clone()
-                    .unwrap_or_else(|| "gesture".to_string())
-            };
-
             let mapping = self
                 .inner
                 .active_mappings
@@ -303,11 +311,6 @@ impl Engine {
                 );
                 self.execute_engine_action(action_id.as_ref());
             }
-        }
-        {
-            let mut state = self.inner.gesture_state.lock().unwrap();
-            state.input_source = None;
-            state.button = None;
         }
     }
 
