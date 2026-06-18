@@ -1,3 +1,9 @@
+#![allow(
+    clippy::derivable_impls,
+    clippy::field_reassign_with_default,
+    clippy::wildcard_in_or_patterns,
+    clippy::unnecessary_cast
+)]
 pub mod app;
 pub mod desktop_apps;
 pub mod theme;

@@ -75,13 +75,9 @@ pub fn run_edge_detection_loop(engine_inner: Arc<crate::engine::inner::EngineInn
                                             // Check if transition modifier key is satisfied
                                             if is_hold_key_satisfied(&hold_key) {
                                                 let peers = FLOW_MANAGER.flow_peers.read().unwrap();
-                                                if let Some(peer) =
-                                                    peers.iter().find(|p| {
-                                                        p.paired
-                                                            && p.layout_x == lx
-                                                            && p.layout_y == ly
-                                                    })
-                                                {
+                                                if let Some(peer) = peers.iter().find(|p| {
+                                                    p.paired && p.layout_x == lx && p.layout_y == ly
+                                                }) {
                                                     // If this peer is currently controlling us, return control to them!
                                                     if let Some(controller) =
                                                         FLOW_MANAGER.get_current_controller()
@@ -116,7 +112,11 @@ pub fn run_edge_detection_loop(engine_inner: Arc<crate::engine::inner::EngineInn
                                                                 ry_target as i16,
                                                             );
                                                             let _ = conn.flush();
-                                                            let mode = FLOW_MANAGER.flow_mouse_mode.read().unwrap().clone();
+                                                            let mode = FLOW_MANAGER
+                                                                .flow_mouse_mode
+                                                                .read()
+                                                                .unwrap()
+                                                                .clone();
                                                             if mode == "hardware" {
                                                                 if let Some(idx) = crate::flow::switching::get_peer_channel_index(&peer.name) {
                                                                     crate::flow::switching::trigger_hidpp_channel_switch(idx);
@@ -133,7 +133,11 @@ pub fn run_edge_detection_loop(engine_inner: Arc<crate::engine::inner::EngineInn
                                                     *FLOW_MANAGER.virtual_x.lock().unwrap() =
                                                         if lx == -1 { sw - 50 } else { 50 };
 
-                                                    let mode = FLOW_MANAGER.flow_mouse_mode.read().unwrap().clone();
+                                                    let mode = FLOW_MANAGER
+                                                        .flow_mouse_mode
+                                                        .read()
+                                                        .unwrap()
+                                                        .clone();
                                                     if mode == "hardware" {
                                                         if let Some(idx) = crate::flow::switching::get_peer_channel_index(&peer.name) {
                                                             crate::flow::switching::trigger_hidpp_channel_switch(idx);
@@ -182,7 +186,8 @@ pub fn is_hold_key_satisfied(hold_key: &str) -> bool {
 
 pub fn get_peer_channel_index(peer_name: &str) -> Option<u8> {
     let peers = FLOW_MANAGER.flow_peers.read().unwrap();
-    peers.iter()
+    peers
+        .iter()
         .find(|p| p.name == peer_name)
         .map(|p| p.channel_index)
 }

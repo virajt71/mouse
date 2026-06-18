@@ -89,28 +89,13 @@ pub fn draw_status_pill(
         };
         draw_connection_icon_mini(painter, conn_center, conn_type);
     } else {
-        // Grey status dot
-        let dot_cx = status_rect.min.x + (if is_sidebar { 14.0 } else { 20.0 });
-        let dot_cy = cy;
-        painter.circle_filled(
-            pos2(dot_cx, dot_cy),
-            if is_sidebar { 3.0 } else { 4.0 },
-            theme::elevated_color(ctx),
-        );
-        painter.circle_stroke(
-            pos2(dot_cx, dot_cy),
-            if is_sidebar { 3.0 } else { 4.0 },
-            Stroke::new(1.0, egui::Color32::from_rgb(0x44, 0x44, 0x44)),
-        );
-
-        // "Disconnected" label
+        // "INACTIVE" label centered
         let label_font = egui::FontId::proportional(if is_sidebar { 10.0 } else { 11.5 });
-        let text_start = pos2(dot_cx + (if is_sidebar { 8.0 } else { 12.0 }), dot_cy);
-        let disc_text = crate::translation::tr("disconnected", lang);
+        let inactive_text = crate::translation::tr("inactive", lang);
         painter.text(
-            text_start,
-            egui::Align2::LEFT_CENTER,
-            disc_text,
+            status_rect.center() - egui::vec2(0.0, 1.0),
+            egui::Align2::CENTER_CENTER,
+            inactive_text,
             label_font,
             theme::COLOR_INACTIVE_TEXT,
         );

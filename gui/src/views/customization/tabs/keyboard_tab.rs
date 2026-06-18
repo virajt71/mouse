@@ -406,7 +406,7 @@ pub fn show_keyboard_backlighting_tab(
 
                 let icon_center = pos2(eff_rect.min.x + 12.0, eff_rect.center().y);
                 let active_color = theme::accent_color(ui.ctx());
-                
+
                 // Draw gear icon next to SELECT EFFECT
                 let painter = ui.painter();
                 let stroke = Stroke::new(1.2, active_color);
@@ -437,7 +437,7 @@ pub fn show_keyboard_backlighting_tab(
                 // Draw popup if open
                 if popup_open {
                     let popup_pos = eff_rect.left_bottom() + vec2(0.0, 8.0);
-                    
+
                     egui::Area::new(egui::Id::new("backlight_popup_area"))
                         .order(egui::Order::Foreground)
                         .fixed_pos(popup_pos)

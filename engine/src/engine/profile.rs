@@ -30,7 +30,13 @@ impl Engine {
 
         *self.inner.current_profile.lock().unwrap() = profile_name.clone();
         *self.inner.active_profile_shared.lock().unwrap() = profile_name;
-        *self.inner.active_mappings.lock().unwrap() = mappings.clone();
+        {
+            let mappings_arc: std::collections::HashMap<String, std::sync::Arc<str>> = mappings
+                .iter()
+                .map(|(k, v)| (k.clone(), std::sync::Arc::from(v.as_str())))
+                .collect();
+            *self.inner.active_mappings.write().unwrap() = mappings_arc;
+        }
 
         let (blocked, hscroll_blocked) = compute_blocked_buttons(&mappings);
 
@@ -110,7 +116,7 @@ impl Engine {
             .next()
             .unwrap_or("")
             .trim()
-            .to_string();
+            .to_lowercase();
 
         {
             let mut cfg = self.inner.config.lock().unwrap();
@@ -295,7 +301,7 @@ impl Engine {
                     .get("default")
                     .and_then(|g| g.profiles.get("global"))
                     .map(|p| p.mappings.clone())
-                    .unwrap_or_else(std::collections::HashMap::new);
+                    .unwrap_or_default();
 
                 profiles.insert(
                     "global".to_string(),

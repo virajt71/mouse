@@ -21,7 +21,7 @@ impl Engine {
                 };
 
                 let gestures_enabled = {
-                    let active = self.inner.active_mappings.lock().unwrap();
+                    let active = self.inner.active_mappings.read().unwrap();
                     let enabled_key = if btn_key == "middle" {
                         "middle_gesture_enabled"
                     } else if btn_key == "xbutton1" {
@@ -30,7 +30,7 @@ impl Engine {
                         "xbutton2_gesture_enabled"
                     };
 
-                    let explicit = active.get(enabled_key).map(|s| s.as_str());
+                    let explicit = active.get(enabled_key).map(|s| s.as_ref());
                     match explicit {
                         Some("false") => {
                             let prefix = if btn_key == "middle" {
@@ -42,7 +42,10 @@ impl Engine {
                             };
                             ["left", "right", "up", "down"].iter().any(|dir| {
                                 let k = format!("{}{}", prefix, dir);
-                                active.get(&k).map(|v| v != "none").unwrap_or(false)
+                                active
+                                    .get(&k)
+                                    .map(|v| v.as_ref() != "none")
+                                    .unwrap_or(false)
                             })
                         }
                         Some("true") => true,
@@ -67,16 +70,16 @@ impl Engine {
                 }
 
                 let mapping = {
-                    let active = self.inner.active_mappings.lock().unwrap();
+                    let active = self.inner.active_mappings.read().unwrap();
                     active.get(btn_key).cloned()
                 };
 
                 if let Some(action_id) = mapping {
-                    if action_id == "none" {
+                    if action_id.as_ref() == "none" {
                         return;
                     }
-                    if is_mouse_button_action(&action_id) {
-                        if let Some(sim_key) = get_mouse_button_key(&action_id) {
+                    if is_mouse_button_action(action_id.as_ref()) {
+                        if let Some(sim_key) = get_mouse_button_key(action_id.as_ref()) {
                             if down {
                                 self.inner.key_simulator.inject_mouse_down(sim_key);
                             } else {
@@ -84,7 +87,7 @@ impl Engine {
                             }
                         }
                     } else if down {
-                        self.execute_engine_action(&action_id);
+                        self.execute_engine_action(action_id.as_ref());
                     }
                 }
             }
@@ -97,13 +100,13 @@ impl Engine {
                     };
 
                     let mapping = {
-                        let active = self.inner.active_mappings.lock().unwrap();
+                        let active = self.inner.active_mappings.read().unwrap();
                         active.get(action_key).cloned()
                     };
 
                     if let Some(action_id) = mapping {
-                        if action_id != "none" {
-                            self.handle_hscroll_event(delta, &action_id);
+                        if action_id.as_ref() != "none" {
+                            self.handle_hscroll_event(delta, action_id.as_ref());
                         }
                     }
                 }
@@ -120,8 +123,8 @@ impl Engine {
         match event {
             HidppEvent::GestureDown => {
                 let (enabled, mapping) = {
-                    let active = self.inner.active_mappings.lock().unwrap();
-                    let enabled = match active.get("gesture_enabled").map(|s| s.as_str()) {
+                    let active = self.inner.active_mappings.read().unwrap();
+                    let enabled = match active.get("gesture_enabled").map(|s| s.as_ref()) {
                         Some("false") => [
                             "gesture_left",
                             "gesture_right",
@@ -129,7 +132,12 @@ impl Engine {
                             "gesture_down",
                         ]
                         .iter()
-                        .any(|k| active.get(*k).map(|v| v != "none").unwrap_or(false)),
+                        .any(|k| {
+                            active
+                                .get(*k)
+                                .map(|v| v.as_ref() != "none")
+                                .unwrap_or(false)
+                        }),
                         _ => true,
                     };
                     let mapping = active.get("gesture").cloned();
@@ -138,9 +146,9 @@ impl Engine {
                 if enabled {
                     self.handle_gesture_down();
                 } else if let Some(ref action_id) = mapping {
-                    if action_id != "none" {
-                        if is_mouse_button_action(action_id) {
-                            if let Some(sim_key) = get_mouse_button_key(action_id) {
+                    if action_id.as_ref() != "none" {
+                        if is_mouse_button_action(action_id.as_ref()) {
+                            if let Some(sim_key) = get_mouse_button_key(action_id.as_ref()) {
                                 log::info!(
                                     "[Engine] Pressing mouse button for gesture action: {:?}",
                                     sim_key
@@ -152,15 +160,15 @@ impl Engine {
                                 "[Engine] Executing gesture simple click action: {}",
                                 action_id
                             );
-                            self.execute_engine_action(action_id);
+                            self.execute_engine_action(action_id.as_ref());
                         }
                     }
                 }
             }
             HidppEvent::GestureUp => {
                 let (enabled, mapping) = {
-                    let active = self.inner.active_mappings.lock().unwrap();
-                    let enabled = match active.get("gesture_enabled").map(|s| s.as_str()) {
+                    let active = self.inner.active_mappings.read().unwrap();
+                    let enabled = match active.get("gesture_enabled").map(|s| s.as_ref()) {
                         Some("false") => [
                             "gesture_left",
                             "gesture_right",
@@ -168,7 +176,12 @@ impl Engine {
                             "gesture_down",
                         ]
                         .iter()
-                        .any(|k| active.get(*k).map(|v| v != "none").unwrap_or(false)),
+                        .any(|k| {
+                            active
+                                .get(*k)
+                                .map(|v| v.as_ref() != "none")
+                                .unwrap_or(false)
+                        }),
                         _ => true,
                     };
                     let mapping = active.get("gesture").cloned();
@@ -177,8 +190,8 @@ impl Engine {
                 if enabled {
                     self.handle_gesture_up();
                 } else if let Some(ref action_id) = mapping {
-                    if action_id != "none" && is_mouse_button_action(action_id) {
-                        if let Some(sim_key) = get_mouse_button_key(action_id) {
+                    if action_id.as_ref() != "none" && is_mouse_button_action(action_id.as_ref()) {
+                        if let Some(sim_key) = get_mouse_button_key(action_id.as_ref()) {
                             log::info!(
                                 "[Engine] Releasing mouse button for gesture action: {:?}",
                                 sim_key
@@ -191,14 +204,14 @@ impl Engine {
             HidppEvent::GestureMove { dx, dy } => {
                 let enabled = {
                     let btn_key = self.inner.gesture_state.lock().unwrap().button.clone();
-                    let active = self.inner.active_mappings.lock().unwrap();
+                    let active = self.inner.active_mappings.read().unwrap();
                     let enabled_key = match btn_key.as_deref() {
                         Some("middle") => "middle_gesture_enabled",
                         Some("xbutton1") => "xbutton1_gesture_enabled",
                         Some("xbutton2") => "xbutton2_gesture_enabled",
                         _ => "gesture_enabled",
                     };
-                    match active.get(enabled_key).map(|s| s.as_str()) {
+                    match active.get(enabled_key).map(|s| s.as_ref()) {
                         Some("false") => {
                             let prefix = match btn_key.as_deref() {
                                 Some("middle") => "middle_gesture_",
@@ -208,7 +221,10 @@ impl Engine {
                             };
                             ["left", "right", "up", "down"].iter().any(|dir| {
                                 let k = format!("{}{}", prefix, dir);
-                                active.get(&k).map(|v| v != "none").unwrap_or(false)
+                                active
+                                    .get(&k)
+                                    .map(|v| v.as_ref() != "none")
+                                    .unwrap_or(false)
                             })
                         }
                         _ => true,
@@ -227,12 +243,12 @@ impl Engine {
                 let mapping = self
                     .inner
                     .active_mappings
-                    .lock()
+                    .read()
                     .unwrap()
                     .get("mode_shift")
                     .cloned();
                 if let Some(ref action_id) = mapping {
-                    self.execute_engine_action(action_id);
+                    self.execute_engine_action(action_id.as_ref());
                 }
             }
             HidppEvent::ModeShiftUp => {
@@ -275,7 +291,7 @@ impl Engine {
             let mapping = self
                 .inner
                 .active_mappings
-                .lock()
+                .read()
                 .unwrap()
                 .get(&btn_key)
                 .cloned();
@@ -285,7 +301,7 @@ impl Engine {
                     btn_key,
                     action_id
                 );
-                self.execute_engine_action(action_id);
+                self.execute_engine_action(action_id.as_ref());
             }
         }
         {
@@ -408,12 +424,12 @@ impl Engine {
             let mapping = self
                 .inner
                 .active_mappings
-                .lock()
+                .read()
                 .unwrap()
                 .get(&resolved_action_key)
                 .cloned();
             if let Some(ref action_id) = mapping {
-                self.execute_engine_action(action_id);
+                self.execute_engine_action(action_id.as_ref());
             }
         }
     }

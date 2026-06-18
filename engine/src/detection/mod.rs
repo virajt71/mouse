@@ -23,8 +23,27 @@ pub fn get_exe_for_pid(pid: u32) -> Option<String> {
     None
 }
 
+static LAST_PID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 thread_local! {
     pub static X11_CONN: std::cell::RefCell<Option<(x11rb::rust_connection::RustConnection, usize)>> = const { std::cell::RefCell::new(None) };
+    static LAST_EXE: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+}
+
+fn get_exe_for_pid_cached(pid: u32) -> Option<String> {
+    let last_pid = LAST_PID.load(std::sync::atomic::Ordering::Relaxed);
+    if pid == last_pid {
+        let cached = LAST_EXE.with(|e| e.borrow().clone());
+        if !cached.is_empty() {
+            return Some(cached);
+        }
+    }
+    if let Some(exe) = get_exe_for_pid(pid) {
+        LAST_PID.store(pid, std::sync::atomic::Ordering::Relaxed);
+        LAST_EXE.with(|e| *e.borrow_mut() = exe.clone());
+        Some(exe)
+    } else {
+        None
+    }
 }
 
 pub fn get_foreground_exe() -> Option<String> {
@@ -52,10 +71,10 @@ pub fn get_foreground_exe() -> Option<String> {
                 }
             });
             if let Some(p) = pid {
-                return get_exe_for_pid(p);
+                return get_exe_for_pid_cached(p);
             }
         }
     }
     let pid = get_active_app_pid_fallbacks(X11_CONN.with(|cell| cell.borrow().is_some()))?;
-    get_exe_for_pid(pid)
+    get_exe_for_pid_cached(pid)
 }

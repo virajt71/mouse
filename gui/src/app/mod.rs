@@ -6,13 +6,46 @@ pub mod texture;
 pub mod toast;
 pub mod update;
 
+#[derive(Clone)]
+pub struct MouserTray {
+    #[cfg(target_os = "linux")]
+    pub(crate) sender: gtk::glib::Sender<tray_icon::Icon>,
+    #[cfg(not(target_os = "linux"))]
+    pub(crate) icon: std::sync::Arc<tray_icon::TrayIcon>,
+}
+
+impl MouserTray {
+    #[cfg(target_os = "linux")]
+    pub fn new(sender: gtk::glib::Sender<tray_icon::Icon>) -> Self {
+        Self { sender }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    pub fn new(icon: tray_icon::TrayIcon) -> Self {
+        Self {
+            icon: std::sync::Arc::new(icon),
+        }
+    }
+
+    pub fn set_icon(&self, icon: tray_icon::Icon) {
+        #[cfg(target_os = "linux")]
+        {
+            let _ = self.sender.send(icon);
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = self.icon.set_icon(Some(icon));
+        }
+    }
+}
+
 pub struct MouserApp {
-    pub(crate) tray_icon: Option<tray_icon::TrayIcon>,
+    pub(crate) tray_icon: Option<MouserTray>,
     pub(crate) current_tray_icon_type: String,
     pub(crate) active_view: ActiveView,
     pub(crate) unifying_receiver_connected: Option<bool>,
     pub(crate) bolt_receiver_connected: Option<bool>,
-    pub(crate) paired_devices: Vec<(String, String, bool)>, // (mac, name, is_connected)
+    pub(crate) paired_devices: std::sync::Arc<Vec<(String, String, bool)>>, // (mac, name, is_connected)
     pub(crate) mouse_texture: Option<egui::TextureHandle>,
     pub(crate) customization_mouse_texture: Option<egui::TextureHandle>,
     pub(crate) device_textures: std::collections::HashMap<String, egui::TextureHandle>,
@@ -25,7 +58,7 @@ pub struct MouserApp {
     pub customization_tab: crate::views::customization::SidebarTab,
     pub customizing_device_name: Option<String>,
     pub(crate) last_config_generation: u64,
-    pub gui_active_profile: String,
+    pub(crate) config_changed_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
 
     // Hardware polling channel
     pub(crate) rx: std::sync::mpsc::Receiver<mouser_engine::worker::DeviceStateUpdate>,
@@ -41,18 +74,16 @@ pub struct MouserApp {
     pub(crate) current_connection_type: Option<String>,
     pub(crate) toast_message: Option<String>,
     pub(crate) toast_shown_at: Option<std::time::Instant>,
-    pub(crate) last_known_profile: String,
 }
 
 impl MouserApp {
     pub fn new(
         ctx: egui::Context,
-        tray_icon: Option<tray_icon::TrayIcon>,
+        tray_icon: Option<MouserTray>,
         engine: mouser_engine::Engine,
     ) -> Self {
         let cached = mouser_engine::cache::load_device_cache();
         let config = engine.get_config();
-        let gui_active_profile = config.active_app_profile.clone();
         let config_gen = engine.config_generation();
         let updater = Updater::new();
 
@@ -89,8 +120,11 @@ impl MouserApp {
             engine.active_profile_shared(),
         );
 
+        let config_changed_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let config_changed_flag_clone = config_changed_flag.clone();
         let repaint_ctx_config = ctx.clone();
         engine.set_config_change_listener(move || {
+            config_changed_flag_clone.store(true, std::sync::atomic::Ordering::Relaxed);
             repaint_ctx_config.request_repaint();
         });
 
@@ -100,7 +134,7 @@ impl MouserApp {
             active_view: ActiveView::EmptyState,
             unifying_receiver_connected: None,
             bolt_receiver_connected: None,
-            paired_devices: cached,
+            paired_devices: std::sync::Arc::new(cached),
             mouse_texture: None,
             customization_mouse_texture: None,
             device_textures: std::collections::HashMap::new(),
@@ -113,6 +147,7 @@ impl MouserApp {
             customization_tab: crate::views::customization::SidebarTab::Buttons,
             customizing_device_name: None,
             last_config_generation: config_gen,
+            config_changed_flag,
             rx,
             tx,
             battery_pct: "0".to_string(),
@@ -123,23 +158,21 @@ impl MouserApp {
             current_connection_type: None,
             toast_message: None,
             toast_shown_at: None,
-            last_known_profile: String::new(),
-            gui_active_profile,
         }
     }
 
     pub fn reload_config(&mut self) {
-        let current_gen = self.engine.config_generation();
-        if current_gen != self.last_config_generation {
-            let fresh = self.engine.get_config();
-
-            self.config.settings = fresh.settings;
-            self.config.active_group = fresh.active_group;
-            self.config.active_app_profile = fresh.active_app_profile;
-            self.config.profile_groups = fresh.profile_groups;
-            self.config.version = fresh.version;
-
-            self.last_config_generation = current_gen;
+        if self
+            .config_changed_flag
+            .swap(false, std::sync::atomic::Ordering::Relaxed)
+        {
+            if let Some(fresh) = self
+                .engine
+                .get_config_if_changed(self.last_config_generation)
+            {
+                self.config = fresh;
+                self.last_config_generation = self.engine.config_generation();
+            }
         }
     }
 }

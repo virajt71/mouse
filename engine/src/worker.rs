@@ -6,7 +6,7 @@ pub struct DeviceStateUpdate {
     pub unifying_receiver_connected: bool,
     pub bolt_receiver_connected: bool,
     pub bluetooth_available: bool,
-    pub paired_devices: Vec<(String, String, bool)>, // (mac, name, is_connected)
+    pub paired_devices: std::sync::Arc<Vec<(String, String, bool)>>, // (mac, name, is_connected)
     pub battery_pct: String,
     pub has_active_hidpp_battery: bool,
     pub active_profile: String,
@@ -136,7 +136,7 @@ pub fn spawn_background_worker(
                     unifying_receiver_connected: unifying,
                     bolt_receiver_connected: bolt,
                     bluetooth_available: bt_up,
-                    paired_devices: paired_devices.clone(),
+                    paired_devices: std::sync::Arc::new(paired_devices.clone()),
                     battery_pct,
                     has_active_hidpp_battery: has_active_hidpp,
                     active_profile,

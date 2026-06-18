@@ -63,7 +63,7 @@ impl Engine {
             selected_device_idx: Mutex::new(0),
             running: AtomicBool::new(false),
             current_profile: Mutex::new(current_profile.clone()),
-            active_mappings: Arc::new(Mutex::new(HashMap::new())),
+            active_mappings: Arc::new(std::sync::RwLock::new(HashMap::new())),
             active_profile_shared: Arc::new(Mutex::new(current_profile)),
             last_detected_exe: Mutex::new(String::new()),
 
@@ -190,6 +190,15 @@ impl Engine {
 
     pub fn get_config(&self) -> Config {
         self.inner.config.lock().unwrap().clone()
+    }
+
+    pub fn get_config_if_changed(&self, last_gen: u64) -> Option<Config> {
+        let current_gen = self.config_generation();
+        if current_gen > last_gen {
+            Some(self.get_config())
+        } else {
+            None
+        }
     }
 
     pub fn active_profile_shared(&self) -> Arc<Mutex<String>> {

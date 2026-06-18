@@ -113,7 +113,7 @@ pub fn draw_button_action_popup(
 
             let other = btn.other_options();
 
-            for opt in other {
+            for &opt in other {
                 if draw_button_item(
                     ui,
                     btn,

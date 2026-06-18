@@ -80,7 +80,9 @@ pub fn show_flow_tab(ui: &mut egui::Ui, engine: &Engine, config: &mut Config) {
                 };
 
                 let discovered: Vec<(String, (String, std::time::Instant))> = {
-                    let map = mouser_engine::flow::network::DISCOVERED_PEERS.read().unwrap();
+                    let map = mouser_engine::flow::network::DISCOVERED_PEERS
+                        .read()
+                        .unwrap();
                     map.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
                 };
 
@@ -153,7 +155,8 @@ fn draw_welcome_illustration(ui: &mut egui::Ui) {
     let c = rect.center();
     let time = ui.ctx().input(|i| i.time);
 
-    ui.ctx().request_repaint();
+    ui.ctx()
+        .request_repaint_after(std::time::Duration::from_millis(33));
 
     // 1. Draw circular ring loop
     let ring_center = c + vec2(0.0, -10.0);
@@ -349,9 +352,9 @@ fn show_flow_welcome_screen(ui: &mut egui::Ui) -> bool {
         let btn_id = ui.make_persistent_id("setup_flow_button");
         let btn_res = ui.allocate_response(vec2(160.0, 40.0), egui::Sense::click());
         let is_hovered = btn_res.hovered();
-        
+
         let t = ui.ctx().animate_bool(btn_id, is_hovered);
-        
+
         let fill_color = theme::lerp_color(
             Color32::from_rgb(0x00, 0xF3, 0xC5),
             Color32::from_rgb(0x33, 0xFF, 0xD7),
@@ -625,7 +628,8 @@ fn draw_searching_cards(ui: &mut egui::Ui, local_name: &str) {
 
     let c = rect.center() + vec2(0.0, 35.0);
     let time = ui.ctx().input(|i| i.time);
-    ui.ctx().request_repaint();
+    ui.ctx()
+        .request_repaint_after(std::time::Duration::from_millis(33));
 
     let card_w = 180.0;
     let card_h = 110.0;
@@ -912,7 +916,7 @@ fn show_flow_not_found_screen(ui: &mut egui::Ui, local_name: &str) -> NotFoundRe
         ui.set_max_width(520.0);
         let mut job = egui::text::LayoutJob::default();
         job.halign = egui::Align::Center;
-        
+
         job.append(
             "We searched everywhere... No computers found on your network. Let's try again—follow the above steps on other computers. ",
             0.0,
@@ -922,7 +926,7 @@ fn show_flow_not_found_screen(ui: &mut egui::Ui, local_name: &str) -> NotFoundRe
                 ..Default::default()
             }
         );
-        
+
         job.append(
             "Need help?",
             0.0,
@@ -932,7 +936,7 @@ fn show_flow_not_found_screen(ui: &mut egui::Ui, local_name: &str) -> NotFoundRe
                 ..Default::default()
             }
         );
-        
+
         let label_res = ui.add(egui::Label::new(job).wrap().sense(egui::Sense::click()));
         if label_res.clicked() {
             // Help link clicked
@@ -978,17 +982,17 @@ fn show_flow_not_found_screen(ui: &mut egui::Ui, local_name: &str) -> NotFoundRe
         let btn_cancel_res = ui.allocate_response(vec2(180.0, 40.0), egui::Sense::click());
         let is_hovered_can = btn_cancel_res.hovered();
         let t_can = ui.ctx().animate_bool(btn_cancel_id, is_hovered_can);
-        
+
         let fill_color_can = Color32::from_rgb(0x06, 0x06, 0x06);
         let stroke_color_can = theme::lerp_color(
             Color32::from_rgb(0x2A, 0x2A, 0x2B),
             Color32::from_rgb(0x00, 0xE3, 0xC5),
             t_can
         );
-        
+
         ui.painter().rect_filled(btn_cancel_res.rect, 6.0, fill_color_can);
         ui.painter().rect_stroke(btn_cancel_res.rect, 6.0, Stroke::new(1.0, stroke_color_can));
-        
+
         ui.painter().text(
             btn_cancel_res.rect.center(),
             egui::Align2::CENTER_CENTER,
@@ -1013,12 +1017,16 @@ fn show_flow_config_screen(
     settings_dirty: &mut bool,
 ) {
     let active_connections: std::collections::HashSet<String> = {
-        let conns = mouser_engine::flow::network::ACTIVE_CONNECTIONS.read().unwrap();
+        let conns = mouser_engine::flow::network::ACTIVE_CONNECTIONS
+            .read()
+            .unwrap();
         conns.keys().cloned().collect()
     };
 
     let discovered: Vec<(String, (String, std::time::Instant))> = {
-        let map = mouser_engine::flow::network::DISCOVERED_PEERS.read().unwrap();
+        let map = mouser_engine::flow::network::DISCOVERED_PEERS
+            .read()
+            .unwrap();
         map.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
     };
 
@@ -1026,7 +1034,7 @@ fn show_flow_config_screen(
         ui.add_space(20.0);
         ui.vertical(|ui| {
             ui.add_space(20.0);
-            
+
             // Header
             ui.horizontal(|ui| {
                 ui.add(egui::Label::new(
@@ -1058,7 +1066,7 @@ fn show_flow_config_screen(
                     .color(theme::secondary_text(ui.ctx()))
                     .size(12.0),
             ));
-            
+
             ui.add_space(20.0);
 
             // Two-column layout: Left is layout grid, Right is Settings / Peers
@@ -1176,23 +1184,23 @@ fn show_flow_config_screen(
                                 available.push(peer.name.clone());
                             }
                         }
-                        
+
                         let current = config.settings.flow_peers.iter()
                             .find(|p| p.layout_x == offset_x && p.layout_y == offset_y)
                             .map(|p| p.name.clone())
                             .unwrap_or_default();
-                        
+
                         let current_idx = available.iter().position(|x| x == &current).unwrap_or(0);
                         let next_idx = (current_idx + 1) % available.len();
                         let new_peer_name = &available[next_idx];
-                        
+
                         for p in &mut config.settings.flow_peers {
                             if p.layout_x == offset_x && p.layout_y == offset_y {
                                 p.layout_x = 99;
                                 p.layout_y = 99;
                             }
                         }
-                        
+
                         if !new_peer_name.is_empty() {
                             for p in &mut config.settings.flow_peers {
                                 if p.name == *new_peer_name {
@@ -1333,7 +1341,7 @@ fn show_flow_config_screen(
                         for (name, (ip, _)) in &discovered {
                             ui.horizontal(|ui| {
                                 ui.label(RichText::new(format!("{} ({})", name, ip)).color(theme::primary_text(ui.ctx())).size(11.0));
-                                
+
                                 // Check if this peer is already paired
                                 let paired_idx = config.settings.flow_peers.iter().position(|p| p.name == *name && p.paired);
                                 if let Some(idx_in_peers) = paired_idx {
@@ -1390,5 +1398,8 @@ fn show_flow_config_screen(
         });
     });
 
-    ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
+    if mouser_engine::flow::network::IS_SEARCHING.load(std::sync::atomic::Ordering::Relaxed) {
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(500));
+    }
 }

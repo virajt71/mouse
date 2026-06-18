@@ -180,13 +180,19 @@ impl Default for Config {
 }
 
 pub fn get_config_path() -> PathBuf {
-    let mut path = dirs::config_dir().unwrap_or_else(|| {
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        PathBuf::from(home).join(".config")
-    });
-    path.push("Mouser");
-    path.push("config.json");
-    path
+    if cfg!(test) {
+        let mut path = std::env::temp_dir();
+        path.push("mouser_test_config.json");
+        path
+    } else {
+        let mut path = dirs::config_dir().unwrap_or_else(|| {
+            let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+            PathBuf::from(home).join(".config")
+        });
+        path.push("Mouser");
+        path.push("config.json");
+        path
+    }
 }
 
 pub fn get_log_dir() -> PathBuf {
@@ -261,13 +267,19 @@ impl Config {
                         }
                         // If it successfully deserialized but has some other/unexpected version,
                         // we still return it to keep settings, but bump the version to 13.
-                        log::warn!("[Config] Loaded config with version {}, upgrading version to 13.", cfg.version);
+                        log::warn!(
+                            "[Config] Loaded config with version {}, upgrading version to 13.",
+                            cfg.version
+                        );
                         cfg.version = 13;
                         let _ = cfg.save();
                         return cfg;
                     }
                     Err(e) => {
-                        log::warn!("[Config] Failed to parse config.json: {}. Attempting fallback.", e);
+                        log::warn!(
+                            "[Config] Failed to parse config.json: {}. Attempting fallback.",
+                            e
+                        );
                         if let Some(migrated) = Self::try_migrate_v11(&content) {
                             return migrated;
                         }
@@ -293,17 +305,32 @@ impl Config {
         {
             cfg.settings.flow_local_name = hostname;
         }
+        cfg.normalize_apps();
         cfg
     }
 
     pub fn save(&self) -> anyhow::Result<()> {
+        let mut cloned = self.clone();
+        cloned.normalize_apps();
         let path = get_config_path();
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let content = serde_json::to_string_pretty(self)?;
+        let content = serde_json::to_string_pretty(&cloned)?;
         fs::write(path, content)?;
         Ok(())
+    }
+
+    pub fn normalize_apps(&mut self) {
+        for group in self.profile_groups.values_mut() {
+            for profile in group.profiles.values_mut() {
+                profile.apps = profile
+                    .apps
+                    .iter()
+                    .map(|a| a.trim().to_lowercase())
+                    .collect();
+            }
+        }
     }
 
     pub fn get_profile(&self, name: &str) -> Option<&Profile> {
@@ -337,11 +364,11 @@ impl Config {
         if exe_name.is_empty() {
             return "global".to_string();
         }
-        let exe_lower = exe_name.to_lowercase();
+        let exe_lower = exe_name.trim().to_lowercase();
         if let Some(group) = self.profile_groups.get(&self.active_group) {
             for (pname, pdata) in &group.profiles {
                 if let Some(app) = pdata.apps.first() {
-                    if app.trim().to_lowercase() == exe_lower {
+                    if app == &exe_lower {
                         return pname.clone();
                     }
                 }
@@ -480,11 +507,11 @@ mod tests {
         }"##;
 
         let parsed: Config = serde_json::from_str(incomplete_json).unwrap();
-        
+
         // Check that specified fields are parsed correctly
         assert_eq!(parsed.settings.start_minimized, true);
         assert_eq!(parsed.settings.dpi, 1000);
-        
+
         // Check that missing fields got their default values
         assert_eq!(parsed.settings.start_at_login, false);
         assert_eq!(parsed.settings.language, "en");
@@ -499,4 +526,3 @@ mod tests {
         assert_eq!(global_p.mappings.get("xbutton1").unwrap(), "alt_tab");
     }
 }
-
