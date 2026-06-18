@@ -5,7 +5,7 @@ pub mod protocol;
 use anyhow::{anyhow, Result};
 use hidapi::HidDevice;
 
-use self::protocol::{LONG_ID, SHORT_ID};
+use self::protocol::{LONG_ID, MY_SW, SHORT_ID};
 
 pub enum HidppEvent {
     GestureDown,
@@ -13,6 +13,7 @@ pub enum HidppEvent {
     GestureMove { dx: i16, dy: i16 },
     ModeShiftDown,
     ModeShiftUp,
+    BacklightChanged { enabled: bool, effect_id: u8 },
 }
 
 pub struct HidppClient {
@@ -23,6 +24,7 @@ pub struct HidppClient {
     pub(crate) smart_shift_idx: Option<u8>,
     pub(crate) smart_shift_enhanced: bool,
     pub(crate) change_host_idx: Option<u8>,
+    pub(crate) backlight_feat_idx: Option<u8>,
     pub(crate) gesture_cid: u16,
     pub(crate) rawxy_enabled: bool,
     pub(crate) held: bool,
@@ -59,6 +61,7 @@ impl HidppClient {
             smart_shift_idx: None,
             smart_shift_enhanced: false,
             change_host_idx: None,
+            backlight_feat_idx: None,
             gesture_cid: 0x00C3,
             rawxy_enabled: false,
             held: false,
@@ -83,6 +86,7 @@ impl HidppClient {
         self.dpi_idx = None;
         self.smart_shift_idx = None;
         self.change_host_idx = None;
+        self.backlight_feat_idx = None;
     }
 
     pub fn set_dpi(&self, dpi: u32) -> Result<()> {
@@ -332,8 +336,28 @@ impl HidppClient {
                 }
 
                 let r_feat = raw[off + 1];
-                let r_func = (raw[off + 2] >> 4) & 0x0F;
+                let r_fsw = raw[off + 2];
+                let r_func = (r_fsw >> 4) & 0x0F;
                 let r_params = &raw[off + 3..];
+
+                // HID++ 0x1982 backlight state-change notification
+                if Some(r_feat) == self.backlight_feat_idx && r_params.len() >= 2 {
+                    // Temp debug: capture raw bytes to confirm func idx + effect byte offset.
+                    // TODO: remove once confirmed from packet dump.
+                    log::debug!(
+                        "[HID++] BL raw: feat=0x{:02X} r_func=0x{:02X} sw_nibble=0x{:02X} params={:02X?}",
+                        r_feat, r_func, r_fsw & 0x0F, r_params
+                    );
+                    // Unsolicited push has SW nibble 0x00; skip our own request echoes
+                    // TODO: confirm r_func value from packet dump — likely 0x00
+                    let sw_nibble = r_fsw & 0x0F;
+                    if sw_nibble != MY_SW {
+                        let enabled = r_params[0] != 0;
+                        // TODO: confirm effect byte offset from dump (try 0, 2, 3)
+                        let effect_id = r_params.get(2).copied().unwrap_or(0);
+                        events.push(HidppEvent::BacklightChanged { enabled, effect_id });
+                    }
+                }
 
                 if Some(r_feat) == self.feat_idx {
                     if r_func == 1 {

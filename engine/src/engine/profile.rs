@@ -467,4 +467,39 @@ impl Engine {
             }
         });
     }
+    pub fn apply_backlight_from_hid(&self, enabled: bool, effect_id: u8) {
+        let effect = match effect_id {
+            0x01 => "Static",
+            0x02 => "Contrast",
+            0x03 => "Breathing",
+            0x04 => "Waves",
+            0x05 => "Reaction",
+            0x06 => "Random",
+            _ => return, // unknown effect id, ignore
+        };
+
+        let profile_name = self.inner.active_profile_shared.lock().unwrap().clone();
+        let mut cfg = self.inner.config.lock().unwrap();
+        let active_group = cfg.active_group.clone();
+
+        if let Some(group) = cfg.profile_groups.get_mut(&active_group) {
+            if let Some(profile) = group.profiles.get_mut(&profile_name) {
+                profile.mappings.insert(
+                    "backlight_enabled".to_string(),
+                    enabled.to_string(),
+                );
+                profile.mappings.insert(
+                    "backlight_effect".to_string(),
+                    effect.to_string(),
+                );
+                let _ = cfg.save();
+                self.increment_config_generation(&cfg);
+                log::info!(
+                    "[Engine] Backlight synced from HID++: enabled={} effect={}",
+                    enabled,
+                    effect
+                );
+            }
+        }
+    }
 }

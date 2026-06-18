@@ -254,6 +254,9 @@ impl Engine {
             HidppEvent::ModeShiftUp => {
                 log::debug!("[Engine] HID ModeShift button up");
             }
+            HidppEvent::BacklightChanged { enabled, effect_id } => {
+                self.apply_backlight_from_hid(enabled, effect_id);
+            }
         }
     }
 
