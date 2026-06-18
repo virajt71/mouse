@@ -1,6 +1,6 @@
 use super::protocol::{
-    FEAT_ADJ_DPI, FEAT_CHANGE_HOST, FEAT_REPROG_V4, FEAT_SMART_SHIFT, FEAT_SMART_SHIFT_ENHANCED,
-    LOGI_VID,
+    FEAT_ADJ_DPI, FEAT_BACKLIGHT2, FEAT_CHANGE_HOST, FEAT_REPROG_V4, FEAT_SMART_SHIFT,
+    FEAT_SMART_SHIFT_ENHANCED, LOGI_VID,
 };
 use super::HidppClient;
 use anyhow::{anyhow, Result};
@@ -57,6 +57,7 @@ impl HidppClient {
         self.dpi_idx = None;
         self.smart_shift_idx = None;
         self.change_host_idx = None;
+        self.backlight_feat_idx = None;
         self.held = false;
         self.mode_shift_held = false;
 
@@ -103,6 +104,11 @@ impl HidppClient {
         self.change_host_idx = self.find_feature(FEAT_CHANGE_HOST);
         if let Some(ch_fi) = self.change_host_idx {
             log::info!("[HID++] Found CHANGE_HOST at index 0x{:02X}", ch_fi);
+        }
+
+        self.backlight_feat_idx = self.find_feature(FEAT_BACKLIGHT2);
+        if let Some(bl_fi) = self.backlight_feat_idx {
+            log::info!("[HID++] Found BACKLIGHT2 (0x1982) at index 0x{:02X}", bl_fi);
         }
 
         // Program button diversion (only for non-keyboards/devices with gesture support)
