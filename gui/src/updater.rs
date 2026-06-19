@@ -1,4 +1,4 @@
-use engine::lock_ext::MutexExt;
+use mouser_engine::lock_ext::MutexExt;
 use eframe::egui;
 use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
