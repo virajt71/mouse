@@ -1,4 +1,4 @@
-use engine::lock_ext::MutexExt;
+use mouser_engine::lock_ext::MutexExt;
 use mouser_engine::config::{Config, Profile, ProfileGroup};
 use mouser_engine::Engine;
 use std::collections::HashMap;
