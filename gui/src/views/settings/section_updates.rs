@@ -1,4 +1,4 @@
-use engine::lock_ext::MutexExt;
+use mouser_engine::lock_ext::MutexExt;
 use super::{render_spaced_header, section_card};
 use crate::theme;
 use crate::translation::tr;
