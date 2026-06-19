@@ -47,10 +47,28 @@ impl HidppClient {
             product_id
         );
 
+        // Map known Product IDs to layout keys
+        let layout_from_pid = match product_id {
+            0x4082 => Some("mx_master_3"),
+            0x4091 => Some("mx_master_3s"),
+            0x406B => Some("mx_anywhere_2s"),
+            0x4090 => Some("mx_anywhere_3"),
+            0x40A3 => Some("mx_anywhere_3s"),
+            0x408A => Some("mx_vertical"),
+            0x4069 => Some("mx_ergo"),
+            0x4072 => Some("mx_keys"),
+            0x4093 => Some("mx_keys_s"),
+            0x408D => Some("mx_keys_mini"),
+            0x408E => Some("mx_mechanical"),
+            0x408F => Some("mx_mechanical_mini"),
+            _ => None,
+        };
+
         let dev = api.open_path(path)?;
         self.device = Some(dev);
         self.device_name = product_name;
         self.device_path = path.to_string_lossy().to_string();
+        self.layout_from_pid = layout_from_pid;
 
         // Reset state
         self.feat_idx = None;
@@ -123,6 +141,11 @@ impl HidppClient {
     }
 
     pub fn get_layout_key(&self) -> String {
+        // First try to identify by Product ID
+        if let Some(pid_layout) = self.layout_from_pid {
+            return pid_layout.to_string();
+        }
+
         get_layout_key_from_name(&self.device_name)
     }
 }

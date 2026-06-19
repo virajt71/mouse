@@ -7,6 +7,7 @@ pub mod inner;
 pub mod modifier_state;
 pub mod profile;
 
+use crate::lock_ext::MutexExt;
 use std::collections::HashMap;
 use std::sync::{
     atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
@@ -123,7 +124,7 @@ impl Engine {
         let _ = self.restart_keyboard_hooks();
 
         {
-            let mut hook_lock = self.inner.mouse_hook.lock().unwrap();
+            let mut hook_lock = self.inner.mouse_hook.lock_safe();
             if hook_lock.is_none() {
                 let engine = self.clone();
                 let mut hook = MouseHook::new(move |event| {
@@ -148,7 +149,7 @@ impl Engine {
             }
         }
 
-        let mut app_det_lock = self.inner.app_detector.lock().unwrap();
+        let mut app_det_lock = self.inner.app_detector.lock_safe();
         if app_det_lock.is_none() {
             let engine = self.clone();
             let mut app_det = AppDetector::new(move |exe_name| {
@@ -170,20 +171,20 @@ impl Engine {
         }
         self.inner.running.store(false, Ordering::SeqCst);
 
-        if let Some(mut app_det) = self.inner.app_detector.lock().unwrap().take() {
+        if let Some(mut app_det) = self.inner.app_detector.lock_safe().take() {
             app_det.stop();
         }
 
-        if let Some(mut hook) = self.inner.mouse_hook.lock().unwrap().take() {
+        if let Some(mut hook) = self.inner.mouse_hook.lock_safe().take() {
             hook.stop();
         }
 
-        let mut kb_hooks = self.inner.keyboard_hooks.lock().unwrap();
+        let mut kb_hooks = self.inner.keyboard_hooks.lock_safe();
         for mut hook in kb_hooks.drain(..) {
             hook.stop();
         }
 
-        let mut clients = self.inner.hid_clients.lock().unwrap();
+        let mut clients = self.inner.hid_clients.lock_safe();
         for client in clients.iter_mut() {
             client.close();
         }
@@ -192,7 +193,7 @@ impl Engine {
     }
 
     pub fn get_config(&self) -> Config {
-        self.inner.config.lock().unwrap().clone()
+        self.inner.config.lock_safe().clone()
     }
 
     pub fn get_config_if_changed(&self, last_gen: u64) -> Option<Config> {
@@ -226,21 +227,21 @@ impl Engine {
     where
         F: Fn() + Send + Sync + 'static,
     {
-        *self.inner.config_change_listener.lock().unwrap() = Some(Box::new(listener));
+        *self.inner.config_change_listener.lock_safe() = Some(Box::new(listener));
     }
 
     pub fn device_connected(&self) -> bool {
-        !self.inner.hid_clients.lock().unwrap().is_empty()
+        !self.inner.hid_clients.lock_safe().is_empty()
     }
 
     pub fn device_names(&self) -> Vec<String> {
-        let clients = self.inner.hid_clients.lock().unwrap();
+        let clients = self.inner.hid_clients.lock_safe();
         clients.iter().map(|c| c.device_name.clone()).collect()
     }
 
     pub fn selected_device_name(&self) -> String {
-        let clients = self.inner.hid_clients.lock().unwrap();
-        let idx = *self.inner.selected_device_idx.lock().unwrap();
+        let clients = self.inner.hid_clients.lock_safe();
+        let idx = *self.inner.selected_device_idx.lock_safe();
         if let Some(c) = clients.get(idx) {
             c.device_name.clone()
         } else {
@@ -249,8 +250,8 @@ impl Engine {
     }
 
     pub fn selected_device_layout(&self) -> String {
-        let clients = self.inner.hid_clients.lock().unwrap();
-        let idx = *self.inner.selected_device_idx.lock().unwrap();
+        let clients = self.inner.hid_clients.lock_safe();
+        let idx = *self.inner.selected_device_idx.lock_safe();
         if let Some(c) = clients.get(idx) {
             let layout = c.get_layout_key();
             log::debug!(
@@ -270,6 +271,6 @@ impl Engine {
     }
 
     pub fn set_selected_device(&self, idx: usize) {
-        *self.inner.selected_device_idx.lock().unwrap() = idx;
+        *self.inner.selected_device_idx.lock_safe() = idx;
     }
 }

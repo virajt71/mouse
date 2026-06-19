@@ -1,3 +1,4 @@
+use crate::lock_ext::MutexExt;
 use super::Engine;
 use std::thread;
 
@@ -20,7 +21,7 @@ impl Engine {
 
     pub fn toggle_smart_shift(&self) {
         let (mode, enabled, threshold) = {
-            let mut cfg = self.inner.config.lock().unwrap();
+            let mut cfg = self.inner.config.lock_safe();
             let next_enabled = !cfg.settings.smart_shift_enabled;
             cfg.settings.smart_shift_enabled = next_enabled;
             let _ = cfg.save();
@@ -35,7 +36,7 @@ impl Engine {
 
         let inner_clone = self.inner.clone();
         thread::spawn(move || {
-            let mut clients = inner_clone.hid_clients.lock().unwrap();
+            let mut clients = inner_clone.hid_clients.lock_safe();
             for client in clients.iter_mut() {
                 if client.is_connected() && (client.get_layout_key().starts_with("mx_master")) {
                     if let Err(e) = client.set_smart_shift(&mode, enabled, threshold) {
@@ -52,7 +53,7 @@ impl Engine {
 
     pub fn switch_scroll_mode(&self) {
         let (mode, threshold) = {
-            let mut cfg = self.inner.config.lock().unwrap();
+            let mut cfg = self.inner.config.lock_safe();
             let next_mode = if cfg.settings.smart_shift_mode == "ratchet" {
                 "freespin"
             } else {
@@ -74,7 +75,7 @@ impl Engine {
 
         let inner_clone = self.inner.clone();
         thread::spawn(move || {
-            let mut clients = inner_clone.hid_clients.lock().unwrap();
+            let mut clients = inner_clone.hid_clients.lock_safe();
             for client in clients.iter_mut() {
                 if client.is_connected() && (client.get_layout_key().starts_with("mx_master")) {
                     if let Err(e) = client.set_smart_shift(&mode, false, threshold) {
@@ -92,7 +93,7 @@ impl Engine {
     pub fn cycle_dpi(&self) {
         let presets = [800, 1200, 1600, 2400];
         let new_dpi = {
-            let mut cfg = self.inner.config.lock().unwrap();
+            let mut cfg = self.inner.config.lock_safe();
             let current = cfg.settings.dpi;
             let mut next_idx = 0;
             for (idx, &preset) in presets.iter().enumerate() {
@@ -111,7 +112,7 @@ impl Engine {
 
         let inner_clone = self.inner.clone();
         thread::spawn(move || {
-            let mut clients = inner_clone.hid_clients.lock().unwrap();
+            let mut clients = inner_clone.hid_clients.lock_safe();
             for client in clients.iter_mut() {
                 if client.is_connected()
                     && (client.get_layout_key().starts_with("mx_master")

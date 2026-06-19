@@ -1,3 +1,4 @@
+use crate::lock_ext::MutexExt;
 use std::collections::HashSet;
 use std::sync::atomic::Ordering;
 use std::sync::Mutex;
@@ -14,7 +15,7 @@ static CONNECTING_PATHS: std::sync::LazyLock<Mutex<HashSet<String>>> =
 impl Engine {
     pub fn restart_keyboard_hooks(&self) -> anyhow::Result<()> {
         let mappings = self.inner.active_mappings.clone();
-        let mut kb_hooks = self.inner.keyboard_hooks.lock().unwrap();
+        let mut kb_hooks = self.inner.keyboard_hooks.lock_safe();
         for hook in kb_hooks.iter_mut() {
             hook.stop();
         }
@@ -46,7 +47,7 @@ impl Engine {
     ) {
         let inner = &self.inner;
         let is_hook_running = {
-            let hook_lock = inner.mouse_hook.lock().unwrap();
+            let hook_lock = inner.mouse_hook.lock_safe();
             if let Some(hook) = &*hook_lock {
                 hook.is_running()
             } else {
@@ -56,7 +57,7 @@ impl Engine {
 
         if !is_hook_running {
             crate::flow::FLOW_MANAGER.set_active_peer(None);
-            let hook_is_none = inner.mouse_hook.lock().unwrap().is_none();
+            let hook_is_none = inner.mouse_hook.lock_safe().is_none();
 
             if let Some(mouse_path) = crate::input::find_logitech_mouse() {
                 let should_attempt =
@@ -76,7 +77,7 @@ impl Engine {
                         if hook_is_none { "" } else { "re" }
                     );
 
-                    if let Some(mut hook) = inner.mouse_hook.lock().unwrap().take() {
+                    if let Some(mut hook) = inner.mouse_hook.lock_safe().take() {
                         hook.stop();
                     }
 
@@ -95,7 +96,7 @@ impl Engine {
                     ) {
                         Ok(()) => {
                             log::info!("[Engine] Mouse hook started successfully.");
-                            *inner.mouse_hook.lock().unwrap() = Some(hook);
+                            *inner.mouse_hook.lock_safe() = Some(hook);
                             *last_mouse_attempt_path = None;
                             *last_mouse_attempt_time = None;
                         }
@@ -118,7 +119,7 @@ impl Engine {
     ) {
         let inner = &self.inner;
         let kb_paths = crate::input::find_logitech_keyboards();
-        let mut kb_hooks = inner.keyboard_hooks.lock().unwrap();
+        let mut kb_hooks = inner.keyboard_hooks.lock_safe();
 
         // 1. Remove hooks that are no longer physically connected
         kb_hooks.retain(|hook| {
@@ -200,12 +201,12 @@ impl Engine {
         struct ConnGuard(String);
         impl Drop for ConnGuard {
             fn drop(&mut self) {
-                CONNECTING_PATHS.lock().unwrap().remove(&self.0);
+                CONNECTING_PATHS.lock_safe().remove(&self.0);
             }
         }
 
         let inner = &self.inner;
-        let mut api_lock = inner.hid_api.lock().unwrap();
+        let mut api_lock = inner.hid_api.lock_safe();
         if api_lock.is_none() {
             *api_lock = hidapi::HidApi::new().ok();
         }
@@ -221,10 +222,10 @@ impl Engine {
         let dummy_client = HidppClient::new();
         let available = dummy_client.list_hidpp_devices(api);
 
-        let mut clients = inner.hid_clients.lock().unwrap();
+        let mut clients = inner.hid_clients.lock_safe();
         clients.retain(|c| c.is_connected());
 
-        let mut connecting = CONNECTING_PATHS.lock().unwrap();
+        let mut connecting = CONNECTING_PATHS.lock_safe();
 
         for info in available {
             let path_str = info.path().to_string_lossy().to_string();
@@ -261,11 +262,11 @@ impl Engine {
                         }
                         if layout.starts_with("mx_master") || layout.starts_with("mx_anywhere") {
                             let dpi = {
-                                let cfg = inner_clone.config.lock().unwrap();
+                                let cfg = inner_clone.config.lock_safe();
                                 cfg.settings.dpi as u32
                             };
                             let (ss_mode, ss_enabled, ss_threshold) = {
-                                let cfg = inner_clone.config.lock().unwrap();
+                                let cfg = inner_clone.config.lock_safe();
                                 (
                                     cfg.settings.smart_shift_mode.clone(),
                                     cfg.settings.smart_shift_enabled,
@@ -277,7 +278,7 @@ impl Engine {
                         }
 
                         {
-                            let mut clients = inner_clone.hid_clients.lock().unwrap();
+                            let mut clients = inner_clone.hid_clients.lock_safe();
                             clients.push(new_client);
                         }
 
@@ -321,7 +322,7 @@ impl Engine {
 
                     let mut all_events = Vec::new();
                     let has_clients = {
-                        let mut clients = inner.hid_clients.lock().unwrap();
+                        let mut clients = inner.hid_clients.lock_safe();
                         for client in clients.iter_mut() {
                             if let Ok(evs) = client.poll_events() {
                                 for ev in evs {

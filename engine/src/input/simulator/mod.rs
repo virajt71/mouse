@@ -8,6 +8,7 @@ pub mod mouse_map;
 
 pub use self::mouse_map::{get_mouse_button_key, is_mouse_button_action};
 
+use crate::lock_ext::MutexExt;
 use evdev::{
     uinput::{VirtualDevice, VirtualDeviceBuilder},
     AttributeSet, Key, RelativeAxisType,
@@ -41,15 +42,15 @@ impl KeySimulator {
     }
 
     pub fn set_keyboard_layout(&self, layout: &str) {
-        *self.keyboard_layout.lock().unwrap() = layout.to_string();
+        *self.keyboard_layout.lock_safe() = layout.to_string();
     }
 
     pub fn get_keyboard_layout(&self) -> String {
-        self.keyboard_layout.lock().unwrap().clone()
+        self.keyboard_layout.lock_safe().clone()
     }
 
     pub fn ensure_device(&self) {
-        let mut lock = self.device.lock().unwrap();
+        let mut lock = self.device.lock_safe();
         if lock.is_none() {
             *lock = self.init_device();
         }
@@ -100,7 +101,7 @@ impl KeySimulator {
     where
         F: FnOnce(&mut Option<VirtualDevice>) -> R,
     {
-        let mut lock = self.device.lock().unwrap();
+        let mut lock = self.device.lock_safe();
         if lock.is_none() {
             *lock = self.init_device();
         }

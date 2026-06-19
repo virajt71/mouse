@@ -10,9 +10,10 @@ KERNEL=="hidraw*", SUBSYSTEM=="hidraw", KERNELS=="0003:046D:*", TAG+="uaccess"
 KERNEL=="hidraw*", SUBSYSTEM=="hidraw", KERNELS=="0005:046D:*", TAG+="uaccess"
 
 # Logitech evdev mouse nodes used for button/gesture remapping.
-KERNEL=="event*", SUBSYSTEM=="input", ATTRS{idVendor}=="046d", TAG+="uaccess"
-KERNEL=="event*", SUBSYSTEM=="input", KERNELS=="0003:046D:*", TAG+="uaccess"
-KERNEL=="event*", SUBSYSTEM=="input", KERNELS=="0005:046D:*", TAG+="uaccess"
+# We explicitly match mice and exclude keyboards to prevent unintended raw keyboard access (keylogging risk).
+KERNEL=="event*", SUBSYSTEM=="input", ATTRS{idVendor}=="046d", ENV{ID_INPUT_MOUSE}=="1", ENV{ID_INPUT_KEYBOARD}!="1", TAG+="uaccess"
+KERNEL=="event*", SUBSYSTEM=="input", KERNELS=="0003:046D:*", ENV{ID_INPUT_MOUSE}=="1", ENV{ID_INPUT_KEYBOARD}!="1", TAG+="uaccess"
+KERNEL=="event*", SUBSYSTEM=="input", KERNELS=="0005:046D:*", ENV{ID_INPUT_MOUSE}=="1", ENV{ID_INPUT_KEYBOARD}!="1", TAG+="uaccess"
 
 # Virtual input device used to forward non-blocked mouse events.
 KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"

@@ -1,3 +1,4 @@
+use crate::lock_ext::MutexExt;
 use super::FLOW_MANAGER;
 use std::sync::Arc;
 use std::time::Duration;
@@ -130,7 +131,7 @@ pub fn run_edge_detection_loop(engine_inner: Arc<crate::engine::inner::EngineInn
                                                     FLOW_MANAGER
                                                         .set_active_peer(Some(peer.name.clone()));
                                                     // Sync virtual coords for the transition
-                                                    *FLOW_MANAGER.virtual_x.lock().unwrap() =
+                                                    *FLOW_MANAGER.virtual_x.lock_safe() =
                                                         if lx == -1 { sw - 50 } else { 50 };
 
                                                     let mode = FLOW_MANAGER
@@ -179,7 +180,7 @@ pub fn is_hold_key_satisfied(hold_key: &str) -> bool {
         return true;
     }
     // Query the shared ModifierState populated by KeyboardHook threads.
-    if let Some(ref inner) = *FLOW_MANAGER.engine_inner.lock().unwrap() {
+    if let Some(ref inner) = *FLOW_MANAGER.engine_inner.lock_safe() {
         inner.modifier_state.is_satisfied(hold_key)
     } else {
         // No engine inner available yet — allow transition.
@@ -200,8 +201,8 @@ pub fn trigger_hidpp_channel_switch(channel_idx: u8) {
         "[Flow Switching] Triggering HID++ host switch to channel {}",
         channel_idx
     );
-    if let Some(ref inner) = *FLOW_MANAGER.engine_inner.lock().unwrap() {
-        let mut clients = inner.hid_clients.lock().unwrap();
+    if let Some(ref inner) = *FLOW_MANAGER.engine_inner.lock_safe() {
+        let mut clients = inner.hid_clients.lock_safe();
         for client in clients.iter_mut() {
             if client.change_host_idx.is_some() {
                 if let Err(e) = client.switch_host_channel(channel_idx) {

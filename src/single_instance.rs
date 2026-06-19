@@ -16,7 +16,12 @@ pub fn get_socket_path() -> PathBuf {
 pub fn setup_single_instance(daemon_mode: bool) -> Option<UnixListener> {
     let socket_path = get_socket_path();
     match UnixListener::bind(&socket_path) {
-        Ok(listener) => Some(listener),
+        Ok(listener) => {
+            // Set socket permissions to 0600 (read/write only by the owner)
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&socket_path, std::fs::Permissions::from_mode(0o600));
+            Some(listener)
+        }
         Err(ref e) if e.kind() == std::io::ErrorKind::AddrInUse => {
             match UnixStream::connect(&socket_path) {
                 Ok(mut stream) => {

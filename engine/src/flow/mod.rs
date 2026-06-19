@@ -2,6 +2,7 @@ pub mod clipboard;
 pub mod network;
 pub mod switching;
 
+use crate::lock_ext::MutexExt;
 use crate::config::Config;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
@@ -51,7 +52,7 @@ impl FlowManager {
     }
 
     pub fn start(&self, engine_inner: Arc<crate::engine::inner::EngineInner>) {
-        let mut running = self.is_running.lock().unwrap();
+        let mut running = self.is_running.lock_safe();
         if *running {
             return;
         }
@@ -61,12 +62,12 @@ impl FlowManager {
 
         // Update cached config
         {
-            let cfg = engine_inner.config.lock().unwrap();
+            let cfg = engine_inner.config.lock_safe();
             self.update_config(&cfg);
         }
 
         // Store engine_inner
-        *self.engine_inner.lock().unwrap() = Some(engine_inner.clone());
+        *self.engine_inner.lock_safe() = Some(engine_inner.clone());
 
         // 1. Start UDP Discovery thread
         let inner_disc = engine_inner.clone();
@@ -107,7 +108,7 @@ impl FlowManager {
 
         if was_local && going_remote {
             // Flush modifiers before handing off
-            if let Some(ref inner) = *self.engine_inner.lock().unwrap() {
+            if let Some(ref inner) = *self.engine_inner.lock_safe() {
                 use evdev::Key;
                 let mods = [
                     Key::KEY_LEFTCTRL,
@@ -154,8 +155,8 @@ impl FlowManager {
             return None;
         }
 
-        let mut vx = self.virtual_x.lock().unwrap();
-        let mut vy = self.virtual_y.lock().unwrap();
+        let mut vx = self.virtual_x.lock_safe();
+        let mut vy = self.virtual_y.lock_safe();
 
         let sw = *self.screen_width.read().unwrap();
         let sh = *self.screen_height.read().unwrap();

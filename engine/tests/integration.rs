@@ -1,3 +1,4 @@
+use engine::lock_ext::MutexExt;
 use mouser_engine::config::{Config, Profile, ProfileGroup};
 use mouser_engine::Engine;
 use std::collections::HashMap;
@@ -69,7 +70,7 @@ fn test_gesture_state_transitions() {
     let engine = Engine::new();
     assert_eq!(engine.device_connected(), false);
 
-    let state = engine.inner.gesture_state.lock().unwrap();
+    let state = engine.inner.gesture_state.lock_safe();
     assert_eq!(state.delta_x, 0.0);
     assert_eq!(state.delta_y, 0.0);
 }
@@ -159,7 +160,7 @@ fn test_gesture_button_cleared_after_up() {
     // Before the §3.2 fix, this left state.button populated.
     engine.handle_gesture_up();
 
-    let state = engine.inner.gesture_state.lock().unwrap();
+    let state = engine.inner.gesture_state.lock_safe();
     // button must be None after any up event, even on an idle engine
     assert!(
         state.button.is_none(),

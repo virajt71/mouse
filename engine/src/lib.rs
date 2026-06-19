@@ -9,6 +9,7 @@ pub mod engine;
 pub mod flow;
 pub mod hidpp;
 pub mod input;
+pub mod lock_ext;
 pub mod receiver;
 pub mod worker;
 

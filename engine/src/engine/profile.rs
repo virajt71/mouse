@@ -1,3 +1,4 @@
+use crate::lock_ext::MutexExt;
 use std::sync::atomic::Ordering;
 use std::thread;
 
@@ -8,7 +9,7 @@ use crate::config::Config;
 impl Engine {
     pub fn refresh_active_profile(&self) {
         let (profile_name, mappings) = {
-            let cfg = self.inner.config.lock().unwrap();
+            let cfg = self.inner.config.lock_safe();
             let target = cfg.active_app_profile.clone();
             let mappings = cfg.get_resolved_mappings(&target);
             self.inner.cached_gesture_threshold.store(
@@ -28,8 +29,8 @@ impl Engine {
             (target, mappings)
         };
 
-        *self.inner.current_profile.lock().unwrap() = profile_name.clone();
-        *self.inner.active_profile_shared.lock().unwrap() = profile_name;
+        *self.inner.current_profile.lock_safe() = profile_name.clone();
+        *self.inner.active_profile_shared.lock_safe() = profile_name;
         {
             let mappings_arc: std::collections::HashMap<String, std::sync::Arc<str>> = mappings
                 .iter()
@@ -40,7 +41,7 @@ impl Engine {
 
         let (blocked, hscroll_blocked) = compute_blocked_buttons(&mappings);
 
-        *self.inner.blocked_buttons_arc.lock().unwrap() = blocked;
+        *self.inner.blocked_buttons_arc.lock_safe() = blocked;
         self.inner
             .block_hscroll_arc
             .store(hscroll_blocked, Ordering::SeqCst);
@@ -51,7 +52,7 @@ impl Engine {
     pub fn select_profile(&self, name: &str) {
         log::info!("[Engine] Selecting active app profile: {}", name);
         {
-            let mut cfg = self.inner.config.lock().unwrap();
+            let mut cfg = self.inner.config.lock_safe();
             cfg.active_app_profile = name.to_string();
             let _ = cfg.save();
             self.increment_config_generation(&cfg);
@@ -62,7 +63,7 @@ impl Engine {
     pub fn add_profile(&self, name: &str) {
         log::info!("[Engine] Adding profile: {}", name);
         {
-            let mut cfg = self.inner.config.lock().unwrap();
+            let mut cfg = self.inner.config.lock_safe();
             let active_group = cfg.active_group.clone();
             if let Some(group) = cfg.profile_groups.get_mut(&active_group) {
                 if !group.profiles.contains_key(name) {
@@ -91,7 +92,7 @@ impl Engine {
             return;
         }
         {
-            let mut cfg = self.inner.config.lock().unwrap();
+            let mut cfg = self.inner.config.lock_safe();
             let active_group = cfg.active_group.clone();
             if let Some(group) = cfg.profile_groups.get_mut(&active_group) {
                 group.profiles.remove(name);
@@ -119,7 +120,7 @@ impl Engine {
             .to_lowercase();
 
         {
-            let mut cfg = self.inner.config.lock().unwrap();
+            let mut cfg = self.inner.config.lock_safe();
             let active_group = cfg.active_group.clone();
             if let Some(group) = cfg.profile_groups.get_mut(&active_group) {
                 if !clean_exe.is_empty() {
@@ -156,7 +157,7 @@ impl Engine {
     ) {
         log::info!("[Engine] Updating mappings for profile {}", profile_name);
         {
-            let mut cfg = self.inner.config.lock().unwrap();
+            let mut cfg = self.inner.config.lock_safe();
             let active_group = cfg.active_group.clone();
             if let Some(group) = cfg.profile_groups.get_mut(&active_group) {
                 if let Some(profile) = group.profiles.get_mut(profile_name) {
@@ -174,7 +175,7 @@ impl Engine {
 
     pub fn apply_keyboard_backlight(&self) {
         let (backlight_effect, backlight_enabled) = {
-            let cfg = self.inner.config.lock().unwrap();
+            let cfg = self.inner.config.lock_safe();
             let active_profile = cfg.active_app_profile.clone();
             if let Some(profile) = cfg.get_profile(&active_profile) {
                 let effect = profile.mappings.get("backlight_effect").cloned();
@@ -193,7 +194,7 @@ impl Engine {
 
         let inner_clone = self.inner.clone();
         thread::spawn(move || {
-            let mut clients = inner_clone.hid_clients.lock().unwrap();
+            let mut clients = inner_clone.hid_clients.lock_safe();
             for client in clients.iter_mut() {
                 if client.is_connected() {
                     let layout = client.get_layout_key();
@@ -227,14 +228,14 @@ impl Engine {
 
     pub fn cycle_backlight_effect(&self) {
         log::info!("[Engine] Cycle backlight effect triggered by Fn+Lightbulb");
-        let active_profile = self.inner.active_profile_shared.lock().unwrap().clone();
+        let active_profile = self.inner.active_profile_shared.lock_safe().clone();
 
         let mut new_effect = String::from("Static");
         let mut new_enabled = String::from("true");
         let mut mappings = std::collections::HashMap::new();
 
         {
-            let cfg = self.inner.config.lock().unwrap();
+            let cfg = self.inner.config.lock_safe();
             if let Some(profile) = cfg.get_profile(&active_profile) {
                 let current_effect = profile
                     .mappings
@@ -279,7 +280,7 @@ impl Engine {
     pub fn select_profile_group(&self, name: &str) {
         log::info!("[Engine] Selecting profile group: {}", name);
         {
-            let mut cfg = self.inner.config.lock().unwrap();
+            let mut cfg = self.inner.config.lock_safe();
             if cfg.profile_groups.contains_key(name) {
                 cfg.active_group = name.to_string();
                 cfg.active_app_profile = "global".to_string();
@@ -293,7 +294,7 @@ impl Engine {
     pub fn add_profile_group(&self, name: &str) {
         log::info!("[Engine] Adding profile group: {}", name);
         {
-            let mut cfg = self.inner.config.lock().unwrap();
+            let mut cfg = self.inner.config.lock_safe();
             if !cfg.profile_groups.contains_key(name) {
                 let mut profiles = std::collections::HashMap::new();
                 let default_mappings = cfg
@@ -325,7 +326,7 @@ impl Engine {
             return;
         }
         {
-            let mut cfg = self.inner.config.lock().unwrap();
+            let mut cfg = self.inner.config.lock_safe();
             cfg.profile_groups.remove(name);
             if cfg.active_group == name {
                 cfg.active_group = "default".to_string();
@@ -357,7 +358,7 @@ impl Engine {
         );
 
         {
-            let mut cfg = self.inner.config.lock().unwrap();
+            let mut cfg = self.inner.config.lock_safe();
             cfg.settings.dpi = dpi as i32;
             cfg.settings.smart_shift_mode = smart_shift_mode.clone();
             cfg.settings.smart_shift_enabled = smart_shift_enabled;
@@ -387,7 +388,7 @@ impl Engine {
 
         let inner_clone = self.inner.clone();
         thread::spawn(move || {
-            let mut clients = inner_clone.hid_clients.lock().unwrap();
+            let mut clients = inner_clone.hid_clients.lock_safe();
             for client in clients.iter_mut() {
                 if client.is_connected()
                     && (client.get_layout_key().starts_with("mx_master")
@@ -407,7 +408,7 @@ impl Engine {
     pub fn update_keyboard_layout(&self, layout: &str) {
         log::info!("[Engine] Updating keyboard layout to: {}", layout);
         {
-            let mut cfg = self.inner.config.lock().unwrap();
+            let mut cfg = self.inner.config.lock_safe();
             cfg.settings.device_layout_overrides.insert(
                 "keyboard_layout".to_string(),
                 serde_json::Value::String(layout.to_string()),
@@ -421,7 +422,7 @@ impl Engine {
     pub fn reload_config(&self) {
         log::info!("[Engine] Reloading config from disk");
         let (dpi, ss_mode, ss_enabled, ss_threshold, invert_hscroll, invert_vscroll, layout) = {
-            let mut cfg = self.inner.config.lock().unwrap();
+            let mut cfg = self.inner.config.lock_safe();
             *cfg = Config::load();
             self.increment_config_generation(&cfg);
             let layout = cfg
@@ -455,7 +456,7 @@ impl Engine {
 
         let inner_clone = self.inner.clone();
         thread::spawn(move || {
-            let mut clients = inner_clone.hid_clients.lock().unwrap();
+            let mut clients = inner_clone.hid_clients.lock_safe();
             for client in clients.iter_mut() {
                 if client.is_connected()
                     && (client.get_layout_key().starts_with("mx_master")
@@ -478,8 +479,8 @@ impl Engine {
             _ => return, // unknown effect id, ignore
         };
 
-        let profile_name = self.inner.active_profile_shared.lock().unwrap().clone();
-        let mut cfg = self.inner.config.lock().unwrap();
+        let profile_name = self.inner.active_profile_shared.lock_safe().clone();
+        let mut cfg = self.inner.config.lock_safe();
         let active_group = cfg.active_group.clone();
 
         if let Some(group) = cfg.profile_groups.get_mut(&active_group) {

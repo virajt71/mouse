@@ -1,3 +1,4 @@
+use crate::lock_ext::MutexExt;
 use evdev::Key;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
@@ -56,10 +57,10 @@ impl Engine {
                 if gestures_enabled {
                     if down {
                         self.handle_gesture_down();
-                        self.inner.gesture_state.lock().unwrap().button = Some(btn_key.to_string());
+                        self.inner.gesture_state.lock_safe().button = Some(btn_key.to_string());
                     } else {
                         let is_current = {
-                            let state = self.inner.gesture_state.lock().unwrap();
+                            let state = self.inner.gesture_state.lock_safe();
                             state.button.as_ref() == Some(&btn_key.to_string())
                         };
                         if is_current {
@@ -203,7 +204,7 @@ impl Engine {
             }
             HidppEvent::GestureMove { dx, dy } => {
                 let enabled = {
-                    let btn_key = self.inner.gesture_state.lock().unwrap().button.clone();
+                    let btn_key = self.inner.gesture_state.lock_safe().button.clone();
                     let active = self.inner.active_mappings.read().unwrap();
                     let enabled_key = match btn_key.as_deref() {
                         Some("middle") => "middle_gesture_enabled",
@@ -266,7 +267,7 @@ impl Engine {
         self.inner.gesture_tracking.store(true, Ordering::SeqCst);
         self.inner.gesture_triggered.store(false, Ordering::SeqCst);
         {
-            let mut state = self.inner.gesture_state.lock().unwrap();
+            let mut state = self.inner.gesture_state.lock_safe();
             state.delta_x = 0.0;
             state.delta_y = 0.0;
             state.last_move_at = Instant::now();
@@ -282,7 +283,7 @@ impl Engine {
         let triggered;
         let btn_key;
         {
-            let mut state = self.inner.gesture_state.lock().unwrap();
+            let mut state = self.inner.gesture_state.lock_safe();
             btn_key = state
                 .button
                 .take()
@@ -330,7 +331,7 @@ impl Engine {
 
         let now = Instant::now();
 
-        let mut state = self.inner.gesture_state.lock().unwrap();
+        let mut state = self.inner.gesture_state.lock_safe();
 
         if now < state.cooldown_until {
             return;
