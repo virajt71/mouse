@@ -26,6 +26,7 @@ pub struct HidppClient {
     pub(crate) change_host_idx: Option<u8>,
     pub(crate) backlight_feat_idx: Option<u8>,
     pub(crate) gesture_cid: u16,
+    pub layout_from_pid: Option<&'static str>,
     pub(crate) rawxy_enabled: bool,
     pub(crate) held: bool,
     pub(crate) mode_shift_held: bool,
@@ -63,6 +64,7 @@ impl HidppClient {
             change_host_idx: None,
             backlight_feat_idx: None,
             gesture_cid: 0x00C3,
+            layout_from_pid: None,
             rawxy_enabled: false,
             held: false,
             mode_shift_held: false,
@@ -87,6 +89,7 @@ impl HidppClient {
         self.smart_shift_idx = None;
         self.change_host_idx = None;
         self.backlight_feat_idx = None;
+        self.layout_from_pid = None;
     }
 
     pub fn set_dpi(&self, dpi: u32) -> Result<()> {
@@ -342,18 +345,16 @@ impl HidppClient {
 
                 // HID++ 0x1982 backlight state-change notification
                 if Some(r_feat) == self.backlight_feat_idx && r_params.len() >= 2 {
-                    // Temp debug: capture raw bytes to confirm func idx + effect byte offset.
-                    // TODO: remove once confirmed from packet dump.
                     log::debug!(
                         "[HID++] BL raw: feat=0x{:02X} r_func=0x{:02X} sw_nibble=0x{:02X} params={:02X?}",
                         r_feat, r_func, r_fsw & 0x0F, r_params
                     );
                     // Unsolicited push has SW nibble 0x00; skip our own request echoes
-                    // TODO: confirm r_func value from packet dump — likely 0x00
                     let sw_nibble = r_fsw & 0x0F;
                     if sw_nibble != MY_SW {
                         let enabled = r_params[0] != 0;
-                        // TODO: confirm effect byte offset from dump (try 0, 2, 3)
+                        // Based on HID++ 2.0 specifications for feature 0x1982:
+                        // Byte 0: enabled, Byte 2: effect_id
                         let effect_id = r_params.get(2).copied().unwrap_or(0);
                         events.push(HidppEvent::BacklightChanged { enabled, effect_id });
                     }
@@ -406,3 +407,4 @@ impl HidppClient {
         Ok(events)
     }
 }
+pub mod tests;

@@ -1,3 +1,4 @@
+use crate::lock_ext::MutexExt;
 use super::FLOW_MANAGER;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
@@ -72,7 +73,7 @@ pub fn run_discovery_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) 
             }
 
             let local_name = {
-                let cfg = engine_inner.config.lock().unwrap();
+                let cfg = engine_inner.config.lock_safe();
                 cfg.settings.flow_local_name.clone()
             };
 
@@ -118,7 +119,7 @@ fn thread_spawn_broadcast(socket: UdpSocket, engine_inner: Arc<crate::engine::in
     use std::sync::atomic::Ordering;
     std::thread::spawn(move || loop {
         let (enabled, name) = {
-            let cfg = engine_inner.config.lock().unwrap();
+            let cfg = engine_inner.config.lock_safe();
             (
                 cfg.settings.flow_enabled,
                 cfg.settings.flow_local_name.clone(),
@@ -238,7 +239,7 @@ pub fn connect_to_peer(
 
     // Get PIN from config (stored as fingerprint field for now)
     let pin = {
-        let cfg = engine_inner.config.lock().unwrap();
+        let cfg = engine_inner.config.lock_safe();
         cfg.settings
             .flow_peers
             .iter()
@@ -304,7 +305,7 @@ fn trigger_auto_connect(
     engine_inner: &Arc<crate::engine::inner::EngineInner>,
 ) {
     let (flow_enabled, is_paired, auto_reconnect) = {
-        let cfg = engine_inner.config.lock().unwrap();
+        let cfg = engine_inner.config.lock_safe();
         if let Some(p) = cfg.settings.flow_peers.iter().find(|p| p.name == peer_name) {
             (cfg.settings.flow_enabled, p.paired, p.auto_reconnect)
         } else {
@@ -364,7 +365,7 @@ fn handle_client(
     let client_hash = response_parts[2];
 
     let peer_pin = {
-        let cfg = engine_inner.config.lock().unwrap();
+        let cfg = engine_inner.config.lock_safe();
         cfg.settings
             .flow_peers
             .iter()
@@ -420,7 +421,7 @@ fn process_peer_events(
             match event {
                 FlowEvent::MouseMove { dx, dy } => {
                     FLOW_MANAGER.set_current_controller(Some(client_name.clone()));
-                    if let Some(ref inner) = *FLOW_MANAGER.engine_inner.lock().unwrap() {
+                    if let Some(ref inner) = *FLOW_MANAGER.engine_inner.lock_safe() {
                         let is_paired = {
                             let peers = FLOW_MANAGER.flow_peers.read().unwrap();
                             peers.iter().any(|p| p.name == client_name && p.paired)
@@ -440,7 +441,7 @@ fn process_peer_events(
                         }
 
                         let uinput_arc = inner.key_simulator.device();
-                        let mut uinput_guard = uinput_arc.lock().unwrap();
+                        let mut uinput_guard = uinput_arc.lock_safe();
                         if let Some(ref mut uinput_dev) = *uinput_guard {
                             let evs = [
                                 evdev::InputEvent::new(
@@ -461,9 +462,9 @@ fn process_peer_events(
                 }
                 FlowEvent::MouseButton { code, value } => {
                     FLOW_MANAGER.set_current_controller(Some(client_name.clone()));
-                    if let Some(ref inner) = *FLOW_MANAGER.engine_inner.lock().unwrap() {
+                    if let Some(ref inner) = *FLOW_MANAGER.engine_inner.lock_safe() {
                         let uinput_arc = inner.key_simulator.device();
-                        let mut uinput_guard = uinput_arc.lock().unwrap();
+                        let mut uinput_guard = uinput_arc.lock_safe();
                         if let Some(ref mut uinput_dev) = *uinput_guard {
                             let evs = [
                                 evdev::InputEvent::new(evdev::EventType::KEY, code, value),
@@ -475,9 +476,9 @@ fn process_peer_events(
                 }
                 FlowEvent::Key { code, value } => {
                     FLOW_MANAGER.set_current_controller(Some(client_name.clone()));
-                    if let Some(ref inner) = *FLOW_MANAGER.engine_inner.lock().unwrap() {
+                    if let Some(ref inner) = *FLOW_MANAGER.engine_inner.lock_safe() {
                         let uinput_arc = inner.key_simulator.device();
-                        let mut uinput_guard = uinput_arc.lock().unwrap();
+                        let mut uinput_guard = uinput_arc.lock_safe();
                         if let Some(ref mut uinput_dev) = *uinput_guard {
                             let evs = [
                                 evdev::InputEvent::new(evdev::EventType::KEY, code, value),
@@ -489,9 +490,9 @@ fn process_peer_events(
                 }
                 FlowEvent::MouseScroll { horizontal, delta } => {
                     FLOW_MANAGER.set_current_controller(Some(client_name.clone()));
-                    if let Some(ref inner) = *FLOW_MANAGER.engine_inner.lock().unwrap() {
+                    if let Some(ref inner) = *FLOW_MANAGER.engine_inner.lock_safe() {
                         let uinput_arc = inner.key_simulator.device();
-                        let mut uinput_guard = uinput_arc.lock().unwrap();
+                        let mut uinput_guard = uinput_arc.lock_safe();
                         if let Some(ref mut uinput_dev) = *uinput_guard {
                             let axis = if horizontal {
                                 evdev::RelativeAxisType::REL_HWHEEL.0
@@ -522,7 +523,7 @@ fn process_peer_events(
                     );
 
                     let (lx, ly) = {
-                        let cfg = engine_inner.config.lock().unwrap();
+                        let cfg = engine_inner.config.lock_safe();
                         if let Some(peer) = cfg
                             .settings
                             .flow_peers
@@ -555,8 +556,8 @@ fn process_peer_events(
                         sh / 2
                     };
 
-                    *FLOW_MANAGER.virtual_x.lock().unwrap() = target_x;
-                    *FLOW_MANAGER.virtual_y.lock().unwrap() = target_y;
+                    *FLOW_MANAGER.virtual_x.lock_safe() = target_x;
+                    *FLOW_MANAGER.virtual_y.lock_safe() = target_y;
 
                     if let Ok((conn, screen_num)) =
                         x11rb::rust_connection::RustConnection::connect(None)

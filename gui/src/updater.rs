@@ -1,3 +1,4 @@
+use engine::lock_ext::MutexExt;
 use eframe::egui;
 use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
@@ -62,7 +63,7 @@ impl Updater {
         let status_clone = self.status.clone();
 
         {
-            let mut status = status_clone.lock().unwrap();
+            let mut status = status_clone.lock_safe();
             *status = UpdateStatus::Checking;
         }
         ctx.request_repaint();
@@ -75,7 +76,7 @@ impl Updater {
                 let mock_bin_url = "https://github.com/soulr27/Mouser-RS-UI/releases/download/v0.2.0/mouser-rs-linux".to_string();
 
                 {
-                    let mut status = status_clone.lock().unwrap();
+                    let mut status = status_clone.lock_safe();
                     *status = UpdateStatus::Available {
                         version: mock_version.clone(),
                         bin_url: mock_bin_url.clone(),
@@ -113,7 +114,7 @@ impl Updater {
                         if let Some((bin_name, bin_url)) = bin_asset {
                             let version_str = release.tag_name.clone();
                             {
-                                let mut status = status_clone.lock().unwrap();
+                                let mut status = status_clone.lock_safe();
                                 *status = UpdateStatus::Available {
                                     version: version_str.clone(),
                                     bin_url: bin_url.clone(),
@@ -135,16 +136,16 @@ impl Updater {
                                 );
                             }
                         } else {
-                            let mut status = status_clone.lock().unwrap();
+                            let mut status = status_clone.lock_safe();
                             *status = UpdateStatus::UpToDate;
                         }
                     } else {
-                        let mut status = status_clone.lock().unwrap();
+                        let mut status = status_clone.lock_safe();
                         *status = UpdateStatus::UpToDate;
                     }
                 }
                 Err(err) => {
-                    let mut status = status_clone.lock().unwrap();
+                    let mut status = status_clone.lock_safe();
                     if auto_install {
                         *status = UpdateStatus::Idle;
                     } else {
@@ -203,7 +204,7 @@ impl Updater {
         // Simulate download progress
         for i in 0..=10 {
             {
-                let mut status = status_ref.lock().unwrap();
+                let mut status = status_ref.lock_safe();
                 *status = UpdateStatus::Downloading {
                     progress: i as f32 / 10.0,
                 };
@@ -213,7 +214,7 @@ impl Updater {
         }
 
         {
-            let mut status = status_ref.lock().unwrap();
+            let mut status = status_ref.lock_safe();
             *status = UpdateStatus::Verifying;
         }
         ctx.request_repaint();
@@ -221,7 +222,7 @@ impl Updater {
 
         // Create mock binary at local path (just copy current running exe to represent new file)
         let Some(data_dir) = dirs::data_local_dir() else {
-            let mut status = status_ref.lock().unwrap();
+            let mut status = status_ref.lock_safe();
             *status = UpdateStatus::Failed("Could not resolve local data dir".to_string());
             ctx.request_repaint();
             return;
@@ -237,7 +238,7 @@ impl Updater {
         }
 
         {
-            let mut status = status_ref.lock().unwrap();
+            let mut status = status_ref.lock_safe();
             *status = UpdateStatus::ReadyToInstall {
                 version: version.clone(),
                 local_path: mock_temp_bin,
@@ -248,12 +249,12 @@ impl Updater {
         // Perform mock replacement
         std::thread::sleep(std::time::Duration::from_millis(500));
         {
-            let mut status = status_ref.lock().unwrap();
+            let mut status = status_ref.lock_safe();
             *status = UpdateStatus::Installing;
         }
         ctx.request_repaint();
 
-        let mut status = status_ref.lock().unwrap();
+        let mut status = status_ref.lock_safe();
         // Since we are mocking, we do not overwrite the active binary to prevent breaking the editor's execution flow,
         // but we simulate that it completed successfully and requires restart.
         *status = UpdateStatus::RestartRequired;
@@ -269,13 +270,13 @@ impl Updater {
         bin_name: String,
     ) {
         {
-            let mut status = status_ref.lock().unwrap();
+            let mut status = status_ref.lock_safe();
             *status = UpdateStatus::Downloading { progress: 0.0 };
         }
         ctx.request_repaint();
 
         let Some(data_dir) = dirs::data_local_dir() else {
-            let mut status = status_ref.lock().unwrap();
+            let mut status = status_ref.lock_safe();
             *status = UpdateStatus::Failed("Could not resolve local data dir".to_string());
             ctx.request_repaint();
             return;
@@ -288,7 +289,7 @@ impl Updater {
         match download_file(&bin_url, &temp_bin, &ctx, &status_ref) {
             Ok(_) => {
                 {
-                    let mut status = status_ref.lock().unwrap();
+                    let mut status = status_ref.lock_safe();
                     *status = UpdateStatus::Verifying;
                 }
                 ctx.request_repaint();
@@ -298,7 +299,7 @@ impl Updater {
                     match verify_checksum(&sha_url_str, &temp_bin, &bin_name) {
                         Ok(true) => {}
                         Ok(false) => {
-                            let mut status = status_ref.lock().unwrap();
+                            let mut status = status_ref.lock_safe();
                             *status = UpdateStatus::Failed(
                                 "SHA256 signature verification failed!".to_string(),
                             );
@@ -306,7 +307,7 @@ impl Updater {
                             return;
                         }
                         Err(e) => {
-                            let mut status = status_ref.lock().unwrap();
+                            let mut status = status_ref.lock_safe();
                             *status = UpdateStatus::Failed(format!("Checksum error: {}", e));
                             ctx.request_repaint();
                             return;
@@ -315,7 +316,7 @@ impl Updater {
                 }
 
                 {
-                    let mut status = status_ref.lock().unwrap();
+                    let mut status = status_ref.lock_safe();
                     *status = UpdateStatus::Installing;
                 }
                 ctx.request_repaint();
@@ -323,18 +324,18 @@ impl Updater {
                 // 3. Swap the active binary
                 match replace_binary(&temp_bin) {
                     Ok(_) => {
-                        let mut status = status_ref.lock().unwrap();
+                        let mut status = status_ref.lock_safe();
                         *status = UpdateStatus::RestartRequired;
                     }
                     Err(e) => {
-                        let mut status = status_ref.lock().unwrap();
+                        let mut status = status_ref.lock_safe();
                         *status = UpdateStatus::Failed(format!("Install failed: {}", e));
                     }
                 }
                 ctx.request_repaint();
             }
             Err(e) => {
-                let mut status = status_ref.lock().unwrap();
+                let mut status = status_ref.lock_safe();
                 *status = UpdateStatus::Failed(format!("Download failed: {}", e));
                 ctx.request_repaint();
             }
@@ -386,7 +387,7 @@ fn download_file(
 
         if content_len > 0 {
             let progress = downloaded as f32 / content_len as f32;
-            let mut status = status_ref.lock().unwrap();
+            let mut status = status_ref.lock_safe();
             *status = UpdateStatus::Downloading { progress };
             ctx.request_repaint();
         }

@@ -1,3 +1,4 @@
+use crate::lock_ext::MutexExt;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::{Duration, Instant};
 
@@ -131,7 +132,7 @@ pub fn spawn_background_worker(
                     "0".to_string()
                 };
 
-                let active_profile = active_profile_ref.lock().unwrap().clone();
+                let active_profile = active_profile_ref.lock_safe().clone();
                 let update = DeviceStateUpdate {
                     unifying_receiver_connected: unifying,
                     bolt_receiver_connected: bolt,

@@ -1,3 +1,4 @@
+use crate::lock_ext::MutexExt;
 use super::network::{send_event_to_peer, FlowEvent};
 use super::FLOW_MANAGER;
 use arboard::{Clipboard, ImageData};
@@ -55,7 +56,7 @@ pub fn run_clipboard_loop() {
             let clipboard = clipboard_opt.as_mut().unwrap();
             match clipboard.get_text() {
                 Ok(text) => {
-                    let mut last = LAST_TEXT.lock().unwrap();
+                    let mut last = LAST_TEXT.lock_safe();
                     if text != *last && !text.is_empty() {
                         *last = text.clone();
 
@@ -114,11 +115,11 @@ pub fn run_clipboard_loop() {
                 match clipboard.get_image() {
                     Ok(img) => {
                         let sig = fast_image_sig(&img);
-                        let mut last_sig = LAST_IMG_SIG.lock().unwrap();
+                        let mut last_sig = LAST_IMG_SIG.lock_safe();
                         if sig != *last_sig && !img.bytes.is_empty() {
                             use sha2::{Digest, Sha256};
                             let hash = format!("{:x}", Sha256::digest(img.bytes.as_ref()));
-                            let mut last_hash = LAST_IMG_HASH.lock().unwrap();
+                            let mut last_hash = LAST_IMG_HASH.lock_safe();
                             if hash != *last_hash {
                                 *last_hash = hash;
                                 *last_sig = sig;
@@ -167,7 +168,7 @@ fn encode_rgba_to_png(img: &arboard::ImageData) -> anyhow::Result<Vec<u8>> {
 
 pub fn set_local_clipboard_text(text: String) -> anyhow::Result<()> {
     let mut clipboard = Clipboard::new()?;
-    *LAST_TEXT.lock().unwrap() = text.clone();
+    *LAST_TEXT.lock_safe() = text.clone();
     clipboard.set_text(text)?;
     log::info!("[Flow Clipboard] Clipboard text synchronized from remote.");
     Ok(())
@@ -184,14 +185,21 @@ pub fn set_local_clipboard_image(png_bytes: Vec<u8>) -> anyhow::Result<()> {
         // Update local hash tracker to prevent echo loop
         use sha2::{Digest, Sha256};
         let hash = format!("{:x}", Sha256::digest(&raw_bytes));
-        *LAST_IMG_HASH.lock().unwrap() = hash;
 
         let img_data = ImageData {
             width: width as usize,
             height: height as usize,
             bytes: std::borrow::Cow::Owned(raw_bytes),
         };
-        *LAST_IMG_SIG.lock().unwrap() = fast_image_sig(&img_data);
+        let sig = fast_image_sig(&img_data);
+
+        // Standardize lock order: SIG then HASH to avoid deadlocks with run_clipboard_loop
+        {
+            let mut last_sig = LAST_IMG_SIG.lock_safe();
+            let mut last_hash = LAST_IMG_HASH.lock_safe();
+            *last_hash = hash;
+            *last_sig = sig;
+        }
         clipboard.set_image(img_data)?;
         log::info!("[Flow Clipboard] Clipboard image synchronized from remote.");
     }

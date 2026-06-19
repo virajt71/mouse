@@ -313,7 +313,7 @@ mouse/                                       // Project root
 Install build dependencies on Debian/Ubuntu:
 
 ```sh
-sudo apt install libhidapi-dev libudev-dev libgtk-3-dev pkg-config build-essential
+sudo apt install libhidapi-dev libudev-dev libgtk-3-dev libglib2.0-dev pkg-config build-essential
 ```
 
 ---
@@ -490,4 +490,4 @@ If the keyboard is not responding or keyboard grabs fail:
 
 ## License
 
-This project is private / proprietary. All rights reserved.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
