@@ -1,3 +1,4 @@
+use crate::lock_ext::MutexExt;
 use anyhow::Result;
 use evdev::{Device, EventType, InputEvent, Key};
 use std::collections::HashMap;
@@ -333,7 +334,7 @@ impl KeyboardHook {
                                         }
 
                                         if should_forward {
-                                            if let Some(uinput_lock) = uinput_device.lock().unwrap().as_mut() {
+                                            if let Some(uinput_lock) = uinput_device.lock_safe().as_mut() {
                                                 let _ = uinput_lock.emit(&[event]);
                                             }
                                         }

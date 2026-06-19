@@ -1,3 +1,4 @@
+use engine::lock_ext::MutexExt;
 use super::{render_spaced_header, section_card};
 use crate::theme;
 use crate::translation::tr;
@@ -58,7 +59,7 @@ pub fn render_section_updates(
                     engine.reload_config();
 
                     if config.settings.install_updates && !was_auto {
-                        let status = updater.status.lock().unwrap().clone();
+                        let status = updater.status.lock_safe().clone();
                         if let UpdateStatus::Available {
                             version,
                             bin_url,
@@ -111,7 +112,7 @@ pub fn render_section_updates(
         // ── Manual check button (when auto-update is OFF) ──
         if !config.settings.install_updates {
             ui.add_space(10.0);
-            let status = updater.status.lock().unwrap().clone();
+            let status = updater.status.lock_safe().clone();
             let is_busy = matches!(
                 status,
                 UpdateStatus::Checking
@@ -142,7 +143,7 @@ pub fn render_section_updates(
         }
 
         // ── Divider ──
-        let status = updater.status.lock().unwrap().clone();
+        let status = updater.status.lock_safe().clone();
         if status != UpdateStatus::Idle {
             ui.add_space(12.0);
             let divider_rect = ui.allocate_space(vec2(ui.available_width(), 1.0)).1;

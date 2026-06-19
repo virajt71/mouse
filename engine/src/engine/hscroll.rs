@@ -1,10 +1,11 @@
+use crate::lock_ext::MutexExt;
 use super::Engine;
 use std::time::{Duration, Instant};
 
 impl Engine {
     pub fn handle_hscroll_event(&self, delta: i32, action_id: &str) {
         let threshold = {
-            let cfg = self.inner.config.lock().unwrap();
+            let cfg = self.inner.config.lock_safe();
             cfg.settings.hscroll_threshold as f32
         };
         let now = Instant::now();
@@ -29,16 +30,16 @@ impl Engine {
         };
 
         {
-            let last_fire = last_fire_ref.lock().unwrap();
+            let last_fire = last_fire_ref.lock_safe();
             if now.duration_since(*last_fire) < cooldown {
-                let mut accum = accum_ref.lock().unwrap();
+                let mut accum = accum_ref.lock_safe();
                 *accum = 0.0;
                 return;
             }
         }
 
         let step = (delta.abs() as f32).min(1.0);
-        let mut accum = accum_ref.lock().unwrap();
+        let mut accum = accum_ref.lock_safe();
         *accum += step;
 
         if *accum < threshold {
@@ -46,7 +47,7 @@ impl Engine {
         }
 
         *accum = 0.0;
-        *last_fire_ref.lock().unwrap() = now;
+        *last_fire_ref.lock_safe() = now;
 
         log::info!("[Engine] HScroll action triggered: {}", action_id);
         self.execute_engine_action(action_id);

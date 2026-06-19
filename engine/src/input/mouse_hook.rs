@@ -1,3 +1,4 @@
+use crate::lock_ext::MutexExt;
 use anyhow::{anyhow, Result};
 use evdev::{Device, EventType, InputEvent, Key, RelativeAxisType};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -216,7 +217,7 @@ impl MouseHook {
 
                                                     // Side buttons, middle button, etc.
                                                     if key == Key::BTN_SIDE || key == Key::BTN_EXTRA || key == Key::BTN_MIDDLE {
-                                                        let is_blocked = blocked_buttons.lock().unwrap().contains(&key);
+                                                        let is_blocked = blocked_buttons.lock_safe().contains(&key);
                                                         on_event(MouseHookEvent::Button { key, down });
                                                         if is_blocked {
                                                             should_forward = false;
@@ -252,7 +253,7 @@ impl MouseHook {
                                                         delta: value,
                                                     });
                                                     // Write directly to uinput with inverted value
-                                                    if let Some(uinput_lock) = uinput_device.lock().unwrap().as_mut() {
+                                                    if let Some(uinput_lock) = uinput_device.lock_safe().as_mut() {
                                                         let evs = [
                                                             InputEvent::new(EventType::RELATIVE, code.0, value),
                                                             InputEvent::new(EventType::SYNCHRONIZATION, 0, 0),
@@ -273,7 +274,7 @@ impl MouseHook {
                                                     // the scroll via handle_hscroll_event and raw forwarding is
                                                     // suppressed to prevent double-firing (§3.1).
                                                     if !block_hscroll.load(Ordering::SeqCst) {
-                                                        if let Some(uinput_lock) = uinput_device.lock().unwrap().as_mut() {
+                                                        if let Some(uinput_lock) = uinput_device.lock_safe().as_mut() {
                                                             let evs = [
                                                                 InputEvent::new(EventType::RELATIVE, code.0, value),
                                                                 InputEvent::new(EventType::SYNCHRONIZATION, 0, 0),
@@ -289,7 +290,7 @@ impl MouseHook {
                                         }
 
                                         if should_forward {
-                                            if let Some(uinput_lock) = uinput_device.lock().unwrap().as_mut() {
+                                            if let Some(uinput_lock) = uinput_device.lock_safe().as_mut() {
                                                 let _ = uinput_lock.emit(&[event]);
                                             }
                                         }
