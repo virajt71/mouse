@@ -1,7 +1,7 @@
 use crate::theme;
 use crate::views::customization::mappings::CustomizingButton;
 use crate::widgets::{
-    draw_backlighting_icon, draw_easy_switch_icon, draw_equalizer_icon, draw_flow_icon,
+    draw_backlighting_icon, draw_equalizer_icon, draw_flow_icon,
     draw_hamburger_icon, draw_keys_icon, draw_mouse_outline_icon, draw_settings_slider_icon,
 };
 use eframe::egui;
@@ -34,7 +34,6 @@ pub fn draw_sidebar(
             &[
                 (SidebarTab::Buttons, "KEYS"),
                 (SidebarTab::PointAndScroll, "BACKLIGHTING"),
-                (SidebarTab::Flow, "EASY-SWITCH"),
                 (SidebarTab::Settings, "SETTINGS"),
             ][..]
         } else {
@@ -90,7 +89,7 @@ pub fn draw_sidebar(
                         SidebarTab::PointAndScroll => {
                             draw_backlighting_icon(ui, icon_center, text_color)
                         }
-                        SidebarTab::Flow => draw_easy_switch_icon(ui, icon_center, text_color),
+                        SidebarTab::Flow => {}
                         SidebarTab::Settings => {
                             draw_settings_slider_icon(ui, icon_center, text_color)
                         }

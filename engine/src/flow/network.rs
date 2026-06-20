@@ -64,6 +64,7 @@ pub fn run_discovery_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) 
     thread_spawn_broadcast(socket_bc, cfg_bc);
 
     let mut buf = [0u8; 1024];
+    let mut last_detected_peer_time: Option<Instant> = None;
     loop {
         if let Ok((len, src)) = socket.recv_from(&mut buf) {
             let msg = String::from_utf8_lossy(&buf[..len]);
@@ -111,6 +112,44 @@ pub fn run_discovery_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) 
         {
             let mut peers = DISCOVERED_PEERS.write().unwrap();
             peers.retain(|_, (_, time)| time.elapsed() < Duration::from_secs(10));
+        }
+
+        // Auto-disable flow if enabled but no peers are detected/connected for a certain period.
+        let flow_enabled = {
+            let cfg = engine_inner.config.lock_safe();
+            cfg.settings.flow_enabled
+        };
+
+        if flow_enabled {
+            let has_active = !ACTIVE_CONNECTIONS.read().unwrap().is_empty();
+            let has_discovered = !DISCOVERED_PEERS.read().unwrap().is_empty();
+            if has_active || has_discovered {
+                last_detected_peer_time = Some(Instant::now());
+            } else {
+                let last_time = last_detected_peer_time.get_or_insert_with(Instant::now);
+                if last_time.elapsed() > Duration::from_secs(15) {
+                    log::info!("[Flow Network] No other Flow devices detected for 15s. Automatically disabling Flow.");
+                    {
+                        let mut cfg = engine_inner.config.lock_safe();
+                        cfg.settings.flow_enabled = false;
+                        let _ = cfg.save();
+                        
+                        // Update cached settings in FLOW_MANAGER
+                        FLOW_MANAGER.update_config(&cfg);
+                        
+                        // Increment generation to trigger GUI reload
+                        engine_inner.config_generation.fetch_add(1, Ordering::SeqCst);
+                        if let Ok(lock) = engine_inner.config_change_listener.lock() {
+                            if let Some(ref callback) = *lock {
+                                callback();
+                            }
+                        }
+                    }
+                    last_detected_peer_time = None;
+                }
+            }
+        } else {
+            last_detected_peer_time = None;
         }
     }
 }
