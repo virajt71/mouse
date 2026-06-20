@@ -143,25 +143,6 @@ pub fn draw_backlighting_icon(ui: &egui::Ui, center: egui::Pos2, color: Color32)
     }
 }
 
-pub fn draw_easy_switch_icon(ui: &egui::Ui, center: egui::Pos2, color: Color32) {
-    let painter = ui.painter();
-    let stroke = Stroke::new(1.2, color);
-
-    // Laptop screen (back/left)
-    let screen = Rect::from_min_max(center + vec2(-7.0, -5.0), center + vec2(3.0, 2.0));
-    painter.rect_stroke(screen, 1.0, stroke);
-
-    // Laptop base
-    painter.line_segment([center + vec2(-9.0, 3.0), center + vec2(5.0, 3.0)], stroke);
-
-    // Phone/Tablet (front/right overlapping)
-    let phone = Rect::from_min_max(center + vec2(1.0, -1.0), center + vec2(7.0, 6.0));
-    painter.rect_filled(phone, 1.0, Color32::from_rgb(0x11, 0x11, 0x11));
-    painter.rect_stroke(phone, 1.0, stroke);
-
-    // Small home button dot on phone
-    painter.circle_filled(center + vec2(4.0, 4.5), 0.7, color);
-}
 
 pub fn draw_settings_slider_icon(ui: &egui::Ui, center: egui::Pos2, color: Color32) {
     let painter = ui.painter();

@@ -628,9 +628,7 @@ pub fn show(
                     device_texture,
                 );
             }
-            SidebarTab::Flow => {
-                tabs::show_keyboard_easy_switch_tab(&mut canvas_ui, engine, config);
-            }
+            SidebarTab::Flow => {}
             SidebarTab::Settings => {
                 show_profiles_settings_tab(&mut canvas_ui, engine, config, true);
             }
