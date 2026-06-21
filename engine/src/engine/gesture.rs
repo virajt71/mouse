@@ -258,6 +258,22 @@ impl Engine {
             HidppEvent::BacklightChanged { enabled, effect_id } => {
                 self.apply_backlight_from_hid(enabled, effect_id);
             }
+            HidppEvent::HostChannelChanged(ch) => {
+                log::info!("[Engine] Host channel changed to {}", ch);
+                let changed = {
+                    let mut cfg = self.inner.config.lock_safe();
+                    if cfg.settings.flow_local_channel_index != ch {
+                        cfg.settings.flow_local_channel_index = ch;
+                        let _ = cfg.save();
+                        true
+                    } else {
+                        false
+                    }
+                };
+                if changed {
+                    self.increment_config_generation(&self.inner.config.lock_safe());
+                }
+            }
         }
     }
 
