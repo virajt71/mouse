@@ -577,6 +577,11 @@ fn process_peer_events(
 
                     FLOW_MANAGER.set_active_peer(None);
 
+                    let mode = FLOW_MANAGER.flow_mouse_mode.read().unwrap().clone();
+                    if mode == "hardware" {
+                        crate::flow::switching::trigger_hidpp_channel_switch(0);
+                    }
+
                     let sw = *FLOW_MANAGER.screen_width.read().unwrap();
                     let sh = *FLOW_MANAGER.screen_height.read().unwrap();
 
