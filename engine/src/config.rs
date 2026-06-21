@@ -41,6 +41,18 @@ fn default_local_name() -> String {
     }
 }
 
+fn default_edge_threshold() -> i32 {
+    5
+}
+
+fn default_hold_ctrl_only() -> bool {
+    false
+}
+
+fn default_handoff_timeout_ms() -> u64 {
+    500
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct Settings {
@@ -79,6 +91,12 @@ pub struct Settings {
     pub flow_keyboard_linking: bool,
     #[serde(default)]
     pub flow_local_channel_index: u8,
+    #[serde(default = "default_edge_threshold")]
+    pub flow_edge_threshold: i32,
+    #[serde(default = "default_hold_ctrl_only")]
+    pub flow_hold_ctrl_only: bool,
+    #[serde(default = "default_handoff_timeout_ms")]
+    pub flow_handoff_timeout_ms: u64,
 }
 
 impl Default for Settings {
@@ -115,6 +133,9 @@ impl Default for Settings {
             flow_mouse_mode: "software".to_string(),
             flow_keyboard_linking: true,
             flow_local_channel_index: 0,
+            flow_edge_threshold: 5,
+            flow_hold_ctrl_only: false,
+            flow_handoff_timeout_ms: 500,
         }
     }
 }

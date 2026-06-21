@@ -14,7 +14,7 @@ impl eframe::App for MouserApp {
 
         if !is_searching_active {
             mouser_engine::flow::network::IS_SEARCHING
-                .store(false, std::sync::atomic::Ordering::SeqCst);
+                .store(false, std::sync::atomic::Ordering::Relaxed);
         }
 
         // ── Startup centering / update check ────────────────────────────────

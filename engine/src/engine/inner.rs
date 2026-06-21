@@ -20,7 +20,17 @@ pub struct GestureState {
     pub button: Option<String>,
 }
 
+#[derive(Clone, Default, Debug)]
+pub struct CachedDeviceState {
+    pub device_connected: bool,
+    pub device_names: Vec<String>,
+    pub selected_device_name: String,
+    pub selected_device_layout: String,
+    pub active_host_channel: Option<u8>,
+}
+
 pub struct EngineInner {
+    pub cached_device_state: Mutex<CachedDeviceState>,
     pub config: Mutex<Config>,
     pub config_generation: AtomicU64,
     pub key_simulator: KeySimulator,
@@ -62,6 +72,9 @@ pub struct EngineInner {
     pub cached_gesture_deadzone: AtomicU32,
     pub cached_gesture_timeout_ms: AtomicU64,
     pub cached_gesture_cooldown_ms: AtomicU64,
+
+    // Cached scroll settings
+    pub cached_hscroll_threshold: AtomicU32,
 
     /// Modifier key state updated by KeyboardHook threads.
     /// Used by the flow switcher to gate edge transitions on hold-key (§4.2).

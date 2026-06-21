@@ -10,11 +10,11 @@ pub fn run_edge_detection_loop(engine_inner: Arc<crate::engine::inner::EngineInn
     use std::sync::atomic::Ordering;
 
     loop {
-        if !engine_inner.running.load(Ordering::SeqCst) {
+        if !engine_inner.running.load(Ordering::Acquire) {
             break;
         }
 
-        let enabled = FLOW_MANAGER.flow_enabled.load(Ordering::SeqCst);
+        let enabled = FLOW_MANAGER.flow_enabled.load(Ordering::Relaxed);
 
         if !enabled {
             std::thread::sleep(Duration::from_millis(1000));
@@ -29,12 +29,12 @@ pub fn run_edge_detection_loop(engine_inner: Arc<crate::engine::inner::EngineInn
                 let root = screen.root;
 
                 loop {
-                    if !engine_inner.running.load(Ordering::SeqCst) {
+                    if !engine_inner.running.load(Ordering::Acquire) {
                         return;
                     }
 
                     let (inner_enabled, hold_key) = (
-                        FLOW_MANAGER.flow_enabled.load(Ordering::SeqCst),
+                        FLOW_MANAGER.flow_enabled.load(Ordering::Relaxed),
                         FLOW_MANAGER.flow_hold_key.read().unwrap().clone(),
                     );
 

@@ -32,10 +32,10 @@ impl ModifierState {
     pub fn is_satisfied(&self, hold_key: &str) -> bool {
         match hold_key {
             "none" | "" => true,
-            "ctrl" => self.ctrl.load(Ordering::SeqCst),
-            "alt" => self.alt.load(Ordering::SeqCst),
-            "shift" => self.shift.load(Ordering::SeqCst),
-            "meta" | "super" => self.meta.load(Ordering::SeqCst),
+            "ctrl" => self.ctrl.load(Ordering::Relaxed),
+            "alt" => self.alt.load(Ordering::Relaxed),
+            "shift" => self.shift.load(Ordering::Relaxed),
+            "meta" | "super" => self.meta.load(Ordering::Relaxed),
             _ => {
                 log::warn!("[ModifierState] Unknown hold_key value: '{}' — treating as satisfied", hold_key);
                 true

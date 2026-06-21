@@ -26,6 +26,10 @@ impl Engine {
             self.inner
                 .cached_gesture_cooldown_ms
                 .store(cfg.settings.gesture_cooldown_ms, Ordering::Relaxed);
+            self.inner.cached_hscroll_threshold.store(
+                cfg.settings.hscroll_threshold.max(0) as u32,
+                Ordering::Relaxed,
+            );
             (target, mappings)
         };
 
@@ -44,7 +48,7 @@ impl Engine {
         *self.inner.blocked_buttons_arc.lock_safe() = blocked;
         self.inner
             .block_hscroll_arc
-            .store(hscroll_blocked, Ordering::SeqCst);
+            .store(hscroll_blocked, Ordering::Relaxed);
 
         self.apply_keyboard_backlight();
     }
@@ -375,16 +379,19 @@ impl Engine {
 
         self.inner
             .invert_vscroll_arc
-            .store(invert_vscroll, Ordering::SeqCst);
+            .store(invert_vscroll, Ordering::Relaxed);
         self.inner
             .invert_hscroll_arc
-            .store(invert_hscroll, Ordering::SeqCst);
+            .store(invert_hscroll, Ordering::Relaxed);
         self.inner
             .cached_gesture_threshold
             .store(gesture_threshold.max(0) as u32, Ordering::Relaxed);
         self.inner
             .cached_gesture_deadzone
             .store(gesture_deadzone.max(0) as u32, Ordering::Relaxed);
+        self.inner
+            .cached_hscroll_threshold
+            .store(hscroll_threshold.max(0) as u32, Ordering::Relaxed);
 
         let inner_clone = self.inner.clone();
         thread::spawn(move || {
@@ -447,10 +454,10 @@ impl Engine {
 
         self.inner
             .invert_vscroll_arc
-            .store(invert_vscroll, Ordering::SeqCst);
+            .store(invert_vscroll, Ordering::Relaxed);
         self.inner
             .invert_hscroll_arc
-            .store(invert_hscroll, Ordering::SeqCst);
+            .store(invert_hscroll, Ordering::Relaxed);
 
         self.refresh_active_profile();
 

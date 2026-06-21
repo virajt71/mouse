@@ -113,7 +113,7 @@ impl Engine {
                 }
             }
             MouseHookEvent::Relative { dx, dy } => {
-                if self.inner.gesture_active_arc.load(Ordering::SeqCst) {
+                if self.inner.gesture_active_arc.load(Ordering::Relaxed) {
                     self.handle_gesture_move(dx as i16, dy as i16, "evdev");
                 }
             }
@@ -273,15 +273,16 @@ impl Engine {
                 if changed {
                     self.increment_config_generation(&self.inner.config.lock_safe());
                 }
+                self.update_cached_device_state();
             }
         }
     }
 
     pub fn handle_gesture_down(&self) {
         log::debug!("[Engine] Gesture track: button down");
-        self.inner.gesture_active_arc.store(true, Ordering::SeqCst);
-        self.inner.gesture_tracking.store(true, Ordering::SeqCst);
-        self.inner.gesture_triggered.store(false, Ordering::SeqCst);
+        self.inner.gesture_active_arc.store(true, Ordering::Relaxed);
+        self.inner.gesture_tracking.store(true, Ordering::Relaxed);
+        self.inner.gesture_triggered.store(false, Ordering::Relaxed);
         {
             let mut state = self.inner.gesture_state.lock_safe();
             state.delta_x = 0.0;
@@ -305,15 +306,15 @@ impl Engine {
                 .take()
                 .unwrap_or_else(|| "gesture".to_string());
             state.input_source = None;
-            triggered = self.inner.gesture_triggered.load(Ordering::SeqCst);
+            triggered = self.inner.gesture_triggered.load(Ordering::Relaxed);
         }
 
-        if !self.inner.gesture_active_arc.swap(false, Ordering::SeqCst) {
+        if !self.inner.gesture_active_arc.swap(false, Ordering::Relaxed) {
             // Was already inactive — button has been cleared above, nothing else to do.
             return;
         }
 
-        self.inner.gesture_tracking.store(false, Ordering::SeqCst);
+        self.inner.gesture_tracking.store(false, Ordering::Relaxed);
 
         if !triggered {
             let mapping = self
@@ -356,8 +357,8 @@ impl Engine {
         let idle_time = now.duration_since(state.last_move_at);
         if idle_time > timeout {
             log::debug!("[Engine] Segment timeout, resetting accumulator");
-            self.inner.gesture_tracking.store(true, Ordering::SeqCst);
-            self.inner.gesture_triggered.store(false, Ordering::SeqCst);
+            self.inner.gesture_tracking.store(true, Ordering::Relaxed);
+            self.inner.gesture_triggered.store(false, Ordering::Relaxed);
             state.delta_x = 0.0;
             state.delta_y = 0.0;
         }
@@ -376,9 +377,9 @@ impl Engine {
             state.input_source = Some(source.to_string());
         }
 
-        if !self.inner.gesture_tracking.load(Ordering::SeqCst) {
-            self.inner.gesture_tracking.store(true, Ordering::SeqCst);
-            self.inner.gesture_triggered.store(false, Ordering::SeqCst);
+        if !self.inner.gesture_tracking.load(Ordering::Relaxed) {
+            self.inner.gesture_tracking.store(true, Ordering::Relaxed);
+            self.inner.gesture_triggered.store(false, Ordering::Relaxed);
             state.delta_x = 0.0;
             state.delta_y = 0.0;
         }
@@ -397,7 +398,7 @@ impl Engine {
             return;
         }
 
-        if self.inner.gesture_triggered.load(Ordering::SeqCst) {
+        if self.inner.gesture_triggered.load(Ordering::Relaxed) {
             return;
         }
 
@@ -422,7 +423,7 @@ impl Engine {
         };
 
         if let Some(action_key) = gesture_action {
-            self.inner.gesture_triggered.store(true, Ordering::SeqCst);
+            self.inner.gesture_triggered.store(true, Ordering::Relaxed);
             state.cooldown_until = now + cooldown;
 
             let btn_key = state

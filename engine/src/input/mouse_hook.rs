@@ -83,7 +83,7 @@ impl MouseHook {
         gesture_active: Arc<AtomicBool>,
         uinput_device: Arc<std::sync::Mutex<Option<evdev::uinput::VirtualDevice>>>,
     ) -> Result<()> {
-        if self.running.load(Ordering::SeqCst) {
+        if self.running.load(Ordering::Acquire) {
             return Ok(());
         }
 
@@ -120,7 +120,7 @@ impl MouseHook {
             dev_path
         );
 
-        self.running.store(true, Ordering::SeqCst);
+        self.running.store(true, Ordering::Release);
         let running = self.running.clone();
         let on_event = self.on_event.clone();
 
@@ -134,7 +134,7 @@ impl MouseHook {
                 let mut pending_dx = 0i32;
                 let mut pending_dy = 0i32;
 
-                while running.load(Ordering::SeqCst) {
+                while running.load(Ordering::Acquire) {
                     let timeout = PollTimeout::try_from(Duration::from_millis(200)).unwrap_or(PollTimeout::NONE);
                     match poll(&mut fds, timeout) {
                         Ok(n) if n > 0 => {
@@ -152,15 +152,37 @@ impl MouseHook {
 
                                                 // Only accumulate when NOT forwarding (else peer already got it below)
                                                 if !crate::flow::FLOW_MANAGER.is_forwarding_to_remote() {
-                                                    let enabled = crate::flow::FLOW_MANAGER.flow_enabled.load(Ordering::SeqCst);
+                                                    let enabled = crate::flow::FLOW_MANAGER.flow_enabled.load(Ordering::Relaxed);
                                                     if enabled {
-                                                        if let Some(target) = crate::flow::FLOW_MANAGER.handle_raw_motion(dx, dy) {
-                                                            log::info!("[Flow] Edge transition → {}", target);
-                                                            crate::flow::FLOW_MANAGER.set_active_peer(Some(target.clone()));
+                                                        if let Some(edge_ev) = crate::flow::FLOW_MANAGER.handle_raw_motion(dx, dy) {
                                                             let mode = crate::flow::FLOW_MANAGER.flow_mouse_mode.read().unwrap().clone();
                                                             if mode == "hardware" {
-                                                                if let Some(idx) = crate::flow::switching::get_peer_channel_index(&target) {
-                                                                    crate::flow::switching::trigger_hidpp_channel_switch(idx);
+                                                                let hold_key = crate::flow::FLOW_MANAGER.flow_hold_key.read().unwrap().clone();
+                                                                let ctrl_only = crate::flow::FLOW_MANAGER.flow_hold_ctrl_only.load(Ordering::Relaxed);
+                                                                let mut satisfied = crate::flow::switching::is_hold_key_satisfied(&hold_key);
+                                                                if ctrl_only {
+                                                                    satisfied = satisfied && crate::flow::edge::is_ctrl_held();
+                                                                }
+                                                                if satisfied {
+                                                                    crate::flow::edge::emit_edge_event(edge_ev);
+                                                                }
+                                                            } else {
+                                                                // Legacy/existing software mode logic:
+                                                                if let Some(peer) = crate::flow::topology::resolve_peer(edge_ev) {
+                                                                    log::info!("[Flow] Software mode edge transition → {}", peer.peer_id);
+                                                                    crate::flow::FLOW_MANAGER.set_active_peer(Some(peer.peer_id.clone()));
+                                                                    
+                                                                    // Reset coordinates to opposite edge to prevent loop bouncing
+                                                                    let sw = *crate::flow::FLOW_MANAGER.screen_width.read().unwrap();
+                                                                    let sh = *crate::flow::FLOW_MANAGER.screen_height.read().unwrap();
+                                                                    let mut vx = crate::flow::FLOW_MANAGER.virtual_x.lock_safe();
+                                                                    let mut vy = crate::flow::FLOW_MANAGER.virtual_y.lock_safe();
+                                                                    match edge_ev {
+                                                                        crate::flow::edge::EdgeEvent::Left => *vx = sw - 20,
+                                                                        crate::flow::edge::EdgeEvent::Right => *vx = 20,
+                                                                        crate::flow::edge::EdgeEvent::Top => *vy = sh - 20,
+                                                                        crate::flow::edge::EdgeEvent::Bottom => *vy = 20,
+                                                                    }
                                                                 }
                                                             }
                                                         }
@@ -237,7 +259,7 @@ impl MouseHook {
                                                 let mut value = event.value();
 
                                                 if code == RelativeAxisType::REL_X || code == RelativeAxisType::REL_Y {
-                                                    if gesture_active.load(Ordering::SeqCst) {
+                                                    if gesture_active.load(Ordering::Relaxed) {
                                                         // Suppress cursor move while gesture is active, accumulate dx/dy instead
                                                         let dx = if code == RelativeAxisType::REL_X { value } else { 0 };
                                                         let dy = if code == RelativeAxisType::REL_Y { value } else { 0 };
@@ -245,7 +267,7 @@ impl MouseHook {
                                                         should_forward = false;
                                                     }
                                                 } else if code == RelativeAxisType::REL_WHEEL {
-                                                    if invert_vscroll.load(Ordering::SeqCst) {
+                                                    if invert_vscroll.load(Ordering::Relaxed) {
                                                         value = -value;
                                                     }
                                                     on_event(MouseHookEvent::Scroll {
@@ -262,7 +284,7 @@ impl MouseHook {
                                                     }
                                                     should_forward = false;
                                                 } else if code == RelativeAxisType::REL_HWHEEL {
-                                                    if invert_hscroll.load(Ordering::SeqCst) {
+                                                    if invert_hscroll.load(Ordering::Relaxed) {
                                                         value = -value;
                                                     }
                                                     on_event(MouseHookEvent::Scroll {
@@ -273,7 +295,7 @@ impl MouseHook {
                                                     // mapped for hscroll. When block_hscroll=true, the engine handles
                                                     // the scroll via handle_hscroll_event and raw forwarding is
                                                     // suppressed to prevent double-firing (§3.1).
-                                                    if !block_hscroll.load(Ordering::SeqCst) {
+                                                    if !block_hscroll.load(Ordering::Relaxed) {
                                                         if let Some(uinput_lock) = uinput_device.lock_safe().as_mut() {
                                                             let evs = [
                                                                 InputEvent::new(EventType::RELATIVE, code.0, value),
@@ -335,7 +357,7 @@ impl MouseHook {
 
                 let _ = dev.ungrab();
                 log::info!("[MouseHook] Ungrabbed physical mouse: {}", dev_path);
-                running.store(false, Ordering::SeqCst);
+                running.store(false, Ordering::Release);
             })
             .expect("Failed to spawn MouseHook thread");
 
@@ -344,12 +366,12 @@ impl MouseHook {
     }
 
     pub fn is_running(&self) -> bool {
-        self.running.load(Ordering::SeqCst)
+        self.running.load(Ordering::Acquire)
     }
 
     pub fn stop(&mut self) {
         log::info!("[MouseHook] Stopping listener...");
-        self.running.store(false, Ordering::SeqCst);
+        self.running.store(false, Ordering::Release);
         if let Some(handle) = self.thread_handle.take() {
             let _ = handle.join();
         }

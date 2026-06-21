@@ -53,7 +53,11 @@ fn main() -> Result<(), eframe::Error> {
                 flexi_logger::Naming::Numbers,
                 flexi_logger::Cleanup::KeepLogFiles(5), // Keep 5 files
             )
-            .duplicate_to_stdout(flexi_logger::Duplicate::All) // Show in stdout/stderr as well
+            .duplicate_to_stdout(if debug {
+                flexi_logger::Duplicate::All
+            } else {
+                flexi_logger::Duplicate::None
+            })
             .start()
             .expect("Failed to initialize logger");
 

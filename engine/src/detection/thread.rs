@@ -28,11 +28,11 @@ impl AppDetector {
     }
 
     pub fn start(&mut self) {
-        if self.running.load(Ordering::SeqCst) {
+        if self.running.load(Ordering::Acquire) {
             return;
         }
 
-        self.running.store(true, Ordering::SeqCst);
+        self.running.store(true, Ordering::Release);
         let running = self.running.clone();
         let interval = self.interval;
         let on_change = self.on_change.clone();
@@ -44,7 +44,7 @@ impl AppDetector {
                 let mut tool_warned = false;
                 let mut x11_conn = None;
 
-                while running.load(Ordering::SeqCst) {
+                while running.load(Ordering::Acquire) {
                     if x11_conn.is_none() {
                         if let Ok(display) = std::env::var("DISPLAY") {
                             if !display.is_empty() {
@@ -102,11 +102,11 @@ impl AppDetector {
     }
 
     pub fn stop(&mut self) {
-        if !self.running.load(Ordering::SeqCst) {
+        if !self.running.load(Ordering::Acquire) {
             return;
         }
 
-        self.running.store(false, Ordering::SeqCst);
+        self.running.store(false, Ordering::Release);
         if let Some(handle) = self.thread_handle.take() {
             let _ = handle.join();
         }

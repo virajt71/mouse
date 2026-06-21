@@ -67,7 +67,7 @@ impl Engine {
             *self.inner.blocked_buttons_arc.lock_safe() = blocked;
             self.inner
                 .block_hscroll_arc
-                .store(hscroll_blocked, Ordering::SeqCst);
+                .store(hscroll_blocked, Ordering::Relaxed);
         }
     }
 }
