@@ -113,42 +113,17 @@ pub fn change_host(device: &hidapi::HidDevice, target_channel: u8) -> Result<()>
         dev_idx
     );
 
-    // 2. Call setCurrentHost (try typical short write function index 0x10, fallback to function 1)
-    let mut success = false;
-
-    log::info!("[HID++ Channel Switch] Attempting to set host channel via function 0x10...");
-    match request_raw(
-        device,
-        dev_idx,
-        change_host_idx,
-        0x10,
-        &[target_channel, 0x00, 0x00],
-        1000,
-    ) {
+    // 2. Call setCurrentHost (function index 1)
+    log::info!("[HID++ Channel Switch] Setting host channel via function 1...");
+    match request_raw(device, dev_idx, change_host_idx, 1, &[target_channel], 1000) {
         Ok(Some(_)) => {
-            log::info!("[HID++ Channel Switch] Function 0x10 succeeded.");
-            success = true;
+            log::info!("[HID++ Channel Switch] Function 1 succeeded.");
         }
         other => {
-            log::warn!(
-                "[HID++ Channel Switch] Function 0x10 failed or returned None: {:?}",
+            return Err(anyhow!(
+                "Function 1 (setCurrentHost) failed or returned None: {:?}",
                 other
-            );
-        }
-    }
-
-    if !success {
-        log::info!("[HID++ Channel Switch] Falling back to function 1...");
-        match request_raw(device, dev_idx, change_host_idx, 1, &[target_channel], 1000) {
-            Ok(Some(_)) => {
-                log::info!("[HID++ Channel Switch] Function 1 succeeded.");
-            }
-            other => {
-                return Err(anyhow!(
-                    "Both function 0x10 and function 1 failed: {:?}",
-                    other
-                ));
-            }
+            ));
         }
     }
 
