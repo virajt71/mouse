@@ -1,13 +1,11 @@
 use crate::lock_ext::MutexExt;
 use super::Engine;
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 impl Engine {
     pub fn handle_hscroll_event(&self, delta: i32, action_id: &str) {
-        let threshold = {
-            let cfg = self.inner.config.lock_safe();
-            cfg.settings.hscroll_threshold as f32
-        };
+        let threshold = self.inner.cached_hscroll_threshold.load(Ordering::Relaxed) as f32;
         let now = Instant::now();
 
         let is_volume = action_id == "volume_up" || action_id == "volume_down";

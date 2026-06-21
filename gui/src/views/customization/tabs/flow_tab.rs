@@ -42,20 +42,20 @@ pub fn show_flow_tab(ui: &mut egui::Ui, engine: &Engine, config: &mut Config) {
 
     if config.settings.flow_enabled {
         mouser_engine::flow::network::IS_SEARCHING
-            .store(false, std::sync::atomic::Ordering::SeqCst);
+            .store(false, std::sync::atomic::Ordering::Relaxed);
         show_flow_config_screen(ui, engine, config, &mut settings_dirty);
     } else {
         match current_view {
             FlowUiView::Welcome => {
                 mouser_engine::flow::network::IS_SEARCHING
-                    .store(false, std::sync::atomic::Ordering::SeqCst);
+                    .store(false, std::sync::atomic::Ordering::Relaxed);
                 if show_flow_welcome_screen(ui) {
                     ui.data_mut(|d| d.insert_temp(view_id, FlowUiView::SetupWizard));
                 }
             }
             FlowUiView::SetupWizard => {
                 mouser_engine::flow::network::IS_SEARCHING
-                    .store(false, std::sync::atomic::Ordering::SeqCst);
+                    .store(false, std::sync::atomic::Ordering::Relaxed);
                 match show_flow_setup_wizard(ui, &config.settings.flow_local_name) {
                     SetupWizardResult::Continue => {
                         ui.data_mut(|d| d.insert_temp(view_id, FlowUiView::Searching));
@@ -68,7 +68,7 @@ pub fn show_flow_tab(ui: &mut egui::Ui, engine: &Engine, config: &mut Config) {
             }
             FlowUiView::Searching => {
                 mouser_engine::flow::network::IS_SEARCHING
-                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
                 let start_time_id = ui.make_persistent_id("searching_start_time");
                 let current_time = ui.ctx().input(|i| i.time);
 
@@ -93,12 +93,12 @@ pub fn show_flow_tab(ui: &mut egui::Ui, engine: &Engine, config: &mut Config) {
 
                 if cancel_clicked {
                     mouser_engine::flow::network::IS_SEARCHING
-                        .store(false, std::sync::atomic::Ordering::SeqCst);
+                        .store(false, std::sync::atomic::Ordering::Relaxed);
                     ui.data_mut(|d| d.remove_temp::<f64>(start_time_id));
                     ui.data_mut(|d| d.insert_temp(view_id, FlowUiView::SetupWizard));
                 } else if !discovered.is_empty() {
                     mouser_engine::flow::network::IS_SEARCHING
-                        .store(false, std::sync::atomic::Ordering::SeqCst);
+                        .store(false, std::sync::atomic::Ordering::Relaxed);
                     // Auto-pair discovered peers
                     for (name, (ip, peer_channel, _)) in &discovered {
                         if !config.settings.flow_peers.iter().any(|p| p.name == *name) {
@@ -121,14 +121,14 @@ pub fn show_flow_tab(ui: &mut egui::Ui, engine: &Engine, config: &mut Config) {
                     ui.data_mut(|d| d.insert_temp(view_id, FlowUiView::Welcome));
                 } else if current_time - start_time > 45.0 {
                     mouser_engine::flow::network::IS_SEARCHING
-                        .store(false, std::sync::atomic::Ordering::SeqCst);
+                        .store(false, std::sync::atomic::Ordering::Relaxed);
                     ui.data_mut(|d| d.remove_temp::<f64>(start_time_id));
                     ui.data_mut(|d| d.insert_temp(view_id, FlowUiView::NotFound));
                 }
             }
             FlowUiView::NotFound => {
                 mouser_engine::flow::network::IS_SEARCHING
-                    .store(false, std::sync::atomic::Ordering::SeqCst);
+                    .store(false, std::sync::atomic::Ordering::Relaxed);
                 match show_flow_not_found_screen(ui, &config.settings.flow_local_name) {
                     NotFoundResult::TryAgain => {
                         ui.data_mut(|d| d.insert_temp(view_id, FlowUiView::Searching));
