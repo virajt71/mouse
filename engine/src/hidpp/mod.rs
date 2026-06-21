@@ -24,6 +24,7 @@ pub struct HidppClient {
     pub(crate) smart_shift_idx: Option<u8>,
     pub(crate) smart_shift_enhanced: bool,
     pub(crate) change_host_idx: Option<u8>,
+    pub(crate) active_host_channel: Option<u8>,
     pub(crate) backlight_feat_idx: Option<u8>,
     pub(crate) gesture_cid: u16,
     pub layout_from_pid: Option<&'static str>,
@@ -62,6 +63,7 @@ impl HidppClient {
             smart_shift_idx: None,
             smart_shift_enhanced: false,
             change_host_idx: None,
+            active_host_channel: None,
             backlight_feat_idx: None,
             gesture_cid: 0x00C3,
             layout_from_pid: None,
@@ -77,6 +79,10 @@ impl HidppClient {
         self.device.is_some()
     }
 
+    pub fn active_host_channel(&self) -> Option<u8> {
+        self.active_host_channel
+    }
+
     pub fn close(&mut self) {
         if self.device.is_some() {
             let _ = self.undivert_gesture_button();
@@ -88,6 +94,7 @@ impl HidppClient {
         self.dpi_idx = None;
         self.smart_shift_idx = None;
         self.change_host_idx = None;
+        self.active_host_channel = None;
         self.backlight_feat_idx = None;
         self.layout_from_pid = None;
     }

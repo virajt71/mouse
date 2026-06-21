@@ -4,6 +4,23 @@ use egui::{pos2, vec2, Color32, Rect, RichText, Stroke, Pos2};
 use mouser_engine::config::{Config, FlowPeer};
 use mouser_engine::Engine;
 
+/// Returns the lowest unused channel index (0-based) among currently
+/// paired peers, avoiding the local channel if specified.
+/// HID++ receivers expose channels 0..=2 (UI: 1..=3).
+fn next_free_channel_index(peers: &[FlowPeer], local_channel: Option<u8>) -> u8 {
+    let mut used: std::collections::HashSet<u8> =
+        peers.iter().filter(|p| p.paired).map(|p| p.channel_index).collect();
+    if let Some(ch) = local_channel {
+        used.insert(ch);
+    }
+    for candidate in 0..3u8 {
+        if !used.contains(&candidate) {
+            return candidate;
+        }
+    }
+    0 // fallback if somehow >3 peers paired; avoids panic, picks 0
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FlowUiView {
     Welcome,
@@ -34,6 +51,7 @@ enum NotFoundResult {
 
 pub fn show_flow_tab(ui: &mut egui::Ui, engine: &Engine, config: &mut Config) {
     let mut settings_dirty = false;
+    let local_channel = engine.active_host_channel();
 
     let view_id = ui.make_persistent_id("flow_ui_view");
     let current_view = ui.data_mut(|d| *d.get_temp_mut_or_default::<FlowUiView>(view_id));
@@ -100,7 +118,7 @@ pub fn show_flow_tab(ui: &mut egui::Ui, engine: &Engine, config: &mut Config) {
                     // Auto-pair discovered peers
                     for (name, (ip, _)) in &discovered {
                         if !config.settings.flow_peers.iter().any(|p| p.name == *name) {
-                            let default_ch = (config.settings.flow_peers.len() + 1) as u8 % 3;
+                            let default_ch = next_free_channel_index(&config.settings.flow_peers, local_channel);
                             config.settings.flow_peers.push(FlowPeer {
                                 name: name.clone(),
                                 ip: ip.clone(),
@@ -1048,10 +1066,11 @@ fn draw_vertical_gradient(ui: &mut egui::Ui, rect: Rect, color_top: Color32, col
 
 fn show_flow_config_screen(
     ui: &mut egui::Ui,
-    _engine: &Engine,
+    engine: &Engine,
     config: &mut Config,
     settings_dirty: &mut bool,
 ) {
+    let local_channel = engine.active_host_channel();
     let active_connections: std::collections::HashSet<String> = {
         let conns = mouser_engine::flow::network::ACTIVE_CONNECTIONS
             .read()
@@ -1345,12 +1364,18 @@ fn show_flow_config_screen(
                         );
 
                         if is_local {
-                            let pill_r = Rect::from_center_size(screen_rect.center() + vec2(0.0, 10.0), vec2(42.0, 12.0));
+                            let local_text = if let Some(ch) = local_channel {
+                                format!("LOCAL (Ch {})", ch + 1)
+                            } else {
+                                "LOCAL".to_string()
+                            };
+                            let pill_w = if local_channel.is_some() { 64.0 } else { 42.0 };
+                            let pill_r = Rect::from_center_size(screen_rect.center() + vec2(0.0, 10.0), vec2(pill_w, 12.0));
                             ui.painter().rect_filled(pill_r, 2.0, Color32::from_rgba_unmultiplied(255, 255, 255, 30));
                             ui.painter().text(
                                 pill_r.center(),
                                 egui::Align2::CENTER_CENTER,
-                                "LOCAL",
+                                &local_text,
                                 egui::FontId::proportional(8.0),
                                 Color32::WHITE,
                             );
@@ -1460,6 +1485,30 @@ fn show_flow_config_screen(
                         ui.horizontal(|ui| {
                             ui.label(RichText::new("Hostname:").color(theme::secondary_text(ui.ctx())).size(11.0));
                             ui.label(RichText::new(&config.settings.flow_local_name).color(theme::primary_text(ui.ctx())).size(11.0).strong());
+                        });
+                        ui.add_space(10.0);
+
+                        // Logitech Device
+                        let device_name = engine.selected_device_name();
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Logitech Device:").color(theme::secondary_text(ui.ctx())).size(11.0));
+                            ui.label(RichText::new(&device_name).color(theme::primary_text(ui.ctx())).size(11.0).strong());
+                        });
+                        ui.add_space(10.0);
+
+                        // Active Channel
+                        let channel_str = if let Some(ch) = local_channel {
+                            format!("Channel {}", ch + 1)
+                        } else {
+                            if engine.device_connected() {
+                                "Not supported / None".to_string()
+                            } else {
+                                "None (No device connected)".to_string()
+                            }
+                        };
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Active Channel:").color(theme::secondary_text(ui.ctx())).size(11.0));
+                            ui.label(RichText::new(channel_str).color(theme::primary_text(ui.ctx())).size(11.0).strong());
                         });
                         ui.add_space(10.0);
 
@@ -1664,7 +1713,7 @@ fn show_flow_config_screen(
                                                 ).fill(theme::accent_color(ui.ctx())).rounding(3.0));
 
                                                 if pair_res.clicked() {
-                                                    let default_ch = (config.settings.flow_peers.len() + 1) as u8 % 3;
+                                                    let default_ch = next_free_channel_index(&config.settings.flow_peers, local_channel);
                                                     config.settings.flow_peers.push(FlowPeer {
                                                         name: name.clone(),
                                                         ip: ip.clone(),
