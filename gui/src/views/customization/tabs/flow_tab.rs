@@ -4,22 +4,7 @@ use egui::{pos2, vec2, Color32, Rect, RichText, Stroke, Pos2};
 use mouser_engine::config::{Config, FlowPeer};
 use mouser_engine::Engine;
 
-/// Returns the lowest unused channel index (0-based) among currently
-/// paired peers, avoiding the local channel if specified.
-/// HID++ receivers expose channels 0..=2 (UI: 1..=3).
-fn next_free_channel_index(peers: &[FlowPeer], local_channel: Option<u8>) -> u8 {
-    let mut used: std::collections::HashSet<u8> =
-        peers.iter().filter(|p| p.paired).map(|p| p.channel_index).collect();
-    if let Some(ch) = local_channel {
-        used.insert(ch);
-    }
-    for candidate in 0..3u8 {
-        if !used.contains(&candidate) {
-            return candidate;
-        }
-    }
-    0 // fallback if somehow >3 peers paired; avoids panic, picks 0
-}
+
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FlowUiView {
@@ -51,7 +36,6 @@ enum NotFoundResult {
 
 pub fn show_flow_tab(ui: &mut egui::Ui, engine: &Engine, config: &mut Config) {
     let mut settings_dirty = false;
-    let local_channel = engine.active_host_channel();
 
     let view_id = ui.make_persistent_id("flow_ui_view");
     let current_view = ui.data_mut(|d| *d.get_temp_mut_or_default::<FlowUiView>(view_id));
@@ -97,7 +81,7 @@ pub fn show_flow_tab(ui: &mut egui::Ui, engine: &Engine, config: &mut Config) {
                     start_time
                 };
 
-                let discovered: Vec<(String, (String, std::time::Instant))> = {
+                let discovered: Vec<(String, (String, u8, std::time::Instant))> = {
                     let map = mouser_engine::flow::network::DISCOVERED_PEERS
                         .read()
                         .unwrap();
@@ -116,9 +100,8 @@ pub fn show_flow_tab(ui: &mut egui::Ui, engine: &Engine, config: &mut Config) {
                     mouser_engine::flow::network::IS_SEARCHING
                         .store(false, std::sync::atomic::Ordering::SeqCst);
                     // Auto-pair discovered peers
-                    for (name, (ip, _)) in &discovered {
+                    for (name, (ip, peer_channel, _)) in &discovered {
                         if !config.settings.flow_peers.iter().any(|p| p.name == *name) {
-                            let default_ch = next_free_channel_index(&config.settings.flow_peers, local_channel);
                             config.settings.flow_peers.push(FlowPeer {
                                 name: name.clone(),
                                 ip: ip.clone(),
@@ -128,7 +111,7 @@ pub fn show_flow_tab(ui: &mut egui::Ui, engine: &Engine, config: &mut Config) {
                                 paired: true,
                                 fingerprint: "".to_string(),
                                 auto_reconnect: true,
-                                channel_index: default_ch,
+                                channel_index: *peer_channel,
                             });
                         }
                     }
@@ -1078,12 +1061,14 @@ fn show_flow_config_screen(
         conns.keys().cloned().collect()
     };
 
-    let discovered: Vec<(String, (String, std::time::Instant))> = {
+    let discovered: Vec<(String, (String, u8, std::time::Instant))> = {
         let map = mouser_engine::flow::network::DISCOVERED_PEERS
             .read()
             .unwrap();
         map.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
     };
+
+    let active_hardware_peer_name = mouser_engine::flow::FLOW_MANAGER.get_active_hardware_peer_name();
 
     ui.horizontal(|ui| {
         ui.add_space(20.0);
@@ -1631,17 +1616,87 @@ fn show_flow_config_screen(
                         ui.separator();
                         ui.add_space(8.0);
 
-                        if discovered.is_empty() {
+                        struct RenderPeer {
+                            name: String,
+                            ip: String,
+                            channel_index: u8,
+                            is_paired: bool,
+                            is_online: bool,
+                            is_connected: bool,
+                            is_active_hardware: bool,
+                        }
+
+                        let mut render_peers = Vec::new();
+
+                        // 1. Add all paired peers
+                        for peer in &config.settings.flow_peers {
+                            if peer.paired {
+                                let is_online = discovered.iter().any(|(name, _)| name == &peer.name);
+                                let is_connected = active_connections.contains(&peer.name);
+                                let is_active_hardware = active_hardware_peer_name.as_ref() == Some(&peer.name);
+
+                                render_peers.push(RenderPeer {
+                                    name: peer.name.clone(),
+                                    ip: peer.ip.clone(),
+                                    channel_index: peer.channel_index,
+                                    is_paired: true,
+                                    is_online,
+                                    is_connected,
+                                    is_active_hardware,
+                                });
+                            }
+                        }
+
+                        // 2. Add unpaired discovered peers
+                        for (name, (ip, peer_channel, _)) in &discovered {
+                            if !render_peers.iter().any(|p| p.name == *name) {
+                                render_peers.push(RenderPeer {
+                                    name: name.clone(),
+                                    ip: ip.clone(),
+                                    channel_index: *peer_channel,
+                                    is_paired: false,
+                                    is_online: true,
+                                    is_connected: false,
+                                    is_active_hardware: false,
+                                });
+                            }
+                        }
+
+                        if render_peers.is_empty() {
                             ui.label(
-                                RichText::new("No computers found on local network. Make sure they are running Mouser-RS and connected to the same subnet.")
+                                RichText::new("No computers configured or found on local network. Make sure they are running Mouser-RS and connected to the same subnet.")
                                     .color(theme::muted_text(ui.ctx()))
                                     .size(10.5)
                             );
                         } else {
-                            for (name, (ip, _)) in &discovered {
+                            for peer in &render_peers {
+                                let name_color = if peer.is_online {
+                                    theme::primary_text(ui.ctx())
+                                } else {
+                                    theme::muted_text(ui.ctx())
+                                };
+
+                                let subtitle = if peer.is_online {
+                                    peer.ip.clone()
+                                } else {
+                                    "Offline (Unreachable)".to_string()
+                                };
+
+                                let subtitle_color = if peer.is_online {
+                                    theme::muted_text(ui.ctx())
+                                } else {
+                                    theme::muted_text(ui.ctx())
+                                };
+
+                                let stroke = if peer.is_active_hardware {
+                                    Stroke::new(1.5, theme::accent_color(ui.ctx()))
+                                } else {
+                                    Stroke::new(1.0, theme::border_color(ui.ctx()))
+                                };
+
                                 let mini_frame = egui::Frame::none()
                                     .fill(theme::elevated_color(ui.ctx()))
-                                    .stroke(Stroke::new(1.0, theme::border_color(ui.ctx())))
+                                    .stroke(stroke)
                                     .inner_margin(8.0)
                                     .outer_margin(egui::Margin::symmetric(0.0, 4.0))
                                     .rounding(3.0);
@@ -1654,56 +1709,57 @@ fn show_flow_config_screen(
 
                                         // Info text
                                         ui.vertical(|ui| {
-                                            ui.label(RichText::new(name).strong().size(11.0));
-                                            ui.label(RichText::new(ip).color(theme::muted_text(ui.ctx())).size(9.5));
+                                            ui.label(RichText::new(&peer.name).strong().size(11.0).color(name_color));
+                                            ui.label(RichText::new(&subtitle).color(subtitle_color).size(9.5));
                                         });
 
                                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                            let paired_idx = config.settings.flow_peers.iter().position(|p| p.name == *name && p.paired);
-                                            if let Some(idx_in_peers) = paired_idx {
-                                                // Unpair action
-                                                let unpair_res = ui.add(egui::Button::new(
-                                                    RichText::new("Unpair").size(9.5).color(theme::danger_color(ui.ctx()))
-                                                ).fill(Color32::TRANSPARENT));
-                                                
-                                                let mut unpaired = false;
-                                                if unpair_res.clicked() {
-                                                    config.settings.flow_peers.remove(idx_in_peers);
-                                                    *settings_dirty = true;
-                                                    unpaired = true;
-                                                }
+                                            if peer.is_paired {
+                                                let paired_idx = config.settings.flow_peers.iter().position(|p| p.name == peer.name && p.paired);
+                                                if let Some(idx_in_peers) = paired_idx {
+                                                    // Unpair action
+                                                    let unpair_res = ui.add(egui::Button::new(
+                                                        RichText::new("Unpair").size(9.5).color(theme::danger_color(ui.ctx()))
+                                                    ).fill(Color32::TRANSPARENT));
 
-                                                if !unpaired {
-                                                    ui.add_space(8.0);
+                                                    let mut unpaired = false;
+                                                    if unpair_res.clicked() {
+                                                        config.settings.flow_peers.remove(idx_in_peers);
+                                                        *settings_dirty = true;
+                                                        unpaired = true;
+                                                    }
 
-                                                    // Channel select combo
-                                                    let mut ch_idx = config.settings.flow_peers[idx_in_peers].channel_index;
-                                                    egui::ComboBox::from_id_salt(format!("ch_combo_{}", name))
-                                                        .selected_text(format!("Ch {}", ch_idx + 1))
-                                                        .width(60.0)
-                                                        .show_ui(ui, |ui| {
-                                                            if ui.selectable_value(&mut ch_idx, 0, "Channel 1").clicked() {
-                                                                config.settings.flow_peers[idx_in_peers].channel_index = 0;
-                                                                *settings_dirty = true;
-                                                            }
-                                                            if ui.selectable_value(&mut ch_idx, 1, "Channel 2").clicked() {
-                                                                config.settings.flow_peers[idx_in_peers].channel_index = 1;
-                                                                *settings_dirty = true;
-                                                            }
-                                                            if ui.selectable_value(&mut ch_idx, 2, "Channel 3").clicked() {
-                                                                config.settings.flow_peers[idx_in_peers].channel_index = 2;
-                                                                *settings_dirty = true;
-                                                            }
-                                                        });
+                                                    if !unpaired {
+                                                        ui.add_space(8.0);
 
-                                                    ui.add_space(8.0);
+                                                        // Read-only channel display
+                                                        ui.label(RichText::new(format!("Ch {}", peer.channel_index + 1)).size(10.0));
 
-                                                    // Connected status dot & label
-                                                    let is_connected = active_connections.contains(name);
-                                                    if is_connected {
-                                                        ui.label(RichText::new("Connected").color(theme::accent_color(ui.ctx())).size(10.0));
-                                                    } else {
-                                                        ui.label(RichText::new("Offline").color(theme::muted_text(ui.ctx())).size(10.0));
+                                                        ui.add_space(8.0);
+
+                                                        // Connected status dot & label
+                                                        if peer.is_connected {
+                                                            ui.label(RichText::new("Connected").color(theme::accent_color(ui.ctx())).size(10.0));
+                                                        } else {
+                                                            ui.label(RichText::new("Offline").color(theme::muted_text(ui.ctx())).size(10.0));
+                                                        }
+
+                                                        if peer.is_active_hardware {
+                                                            ui.add_space(8.0);
+                                                            egui::Frame::none()
+                                                                .fill(theme::accent_color(ui.ctx()).linear_multiply(0.15))
+                                                                .stroke(Stroke::new(1.0, theme::accent_color(ui.ctx()).linear_multiply(0.3)))
+                                                                .inner_margin(egui::Margin::symmetric(6.0, 2.0))
+                                                                .rounding(10.0)
+                                                                .show(ui, |ui| {
+                                                                    ui.label(
+                                                                        RichText::new("MOUSE ACTIVE")
+                                                                            .color(theme::accent_color(ui.ctx()))
+                                                                            .size(9.0)
+                                                                            .strong()
+                                                                    );
+                                                                });
+                                                        }
                                                     }
                                                 }
                                             } else {
@@ -1713,17 +1769,16 @@ fn show_flow_config_screen(
                                                 ).fill(theme::accent_color(ui.ctx())).rounding(3.0));
 
                                                 if pair_res.clicked() {
-                                                    let default_ch = next_free_channel_index(&config.settings.flow_peers, local_channel);
                                                     config.settings.flow_peers.push(FlowPeer {
-                                                        name: name.clone(),
-                                                        ip: ip.clone(),
+                                                        name: peer.name.clone(),
+                                                        ip: peer.ip.clone(),
                                                         port: 50520,
                                                         layout_x: 1,
                                                         layout_y: 0,
                                                         paired: true,
                                                         fingerprint: "".to_string(),
                                                         auto_reconnect: true,
-                                                        channel_index: default_ch,
+                                                        channel_index: peer.channel_index,
                                                     });
                                                     *settings_dirty = true;
                                                 }

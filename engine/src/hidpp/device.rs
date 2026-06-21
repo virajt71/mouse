@@ -122,8 +122,9 @@ impl HidppClient {
         self.change_host_idx = self.find_feature(FEAT_CHANGE_HOST);
         if let Some(ch_fi) = self.change_host_idx {
             log::info!("[HID++] Found CHANGE_HOST at index 0x{:02X}", ch_fi);
-            if let Ok(active_ch) = self.read_active_host_channel() {
+            if let Ok(active_ch) = self.read_current_host_channel() {
                 self.active_host_channel = Some(active_ch);
+                self.current_host_channel = Some(active_ch);
             }
         }
 
@@ -208,20 +209,33 @@ impl HidppClient {
         }
     }
 
-    pub fn read_active_host_channel(&self) -> Result<u8> {
+    pub fn read_current_host_channel(&self) -> Result<u8> {
         let idx = self
             .change_host_idx
             .ok_or_else(|| anyhow!("ChangeHost feature not supported on this device"))?;
         let resp = self
             .request(idx, 0, &[], 1000)?
             .ok_or_else(|| anyhow!("Failed to read active host channel"))?;
+        log::info!("[HID++] Raw getHostCount/getHostInfo response: {:02X?}", resp);
         if resp.len() >= 2 {
-            let active_host = resp[1];
-            log::info!("[HID++] Read active host channel: {}", active_host);
+            let active_host = if resp[1] > 2 {
+                resp[0]
+            } else {
+                resp[1]
+            };
+            log::info!("[HID++] Determined active host channel: {}", active_host);
+            Ok(active_host)
+        } else if !resp.is_empty() {
+            let active_host = resp[0];
+            log::info!("[HID++] Determined active host channel from byte 0: {}", active_host);
             Ok(active_host)
         } else {
             Err(anyhow!("Invalid response size for active host channel"))
         }
+    }
+
+    pub fn read_active_host_channel(&self) -> Result<u8> {
+        self.read_current_host_channel()
     }
 }
 

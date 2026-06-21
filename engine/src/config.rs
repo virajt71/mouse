@@ -27,12 +27,17 @@ pub struct FlowPeer {
 }
 
 fn default_local_name() -> String {
-    if let Ok(hostname) = std::fs::read_to_string("/proc/sys/kernel/hostname") {
+    let name = if let Ok(hostname) = std::fs::read_to_string("/proc/sys/kernel/hostname") {
         hostname.trim().to_string()
     } else if let Ok(hostname) = std::env::var("HOSTNAME") {
-        hostname
+        hostname.trim().to_string()
     } else {
+        String::new()
+    };
+    if name.is_empty() {
         "Computer".to_string()
+    } else {
+        name
     }
 }
 
@@ -72,6 +77,8 @@ pub struct Settings {
     pub flow_hold_key: String,
     pub flow_mouse_mode: String,
     pub flow_keyboard_linking: bool,
+    #[serde(default)]
+    pub flow_local_channel_index: u8,
 }
 
 impl Default for Settings {
@@ -107,6 +114,7 @@ impl Default for Settings {
             flow_hold_key: "none".to_string(),
             flow_mouse_mode: "software".to_string(),
             flow_keyboard_linking: true,
+            flow_local_channel_index: 0,
         }
     }
 }

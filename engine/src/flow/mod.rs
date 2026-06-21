@@ -201,4 +201,26 @@ impl FlowManager {
 
         None
     }
+
+    pub fn get_active_hardware_peer_name(&self) -> Option<String> {
+        let engine_opt = self.engine_inner.lock_safe();
+        let engine_inner = engine_opt.as_ref()?;
+        
+        let current_active_channel = {
+            let clients = engine_inner.hid_clients.lock_safe();
+            let idx = *engine_inner.selected_device_idx.lock_safe();
+            if let Some(client) = clients.get(idx) {
+                client.active_host_channel()
+            } else {
+                clients.iter().find_map(|c| c.active_host_channel())
+            }
+        };
+
+        let ch = current_active_channel?;
+
+        let peers = self.flow_peers.read().unwrap();
+        peers.iter()
+            .find(|p| p.paired && p.channel_index == ch)
+            .map(|p| p.name.clone())
+    }
 }
