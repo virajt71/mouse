@@ -25,12 +25,20 @@ pub enum FlowEvent {
     ClipboardImage(Vec<u8>),
     FileTransfer { name: String, content: Vec<u8> },
     ReturnToLocal,
+    FlowHandoffRequest {
+        peer_id: String,
+        entry_edge: crate::flow::edge::EdgeEvent,
+        cursor_pos: (i32, i32),
+    },
+    FlowHandoffAck {
+        peer_id: String,
+    },
 }
 
 pub fn run_discovery_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) {
     use std::sync::atomic::Ordering;
     let mut socket_opt = None;
-    while engine_inner.running.load(Ordering::SeqCst) {
+    while engine_inner.running.load(Ordering::Acquire) {
         match UdpSocket::bind("0.0.0.0:50519") {
             Ok(s) => {
                 socket_opt = Some(s);
@@ -73,10 +81,7 @@ pub fn run_discovery_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) 
                 continue;
             }
 
-            let local_name = {
-                let cfg = engine_inner.config.lock_safe();
-                cfg.settings.flow_local_name.clone()
-            };
+            let local_name = FLOW_MANAGER.flow_local_name.read().unwrap().clone();
 
             if parts[0] == "MOUSER_DISCOVER" && parts.len() > 1 {
                 let peer_name = parts[1].to_string();
@@ -95,8 +100,7 @@ pub fn run_discovery_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) 
 
                     // Respond with identity containing local name and channel
                     let reply = format!("MOUSER_IDENTITY:{}:{}", local_name, {
-                        let cfg = engine_inner.config.lock_safe();
-                        cfg.settings.flow_local_channel_index
+                        FLOW_MANAGER.flow_local_channel_index.load(Ordering::Relaxed)
                     });
                     let _ = socket.send_to(reply.as_bytes(), src);
 
@@ -162,10 +166,7 @@ pub fn run_discovery_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) 
         }
 
         // Auto-disable flow if enabled but no peers are detected/connected for a certain period.
-        let flow_enabled = {
-            let cfg = engine_inner.config.lock_safe();
-            cfg.settings.flow_enabled
-        };
+        let flow_enabled = FLOW_MANAGER.flow_enabled.load(Ordering::Relaxed);
 
         if flow_enabled {
             let has_active = !ACTIVE_CONNECTIONS.read().unwrap().is_empty();
@@ -201,21 +202,15 @@ pub fn run_discovery_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) 
     }
 }
 
-fn thread_spawn_broadcast(socket: UdpSocket, engine_inner: Arc<crate::engine::inner::EngineInner>) {
+fn thread_spawn_broadcast(socket: UdpSocket, _engine_inner: Arc<crate::engine::inner::EngineInner>) {
     use std::sync::atomic::Ordering;
     std::thread::spawn(move || loop {
-        let (enabled, name, channel) = {
-            let cfg = engine_inner.config.lock_safe();
-            (
-                cfg.settings.flow_enabled,
-                cfg.settings.flow_local_name.clone(),
-                cfg.settings.flow_local_channel_index,
-            )
-        };
-
-        let searching = IS_SEARCHING.load(Ordering::SeqCst);
+        let enabled = FLOW_MANAGER.flow_enabled.load(Ordering::Relaxed);
+        let searching = IS_SEARCHING.load(Ordering::Relaxed);
 
         if enabled || searching {
+            let name = FLOW_MANAGER.flow_local_name.read().unwrap().clone();
+            let channel = FLOW_MANAGER.flow_local_channel_index.load(Ordering::Relaxed);
             let msg = format!("MOUSER_DISCOVER:{}:{}", name, channel);
             let _ = socket.send_to(msg.as_bytes(), "255.255.255.255:50519");
         }
@@ -226,7 +221,7 @@ fn thread_spawn_broadcast(socket: UdpSocket, engine_inner: Arc<crate::engine::in
 pub fn run_server_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) {
     use std::sync::atomic::Ordering;
     let mut listener_opt = None;
-    while engine_inner.running.load(Ordering::SeqCst) {
+    while engine_inner.running.load(Ordering::Acquire) {
         match TcpListener::bind("0.0.0.0:50520") {
             Ok(l) => {
                 listener_opt = Some(l);
@@ -515,14 +510,16 @@ fn process_peer_events(
                         };
 
                         if is_paired {
-                            if let Some(target) = FLOW_MANAGER.handle_raw_motion(dx, dy) {
-                                if target == client_name {
-                                    log::info!(
-                                        "[Flow Network] Edge transition back to controller '{}'",
-                                        target
-                                    );
-                                    let _ =
-                                        send_event_to_peer(&client_name, &FlowEvent::ReturnToLocal);
+                            if let Some(edge_ev) = FLOW_MANAGER.handle_raw_motion(dx, dy) {
+                                if let Some(peer) = crate::flow::topology::resolve_peer(edge_ev) {
+                                    if peer.peer_id == client_name {
+                                        log::info!(
+                                            "[Flow Network] Edge transition back to controller '{}'",
+                                            client_name
+                                        );
+                                        let _ =
+                                            send_event_to_peer(&client_name, &FlowEvent::ReturnToLocal);
+                                    }
                                 }
                             }
                         }
@@ -602,6 +599,12 @@ fn process_peer_events(
                 }
                 FlowEvent::FileTransfer { name, content } => {
                     let _ = super::clipboard::save_flow_file(name, content);
+                }
+                FlowEvent::FlowHandoffRequest { peer_id, entry_edge, cursor_pos } => {
+                    crate::flow::handoff::handle_handoff_request(peer_id, entry_edge, cursor_pos, &client_name);
+                }
+                FlowEvent::FlowHandoffAck { peer_id } => {
+                    crate::flow::handoff::handle_handoff_ack(peer_id);
                 }
                 FlowEvent::ReturnToLocal => {
                     log::info!(
@@ -697,12 +700,9 @@ fn process_peer_events(
 }
 
 pub fn send_event_to_peer(peer_name: &str, event: &FlowEvent) -> anyhow::Result<()> {
-    let stream = {
-        let conns = ACTIVE_CONNECTIONS.read().unwrap();
-        conns.get(peer_name).map(|s| s.try_clone())
-    };
-    if let Some(Ok(mut s)) = stream {
-        let serialized = serde_json::to_string(event)?;
+    let serialized = serde_json::to_string(event)?;
+    let mut conns = ACTIVE_CONNECTIONS.write().unwrap();
+    if let Some(s) = conns.get_mut(peer_name) {
         s.write_all(format!("{}\n", serialized).as_bytes())?;
         s.flush()?;
     }

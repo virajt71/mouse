@@ -223,13 +223,24 @@ impl Engine {
         let available = dummy_client.list_hidpp_devices(api);
 
         let mut clients = inner.hid_clients.lock_safe();
+        let old_len = clients.len();
         clients.retain(|c| c.is_connected());
+        let new_len = clients.len();
+        let changed = old_len != new_len;
+        let opened_paths: std::collections::HashSet<String> = clients
+            .iter()
+            .map(|c| c.device_path.clone())
+            .collect();
+        drop(clients);
+        if changed {
+            self.update_cached_device_state();
+        }
 
         let mut connecting = CONNECTING_PATHS.lock_safe();
 
         for info in available {
             let path_str = info.path().to_string_lossy().to_string();
-            let already_opened = clients.iter().any(|c| c.device_path == path_str);
+            let already_opened = opened_paths.contains(&path_str);
             let is_connecting = connecting.contains(&path_str);
 
             if !already_opened && !is_connecting {
@@ -290,6 +301,7 @@ impl Engine {
                             let mut clients = inner_clone.hid_clients.lock_safe();
                             clients.push(new_client);
                         }
+                        engine_clone.update_cached_device_state();
 
                         if new_keyboard_found {
                             let _ = engine_clone.restart_keyboard_hooks();
@@ -314,7 +326,7 @@ impl Engine {
                 let mut last_mouse_attempt_time: Option<Instant> = Some(Instant::now());
                 let mut failed_keyboards: std::collections::HashMap<String, Instant> =
                     std::collections::HashMap::new();
-                while inner.running.load(Ordering::SeqCst) {
+                while inner.running.load(Ordering::Acquire) {
                     if last_mouse_check.elapsed() >= Duration::from_millis(500) {
                         last_mouse_check = Instant::now();
                         engine_clone.check_mouse_hook(
@@ -330,23 +342,34 @@ impl Engine {
                     }
 
                     let mut all_events = Vec::new();
-                    let has_clients = {
-                        let mut clients = inner.hid_clients.lock_safe();
-                        for client in clients.iter_mut() {
-                            if let Ok(evs) = client.poll_events() {
-                                for ev in evs {
-                                    all_events.push(ev);
+                    let num_clients = {
+                        inner.hid_clients.lock_safe().len()
+                    };
+
+                    for idx in 0..num_clients {
+                        let mut client_evs = Vec::new();
+                        {
+                            let mut clients = inner.hid_clients.lock_safe();
+                            if let Some(client) = clients.get_mut(idx) {
+                                if let Ok(evs) = client.poll_events() {
+                                    client_evs = evs;
                                 }
                             }
                         }
-                        !clients.is_empty()
-                    };
+                        for ev in client_evs {
+                            all_events.push(ev);
+                        }
+                        // Short sleep to allow UI thread to acquire clients lock if needed
+                        thread::sleep(Duration::from_millis(2));
+                    }
 
                     for ev in all_events {
                         engine_clone.handle_hid_event(ev);
                     }
 
-                    if !has_clients {
+                    if num_clients > 0 {
+                        thread::sleep(Duration::from_millis(10));
+                    } else {
                         thread::sleep(Duration::from_millis(100));
                     }
                 }

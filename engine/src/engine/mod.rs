@@ -53,8 +53,10 @@ impl Engine {
         let init_gesture_deadzone = config.settings.gesture_deadzone.max(0) as u32;
         let init_gesture_timeout_ms = config.settings.gesture_timeout_ms;
         let init_gesture_cooldown_ms = config.settings.gesture_cooldown_ms;
+        let init_hscroll_threshold = config.settings.hscroll_threshold.max(0) as u32;
 
         let inner = EngineInner {
+            cached_device_state: Mutex::new(inner::CachedDeviceState::default()),
             config: Mutex::new(config),
             config_generation: AtomicU64::new(1),
             key_simulator,
@@ -97,6 +99,7 @@ impl Engine {
             cached_gesture_deadzone: AtomicU32::new(init_gesture_deadzone),
             cached_gesture_timeout_ms: AtomicU64::new(init_gesture_timeout_ms),
             cached_gesture_cooldown_ms: AtomicU64::new(init_gesture_cooldown_ms),
+            cached_hscroll_threshold: AtomicU32::new(init_hscroll_threshold),
             config_change_listener: Mutex::new(None),
         };
 
@@ -108,16 +111,16 @@ impl Engine {
     }
 
     pub fn start(&self) -> anyhow::Result<()> {
-        if self.inner.running.load(Ordering::SeqCst) {
+        if self.inner.running.load(Ordering::Acquire) {
             return Ok(());
         }
-        self.inner.running.store(true, Ordering::SeqCst);
+        self.inner.running.store(true, Ordering::Release);
 
         self.inner.key_simulator.ensure_device();
 
-        self.inner.gesture_active_arc.store(false, Ordering::SeqCst);
-        self.inner.gesture_tracking.store(false, Ordering::SeqCst);
-        self.inner.gesture_triggered.store(false, Ordering::SeqCst);
+        self.inner.gesture_active_arc.store(false, Ordering::Relaxed);
+        self.inner.gesture_tracking.store(false, Ordering::Relaxed);
+        self.inner.gesture_triggered.store(false, Ordering::Relaxed);
 
         self.refresh_active_profile();
 
@@ -166,10 +169,10 @@ impl Engine {
     }
 
     pub fn stop(&self) {
-        if !self.inner.running.load(Ordering::SeqCst) {
+        if !self.inner.running.load(Ordering::Acquire) {
             return;
         }
-        self.inner.running.store(false, Ordering::SeqCst);
+        self.inner.running.store(false, Ordering::Release);
 
         if let Some(mut app_det) = self.inner.app_detector.lock_safe().take() {
             app_det.stop();
@@ -189,6 +192,8 @@ impl Engine {
             client.close();
         }
         clients.clear();
+        drop(clients); // Unlock before calling update to avoid any re-locking overhead
+        self.update_cached_device_state();
         log::info!("[Engine] Daemon stopped cleanly");
     }
 
@@ -230,53 +235,52 @@ impl Engine {
         *self.inner.config_change_listener.lock_safe() = Some(Box::new(listener));
     }
 
+    pub fn update_cached_device_state(&self) {
+        let clients = self.inner.hid_clients.lock_safe();
+        let idx = *self.inner.selected_device_idx.lock_safe();
+
+        let device_connected = !clients.is_empty();
+        let device_names: Vec<String> = clients.iter().map(|c| c.device_name.clone()).collect();
+
+        let (selected_device_name, selected_device_layout, active_host_channel) = if let Some(c) = clients.get(idx) {
+            let name = c.device_name.clone();
+            let layout = c.get_layout_key();
+            let channel = c.active_host_channel();
+            (name, layout, channel)
+        } else {
+            ("None".to_string(), "generic".to_string(), None)
+        };
+
+        let mut cached = self.inner.cached_device_state.lock_safe();
+        cached.device_connected = device_connected;
+        cached.device_names = device_names;
+        cached.selected_device_name = selected_device_name;
+        cached.selected_device_layout = selected_device_layout;
+        cached.active_host_channel = active_host_channel;
+    }
+
     pub fn device_connected(&self) -> bool {
-        !self.inner.hid_clients.lock_safe().is_empty()
+        self.inner.cached_device_state.lock_safe().device_connected
     }
 
     pub fn device_names(&self) -> Vec<String> {
-        let clients = self.inner.hid_clients.lock_safe();
-        clients.iter().map(|c| c.device_name.clone()).collect()
+        self.inner.cached_device_state.lock_safe().device_names.clone()
     }
 
     pub fn selected_device_name(&self) -> String {
-        let clients = self.inner.hid_clients.lock_safe();
-        let idx = *self.inner.selected_device_idx.lock_safe();
-        if let Some(c) = clients.get(idx) {
-            c.device_name.clone()
-        } else {
-            "None".to_string()
-        }
+        self.inner.cached_device_state.lock_safe().selected_device_name.clone()
     }
 
     pub fn active_host_channel(&self) -> Option<u8> {
-        let clients = self.inner.hid_clients.lock_safe();
-        let idx = *self.inner.selected_device_idx.lock_safe();
-        clients.get(idx).and_then(|c| c.active_host_channel())
+        self.inner.cached_device_state.lock_safe().active_host_channel
     }
 
     pub fn selected_device_layout(&self) -> String {
-        let clients = self.inner.hid_clients.lock_safe();
-        let idx = *self.inner.selected_device_idx.lock_safe();
-        if let Some(c) = clients.get(idx) {
-            let layout = c.get_layout_key();
-            log::debug!(
-                "[Engine] Selected device layout: idx={}, name={}, layout={}",
-                idx,
-                c.device_name,
-                layout
-            );
-            layout
-        } else {
-            log::debug!(
-                "[Engine] Selected device layout: idx={}, no client (returning generic)",
-                idx
-            );
-            "generic".to_string()
-        }
+        self.inner.cached_device_state.lock_safe().selected_device_layout.clone()
     }
 
     pub fn set_selected_device(&self, idx: usize) {
         *self.inner.selected_device_idx.lock_safe() = idx;
+        self.update_cached_device_state();
     }
 }

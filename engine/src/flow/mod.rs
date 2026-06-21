@@ -1,11 +1,16 @@
 pub mod clipboard;
 pub mod network;
 pub mod switching;
+pub mod edge;
+pub mod topology;
+pub mod handoff;
+pub mod channel_switch;
 
 use crate::lock_ext::MutexExt;
 use crate::config::Config;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering, AtomicU8, AtomicI32, AtomicU64};
 use std::sync::{Arc, Mutex, RwLock};
+use edge::EdgeEvent;
 
 #[allow(non_upper_case_globals)]
 pub static FLOW_MANAGER: std::sync::LazyLock<Arc<FlowManager>> =
@@ -28,6 +33,11 @@ pub struct FlowManager {
     pub flow_peers: RwLock<Vec<crate::config::FlowPeer>>,
     pub is_forwarding: AtomicBool,
     pub flow_mouse_mode_hardware: AtomicBool,
+    pub flow_local_name: RwLock<String>,
+    pub flow_local_channel_index: AtomicU8,
+    pub flow_edge_threshold: AtomicI32,
+    pub flow_hold_ctrl_only: AtomicBool,
+    pub flow_handoff_timeout_ms: AtomicU64,
 }
 
 impl FlowManager {
@@ -48,6 +58,11 @@ impl FlowManager {
             flow_peers: RwLock::new(Vec::new()),
             is_forwarding: AtomicBool::new(false),
             flow_mouse_mode_hardware: AtomicBool::new(false),
+            flow_local_name: RwLock::new("".to_string()),
+            flow_local_channel_index: AtomicU8::new(0),
+            flow_edge_threshold: AtomicI32::new(5),
+            flow_hold_ctrl_only: AtomicBool::new(false),
+            flow_handoff_timeout_ms: AtomicU64::new(500),
         }
     }
 
@@ -87,14 +102,19 @@ impl FlowManager {
         });
 
         // 4. Start Edge Detection thread
-        let inner_switch = engine_inner.clone();
+        let inner_edge = engine_inner.clone();
         std::thread::spawn(move || {
-            switching::run_edge_detection_loop(inner_switch);
+            edge::run_x11_edge_polling(inner_edge);
+        });
+
+        // 5. Start Handoff channel listener thread
+        std::thread::spawn(move || {
+            handoff::run_handoff_loop();
         });
     }
 
     pub fn is_forwarding_to_remote(&self) -> bool {
-        self.is_forwarding.load(Ordering::SeqCst)
+        self.is_forwarding.load(Ordering::Relaxed)
     }
 
     pub fn get_active_peer_name(&self) -> Option<String> {
@@ -104,7 +124,7 @@ impl FlowManager {
     pub fn set_active_peer(&self, peer: Option<String>) {
         let was_local = self.active_peer.read().unwrap().is_none();
         let going_remote = peer.is_some();
-        self.is_forwarding.store(going_remote, Ordering::SeqCst);
+        self.is_forwarding.store(going_remote, Ordering::Relaxed);
 
         if was_local && going_remote {
             // Flush modifiers before handing off
@@ -142,19 +162,24 @@ impl FlowManager {
         *self.screen_width.write().unwrap() = cfg.settings.flow_screen_width;
         *self.screen_height.write().unwrap() = cfg.settings.flow_screen_height;
         self.flow_enabled
-            .store(cfg.settings.flow_enabled, Ordering::SeqCst);
+            .store(cfg.settings.flow_enabled, Ordering::Relaxed);
         *self.flow_mouse_mode.write().unwrap() = cfg.settings.flow_mouse_mode.clone();
         self.flow_mouse_mode_hardware
-            .store(cfg.settings.flow_mouse_mode == "hardware", Ordering::SeqCst);
+            .store(cfg.settings.flow_mouse_mode == "hardware", Ordering::Relaxed);
         *self.flow_hold_key.write().unwrap() = cfg.settings.flow_hold_key.clone();
         *self.flow_peers.write().unwrap() = cfg.settings.flow_peers.clone();
+        *self.flow_local_name.write().unwrap() = cfg.settings.flow_local_name.clone();
+        self.flow_local_channel_index
+            .store(cfg.settings.flow_local_channel_index, Ordering::Relaxed);
+        self.flow_edge_threshold
+            .store(cfg.settings.flow_edge_threshold, Ordering::Relaxed);
+        self.flow_hold_ctrl_only
+            .store(cfg.settings.flow_hold_ctrl_only, Ordering::Relaxed);
+        self.flow_handoff_timeout_ms
+            .store(cfg.settings.flow_handoff_timeout_ms, Ordering::Relaxed);
     }
 
-    pub fn handle_raw_motion(&self, dx: i32, dy: i32) -> Option<String> {
-        if !self.flow_mouse_mode_hardware.load(Ordering::SeqCst) {
-            return None;
-        }
-
+    pub fn handle_raw_motion(&self, dx: i32, dy: i32) -> Option<EdgeEvent> {
         let mut vx = self.virtual_x.lock_safe();
         let mut vy = self.virtual_y.lock_safe();
 
@@ -164,57 +189,28 @@ impl FlowManager {
         *vx = (*vx + dx).clamp(0, sw);
         *vy = (*vy + dy).clamp(0, sh);
 
-        let threshold = 5;
-        let mut transition_to = None;
+        let threshold = self.flow_edge_threshold.load(Ordering::Relaxed);
+        let mut edge = None;
 
         // Boundary checks
         if *vx <= threshold {
-            transition_to = Some((-1, 0)); // Left
+            edge = Some(EdgeEvent::Left);
         } else if *vx >= sw - threshold {
-            transition_to = Some((1, 0)); // Right
+            edge = Some(EdgeEvent::Right);
         } else if *vy <= threshold {
-            transition_to = Some((0, -1)); // Top
+            edge = Some(EdgeEvent::Top);
         } else if *vy >= sh - threshold {
-            transition_to = Some((0, 1)); // Bottom
+            edge = Some(EdgeEvent::Bottom);
         }
 
-        if let Some((lx, ly)) = transition_to {
-            if self.flow_enabled.load(Ordering::SeqCst) {
-                let peers = self.flow_peers.read().unwrap();
-                for peer in peers.iter() {
-                    if peer.paired && peer.layout_x == lx && peer.layout_y == ly {
-                        // Reset virtual coordinates to opposite edge to prevent loop bouncing
-                        if lx == -1 {
-                            *vx = sw - 20;
-                        } else if lx == 1 {
-                            *vx = 20;
-                        } else if ly == -1 {
-                            *vy = sh - 20;
-                        } else if ly == 1 {
-                            *vy = 20;
-                        }
-                        return Some(peer.name.clone());
-                    }
-                }
-            }
-        }
-
-        None
+        edge
     }
 
     pub fn get_active_hardware_peer_name(&self) -> Option<String> {
         let engine_opt = self.engine_inner.lock_safe();
         let engine_inner = engine_opt.as_ref()?;
         
-        let current_active_channel = {
-            let clients = engine_inner.hid_clients.lock_safe();
-            let idx = *engine_inner.selected_device_idx.lock_safe();
-            if let Some(client) = clients.get(idx) {
-                client.active_host_channel()
-            } else {
-                clients.iter().find_map(|c| c.active_host_channel())
-            }
-        };
+        let current_active_channel = engine_inner.cached_device_state.lock_safe().active_host_channel;
 
         let ch = current_active_channel?;
 

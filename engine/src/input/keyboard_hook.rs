@@ -76,7 +76,7 @@ impl KeyboardHook {
         engine: crate::engine::Engine,
         modifier_state: Arc<ModifierState>,
     ) -> Result<()> {
-        if self.running.load(Ordering::SeqCst) {
+        if self.running.load(Ordering::Acquire) {
             return Ok(());
         }
 
@@ -117,7 +117,7 @@ impl KeyboardHook {
         );
 
         self.device_path = Some(dev_path.clone());
-        self.running.store(true, Ordering::SeqCst);
+        self.running.store(true, Ordering::Release);
         let running = self.running.clone();
         let dev_path_clone = dev_path.clone();
 
@@ -138,7 +138,7 @@ impl KeyboardHook {
                 let mut active_dead_key: Option<&'static str> = None;
                 let mut hangul_composer = super::simulator::hangul::HangulComposer::new();
 
-                while running.load(Ordering::SeqCst) {
+                while running.load(Ordering::Acquire) {
                     let timeout = PollTimeout::try_from(Duration::from_millis(200)).unwrap_or(PollTimeout::NONE);
                     match poll(&mut fds, timeout) {
                         Ok(n) if n > 0 => {
@@ -164,19 +164,19 @@ impl KeyboardHook {
                                             // Update local booleans too for intra-thread logic below.
                                             if key_code == Key::KEY_LEFTSHIFT.0 || key_code == Key::KEY_RIGHTSHIFT.0 {
                                                 shift_pressed = down;
-                                                modifier_state.shift.store(down, Ordering::SeqCst);
+                                                modifier_state.shift.store(down, Ordering::Relaxed);
                                             } else if key_code == Key::KEY_LEFTCTRL.0 || key_code == Key::KEY_RIGHTCTRL.0 {
                                                 ctrl_pressed = down;
-                                                modifier_state.ctrl.store(down, Ordering::SeqCst);
+                                                modifier_state.ctrl.store(down, Ordering::Relaxed);
                                             } else if key_code == Key::KEY_LEFTALT.0 {
                                                 alt_pressed = down;
-                                                modifier_state.alt.store(down, Ordering::SeqCst);
+                                                modifier_state.alt.store(down, Ordering::Relaxed);
                                             } else if key_code == Key::KEY_RIGHTALT.0 {
                                                 alt_gr_pressed = down;
                                                 // AltGr (Right Alt) is not a flow modifier — don't set alt atomic
                                             } else if key_code == Key::KEY_LEFTMETA.0 || key_code == Key::KEY_RIGHTMETA.0 {
                                                 meta_pressed = down;
-                                                modifier_state.meta.store(down, Ordering::SeqCst);
+                                                modifier_state.meta.store(down, Ordering::Relaxed);
                                             }
 
                                             // Reset composition engine on shortcut triggers
@@ -383,7 +383,7 @@ impl KeyboardHook {
 
                 let _ = dev.ungrab();
                 log::info!("[KeyboardHook] Ungrabbed physical keyboard: {}", dev_path_clone);
-                running.store(false, Ordering::SeqCst);
+                running.store(false, Ordering::Release);
             })
             .expect("Failed to spawn KeyboardHook thread");
 
@@ -392,7 +392,7 @@ impl KeyboardHook {
     }
 
     pub fn is_running(&self) -> bool {
-        self.running.load(Ordering::SeqCst)
+        self.running.load(Ordering::Acquire)
     }
 
     pub fn device_path(&self) -> Option<&str> {
@@ -404,7 +404,7 @@ impl KeyboardHook {
             "[KeyboardHook] Stopping listener for {:?}...",
             self.device_path
         );
-        self.running.store(false, Ordering::SeqCst);
+        self.running.store(false, Ordering::Release);
         if let Some(handle) = self.thread_handle.take() {
             let _ = handle.join();
         }
