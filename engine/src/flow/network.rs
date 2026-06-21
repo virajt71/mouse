@@ -6,7 +6,7 @@ use std::net::{TcpListener, TcpStream, UdpSocket};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
-pub static DISCOVERED_PEERS: std::sync::LazyLock<RwLock<HashMap<String, (String, Instant)>>> =
+pub static DISCOVERED_PEERS: std::sync::LazyLock<RwLock<HashMap<String, (String, u8, Instant)>>> =
     std::sync::LazyLock::new(|| RwLock::new(HashMap::new()));
 pub static ACTIVE_CONNECTIONS: std::sync::LazyLock<RwLock<HashMap<String, TcpStream>>> =
     std::sync::LazyLock::new(|| RwLock::new(HashMap::new()));
@@ -81,27 +81,74 @@ pub fn run_discovery_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) 
             if parts[0] == "MOUSER_DISCOVER" && parts.len() > 1 {
                 let peer_name = parts[1].to_string();
                 if peer_name != local_name {
-                    // Register peer IP
+                    let peer_channel = if parts.len() > 2 {
+                        parts[2].parse::<u8>().unwrap_or(0)
+                    } else {
+                        0
+                    };
+                    // Register peer IP and channel
                     let peer_ip = src.ip().to_string();
                     DISCOVERED_PEERS
                         .write()
                         .unwrap()
-                        .insert(peer_name.clone(), (peer_ip.clone(), Instant::now()));
+                        .insert(peer_name.clone(), (peer_ip.clone(), peer_channel, Instant::now()));
 
-                    // Respond with identity
-                    let reply = format!("MOUSER_IDENTITY:{}", local_name);
+                    // Respond with identity containing local name and channel
+                    let reply = format!("MOUSER_IDENTITY:{}:{}", local_name, {
+                        let cfg = engine_inner.config.lock_safe();
+                        cfg.settings.flow_local_channel_index
+                    });
                     let _ = socket.send_to(reply.as_bytes(), src);
+
+                    // Update flow_peers in config if already exists and changed
+                    {
+                        let mut cfg = engine_inner.config.lock_safe();
+                        if let Some(peer) = cfg.settings.flow_peers.iter_mut().find(|p| p.name == peer_name) {
+                            if peer.channel_index != peer_channel {
+                                peer.channel_index = peer_channel;
+                                let _ = cfg.save();
+                                engine_inner.config_generation.fetch_add(1, Ordering::SeqCst);
+                                if let Ok(lock) = engine_inner.config_change_listener.lock() {
+                                    if let Some(ref callback) = *lock {
+                                        callback();
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     trigger_auto_connect(&peer_name, &peer_ip, &engine_inner);
                 }
             } else if parts[0] == "MOUSER_IDENTITY" && parts.len() > 1 {
                 let peer_name = parts[1].to_string();
                 if peer_name != local_name {
+                    let peer_channel = if parts.len() > 2 {
+                        parts[2].parse::<u8>().unwrap_or(0)
+                    } else {
+                        0
+                    };
                     let peer_ip = src.ip().to_string();
                     DISCOVERED_PEERS
                         .write()
                         .unwrap()
-                        .insert(peer_name.clone(), (peer_ip.clone(), Instant::now()));
+                        .insert(peer_name.clone(), (peer_ip.clone(), peer_channel, Instant::now()));
+
+                    // Update flow_peers in config if already exists and changed
+                    {
+                        let mut cfg = engine_inner.config.lock_safe();
+                        if let Some(peer) = cfg.settings.flow_peers.iter_mut().find(|p| p.name == peer_name) {
+                            if peer.channel_index != peer_channel {
+                                peer.channel_index = peer_channel;
+                                let _ = cfg.save();
+                                engine_inner.config_generation.fetch_add(1, Ordering::SeqCst);
+                                if let Ok(lock) = engine_inner.config_change_listener.lock() {
+                                    if let Some(ref callback) = *lock {
+                                        callback();
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     trigger_auto_connect(&peer_name, &peer_ip, &engine_inner);
                 }
@@ -111,7 +158,7 @@ pub fn run_discovery_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) 
         // Clean up expired peers (older than 10 seconds)
         {
             let mut peers = DISCOVERED_PEERS.write().unwrap();
-            peers.retain(|_, (_, time)| time.elapsed() < Duration::from_secs(10));
+            peers.retain(|_, (_, _, time)| time.elapsed() < Duration::from_secs(10));
         }
 
         // Auto-disable flow if enabled but no peers are detected/connected for a certain period.
@@ -157,18 +204,19 @@ pub fn run_discovery_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) 
 fn thread_spawn_broadcast(socket: UdpSocket, engine_inner: Arc<crate::engine::inner::EngineInner>) {
     use std::sync::atomic::Ordering;
     std::thread::spawn(move || loop {
-        let (enabled, name) = {
+        let (enabled, name, channel) = {
             let cfg = engine_inner.config.lock_safe();
             (
                 cfg.settings.flow_enabled,
                 cfg.settings.flow_local_name.clone(),
+                cfg.settings.flow_local_channel_index,
             )
         };
 
         let searching = IS_SEARCHING.load(Ordering::SeqCst);
 
         if enabled || searching {
-            let msg = format!("MOUSER_DISCOVER:{}", name);
+            let msg = format!("MOUSER_DISCOVER:{}:{}", name, channel);
             let _ = socket.send_to(msg.as_bytes(), "255.255.255.255:50519");
         }
         std::thread::sleep(Duration::from_secs(3));

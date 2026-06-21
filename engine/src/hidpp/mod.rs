@@ -14,6 +14,7 @@ pub enum HidppEvent {
     ModeShiftDown,
     ModeShiftUp,
     BacklightChanged { enabled: bool, effect_id: u8 },
+    HostChannelChanged(u8),
 }
 
 pub struct HidppClient {
@@ -25,6 +26,7 @@ pub struct HidppClient {
     pub(crate) smart_shift_enhanced: bool,
     pub(crate) change_host_idx: Option<u8>,
     pub(crate) active_host_channel: Option<u8>,
+    pub(crate) current_host_channel: Option<u8>,
     pub(crate) backlight_feat_idx: Option<u8>,
     pub(crate) gesture_cid: u16,
     pub layout_from_pid: Option<&'static str>,
@@ -64,6 +66,7 @@ impl HidppClient {
             smart_shift_enhanced: false,
             change_host_idx: None,
             active_host_channel: None,
+            current_host_channel: None,
             backlight_feat_idx: None,
             gesture_cid: 0x00C3,
             layout_from_pid: None,
@@ -80,7 +83,7 @@ impl HidppClient {
     }
 
     pub fn active_host_channel(&self) -> Option<u8> {
-        self.active_host_channel
+        self.current_host_channel.or(self.active_host_channel)
     }
 
     pub fn close(&mut self) {
@@ -95,6 +98,7 @@ impl HidppClient {
         self.smart_shift_idx = None;
         self.change_host_idx = None;
         self.active_host_channel = None;
+        self.current_host_channel = None;
         self.backlight_feat_idx = None;
         self.layout_from_pid = None;
     }
@@ -364,6 +368,28 @@ impl HidppClient {
                         // Byte 0: enabled, Byte 2: effect_id
                         let effect_id = r_params.get(2).copied().unwrap_or(0);
                         events.push(HidppEvent::BacklightChanged { enabled, effect_id });
+                    }
+                }
+
+                // HID++ CHANGE_HOST (0x1814) host switched notification
+                if Some(r_feat) == self.change_host_idx && !r_params.is_empty() {
+                    let sw_nibble = r_fsw & 0x0F;
+                    if sw_nibble != MY_SW {
+                        log::info!(
+                            "[HID++] CHANGE_HOST raw event: feat=0x{:02X} r_func=0x{:02X} sw_nibble=0x{:02X} params={:02X?}",
+                            r_feat, r_func, sw_nibble, r_params
+                        );
+                        let ch = if r_params.len() >= 2 {
+                            if r_params[1] > 2 {
+                                r_params[0]
+                            } else {
+                                r_params[1]
+                            }
+                        } else {
+                            r_params[0]
+                        };
+                        self.current_host_channel = Some(ch);
+                        events.push(HidppEvent::HostChannelChanged(ch));
                     }
                 }
 

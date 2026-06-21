@@ -277,6 +277,15 @@ impl Engine {
                             let _ = new_client.set_smart_shift(&ss_mode, ss_enabled, ss_threshold);
                         }
 
+                        if let Some(active_ch) = new_client.active_host_channel() {
+                            let mut cfg = inner_clone.config.lock_safe();
+                            if cfg.settings.flow_local_channel_index != active_ch {
+                                cfg.settings.flow_local_channel_index = active_ch;
+                                let _ = cfg.save();
+                                engine_clone.increment_config_generation(&cfg);
+                            }
+                        }
+
                         {
                             let mut clients = inner_clone.hid_clients.lock_safe();
                             clients.push(new_client);
