@@ -249,6 +249,12 @@ impl Engine {
         }
     }
 
+    pub fn active_host_channel(&self) -> Option<u8> {
+        let clients = self.inner.hid_clients.lock_safe();
+        let idx = *self.inner.selected_device_idx.lock_safe();
+        clients.get(idx).and_then(|c| c.active_host_channel())
+    }
+
     pub fn selected_device_layout(&self) -> String {
         let clients = self.inner.hid_clients.lock_safe();
         let idx = *self.inner.selected_device_idx.lock_safe();
