@@ -1,8 +1,9 @@
-[workspace]
-members = ["app", "engine", "gui"]
-resolver = "2"
+[package]
+name = "mouser-rs"
+version = "0.1.0"
+edition = "2021"
 
-[workspace.dependencies]
+[dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 hidapi = "2.6"
@@ -15,15 +16,14 @@ dirs = "6.0.0"
 eframe = "0.29"
 egui = "0.29"
 tray-icon = "0.24"
-tokio = { version = "1.37", features = ["full"] }
-async-trait = "0.1"
+engine = { package = "mouser_engine", path = "engine" }
+gui = { package = "mouser_gui", path = "gui" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"
-x11rb = "0.13"
-arboard = "3.4.1"
-sha2 = "0.10"
-image = { version = "0.25", default-features = false }
-smallvec = "1"
-ureq = { version = "2.10", default-features = false, features = ["tls", "json"] }
+
+[workspace]
+members = ["engine", "gui"]
 
 [profile.release]
 opt-level = 3

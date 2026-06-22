@@ -53,26 +53,6 @@ fn default_handoff_timeout_ms() -> u64 {
     500
 }
 
-fn default_warning_line_distance() -> i32 {
-    80
-}
-
-fn default_cooldown_ms() -> u64 {
-    300
-}
-
-fn default_ack_timeout_ms() -> u64 {
-    500
-}
-
-fn default_max_backoff_ms() -> u64 {
-    10000
-}
-
-fn default_arm_timeout_ms() -> u64 {
-    2000
-}
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct Settings {
@@ -117,16 +97,6 @@ pub struct Settings {
     pub flow_hold_ctrl_only: bool,
     #[serde(default = "default_handoff_timeout_ms")]
     pub flow_handoff_timeout_ms: u64,
-    #[serde(default = "default_warning_line_distance")]
-    pub flow_warning_line_distance: i32,
-    #[serde(default = "default_cooldown_ms")]
-    pub flow_cooldown_ms: u64,
-    #[serde(default = "default_ack_timeout_ms")]
-    pub flow_ack_timeout_ms: u64,
-    #[serde(default = "default_max_backoff_ms")]
-    pub flow_max_backoff_ms: u64,
-    #[serde(default = "default_arm_timeout_ms")]
-    pub flow_arm_timeout_ms: u64,
 }
 
 impl Default for Settings {
@@ -166,11 +136,6 @@ impl Default for Settings {
             flow_edge_threshold: 5,
             flow_hold_ctrl_only: false,
             flow_handoff_timeout_ms: 500,
-            flow_warning_line_distance: 80,
-            flow_cooldown_ms: 300,
-            flow_ack_timeout_ms: 500,
-            flow_max_backoff_ms: 10000,
-            flow_arm_timeout_ms: 2000,
         }
     }
 }

@@ -26,41 +26,32 @@ pub fn spawn_background_worker(
     let (tx_cmd, rx_cmd) = channel::<BackgroundTxCmd>();
     let (tx_state, rx_state) = channel::<DeviceStateUpdate>();
 
-    crate::TOKIO_RUNTIME.spawn(async move {
+    std::thread::spawn(move || {
         let mut last_poll = None;
         let mut paired_devices = crate::cache::load_device_cache();
 
         loop {
-            // Check commands non-blockingly to be responsive to user actions
+            // Check commands with a short timeout to be responsive to user actions
             let mut force_poll = false;
-            let mut cmd_received = None;
 
-            match rx_cmd.try_recv() {
-                Ok(cmd) => {
-                    cmd_received = Some(cmd);
+            // Wait with a small timeout so the thread loop checks for polling interval periodically
+            match rx_cmd.recv_timeout(Duration::from_millis(200)) {
+                Ok(BackgroundTxCmd::TriggerPoll) => {
+                    force_poll = true;
                 }
-                Err(std::sync::mpsc::TryRecvError::Empty) => {
-                    // No commands, yield execution via non-blocking sleep
-                    tokio::time::sleep(Duration::from_millis(200)).await;
+                Ok(BackgroundTxCmd::Unpair(mac)) => {
+                    // Call bluetooth unpair and remove from local paired list immediately
+                    crate::bluetooth::unpair_device(&mac);
+                    paired_devices.retain(|(m, _, _)| m != &mac);
+                    crate::cache::save_device_cache(&paired_devices);
+                    force_poll = true;
                 }
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    // Timeout hit - regular interval check
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                     // Main app exited
                     break;
-                }
-            }
-
-            if let Some(cmd) = cmd_received {
-                match cmd {
-                    BackgroundTxCmd::TriggerPoll => {
-                        force_poll = true;
-                    }
-                    BackgroundTxCmd::Unpair(mac) => {
-                        // Call bluetooth unpair and remove from local paired list immediately
-                        crate::bluetooth::unpair_device(&mac).await;
-                        paired_devices.retain(|(m, _, _)| m != &mac);
-                        crate::cache::save_device_cache(&paired_devices);
-                        force_poll = true;
-                    }
                 }
             }
 
@@ -80,7 +71,7 @@ pub fn spawn_background_worker(
 
             if should_poll {
                 let (unifying, bolt) = crate::receiver::detect_receivers();
-                let (fresh_devices, bt_up) = crate::bluetooth::get_paired_logitech_devices().await;
+                let (fresh_devices, bt_up) = crate::bluetooth::get_paired_logitech_devices();
 
                 if bt_up {
                     let mut changed = false;
@@ -134,13 +125,9 @@ pub fn spawn_background_worker(
                 // Query battery level only if there's any active connection or active hidpp battery
                 let has_active_hidpp = crate::battery::has_active_hidpp_battery();
                 let battery_pct = if paired_devices.iter().any(|(_, _, c)| *c) || has_active_hidpp {
-                    tokio::task::spawn_blocking(move || {
-                        crate::battery::get_mouse_battery()
-                            .map(|(_, pct)| pct)
-                            .unwrap_or_else(|| "80".to_string())
-                    })
-                    .await
-                    .unwrap_or_else(|_| "80".to_string())
+                    crate::battery::get_mouse_battery()
+                        .map(|(_, pct)| pct)
+                        .unwrap_or_else(|| "80".to_string())
                 } else {
                     "0".to_string()
                 };

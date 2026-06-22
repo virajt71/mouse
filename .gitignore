@@ -6,7 +6,6 @@
 /packaging/linux/mouser.spec
 /packaging/linux/PKGBUILD
 /.github
-/.agents
 
 # Cargo lock is kept for binaries (remove this line if you want to ignore it)
 # Cargo.lock

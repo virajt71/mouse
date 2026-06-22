@@ -1,35 +1,15 @@
-use std::process::Stdio;
-use tokio::io::AsyncWriteExt;
-
-/// Validate that a string is a well-formed Bluetooth MAC address
-/// (exactly six colon-separated hex octets: `XX:XX:XX:XX:XX:XX`).
-/// Rejects anything else to prevent argument injection into `bluetoothctl`.
-fn is_valid_mac(mac: &str) -> bool {
-    let b = mac.as_bytes();
-    if b.len() != 17 {
-        return false;
-    }
-    for (i, &byte) in b.iter().enumerate() {
-        if (i + 1) % 3 == 0 {
-            if byte != b':' {
-                return false;
-            }
-        } else if !byte.is_ascii_hexdigit() {
-            return false;
-        }
-    }
-    true
-}
-
 // Returns (devices, bluetooth_was_reachable).
 // bluetooth_was_reachable = false means the BT adapter is off/unavailable,
 // so the caller should keep its cached device list intact.
-pub async fn get_paired_logitech_devices() -> (Vec<(String, String, bool)>, bool) {
+pub fn get_paired_logitech_devices() -> (Vec<(String, String, bool)>, bool) {
     let mut devices = Vec::new();
 
     #[cfg(target_os = "linux")]
     {
-        let result = tokio::process::Command::new("bluetoothctl")
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+
+        let result = Command::new("bluetoothctl")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -43,10 +23,10 @@ pub async fn get_paired_logitech_devices() -> (Vec<(String, String, bool)>, bool
             Ok(mut child) => {
                 // Write both commands to stdin and exit
                 if let Some(mut stdin) = child.stdin.take() {
-                    let _ = stdin.write_all(b"devices Paired\ndevices Connected\nexit\n").await;
+                    let _ = stdin.write_all(b"devices Paired\ndevices Connected\nexit\n");
                 }
 
-                match child.wait_with_output().await {
+                match child.wait_with_output() {
                     Err(_) => (devices, false),
                     Ok(output) => {
                         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -121,14 +101,13 @@ pub async fn get_paired_logitech_devices() -> (Vec<(String, String, bool)>, bool
     }
 }
 
-async fn get_connected_bluetooth_macs() -> std::collections::HashSet<String> {
+fn get_connected_bluetooth_macs() -> std::collections::HashSet<String> {
     let mut connected = std::collections::HashSet::new();
     #[cfg(target_os = "linux")]
     {
-        if let Ok(output) = tokio::process::Command::new("bluetoothctl")
+        if let Ok(output) = std::process::Command::new("bluetoothctl")
             .args(["devices", "Connected"])
             .output()
-            .await
         {
             let stdout = String::from_utf8_lossy(&output.stdout);
             for line in stdout.lines() {
@@ -142,24 +121,16 @@ async fn get_connected_bluetooth_macs() -> std::collections::HashSet<String> {
     connected
 }
 
-pub async fn is_device_connected(mac: &str) -> bool {
-    if !is_valid_mac(mac) {
-        log::warn!("[Bluetooth] Rejected invalid MAC address: {:?}", mac);
-        return false;
-    }
-    let connected = get_connected_bluetooth_macs().await;
+pub fn is_device_connected(mac: &str) -> bool {
+    let connected = get_connected_bluetooth_macs();
     connected.contains(&mac.to_uppercase())
 }
 
-pub async fn unpair_device(mac: &str) {
+pub fn unpair_device(mac: &str) {
     #[cfg(target_os = "linux")]
     {
-        if !is_valid_mac(mac) {
-            log::warn!("[Bluetooth] Rejected unpair request for invalid MAC address: {:?}", mac);
-            return;
-        }
         // Execute: bluetoothctl remove <mac> to unpair the device
-        let _ = tokio::process::Command::new("bluetoothctl")
+        let _ = std::process::Command::new("bluetoothctl")
             .arg("remove")
             .arg(mac)
             .spawn();
