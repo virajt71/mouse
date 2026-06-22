@@ -14,3 +14,11 @@ pub mod receiver;
 pub mod worker;
 
 pub use self::engine::Engine;
+
+pub static TOKIO_RUNTIME: std::sync::LazyLock<tokio::runtime::Runtime> = std::sync::LazyLock::new(|| {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(4)
+        .enable_all()
+        .build()
+        .expect("Failed to build Tokio runtime")
+});

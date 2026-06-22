@@ -5,12 +5,20 @@ pub mod edge;
 pub mod topology;
 pub mod handoff;
 pub mod channel_switch;
+pub mod ports;
 
 use crate::lock_ext::MutexExt;
 use crate::config::Config;
 use std::sync::atomic::{AtomicBool, Ordering, AtomicU8, AtomicI32, AtomicU64};
 use std::sync::{Arc, Mutex, RwLock};
-use edge::EdgeEvent;
+pub use edge::EdgeEvent;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum CursorZone {
+    Safe,
+    PrepZone(EdgeEvent),
+    FireZone(EdgeEvent),
+}
 
 #[allow(non_upper_case_globals)]
 pub static FLOW_MANAGER: std::sync::LazyLock<Arc<FlowManager>> =
@@ -38,6 +46,11 @@ pub struct FlowManager {
     pub flow_edge_threshold: AtomicI32,
     pub flow_hold_ctrl_only: AtomicBool,
     pub flow_handoff_timeout_ms: AtomicU64,
+    pub flow_warning_line_distance: AtomicI32,
+    pub flow_cooldown_ms: AtomicU64,
+    pub flow_ack_timeout_ms: AtomicU64,
+    pub flow_max_backoff_ms: AtomicU64,
+    pub flow_arm_timeout_ms: AtomicU64,
 }
 
 impl FlowManager {
@@ -63,6 +76,11 @@ impl FlowManager {
             flow_edge_threshold: AtomicI32::new(5),
             flow_hold_ctrl_only: AtomicBool::new(false),
             flow_handoff_timeout_ms: AtomicU64::new(500),
+            flow_warning_line_distance: AtomicI32::new(80),
+            flow_cooldown_ms: AtomicU64::new(300),
+            flow_ack_timeout_ms: AtomicU64::new(500),
+            flow_max_backoff_ms: AtomicU64::new(10000),
+            flow_arm_timeout_ms: AtomicU64::new(2000),
         }
     }
 
@@ -84,16 +102,16 @@ impl FlowManager {
         // Store engine_inner
         *self.engine_inner.lock_safe() = Some(engine_inner.clone());
 
-        // 1. Start UDP Discovery thread
+        // 1. Spawn UDP Discovery task on Tokio runtime
         let inner_disc = engine_inner.clone();
-        std::thread::spawn(move || {
-            network::run_discovery_loop(inner_disc);
+        crate::TOKIO_RUNTIME.spawn(async move {
+            network::run_discovery_loop(inner_disc).await;
         });
 
-        // 2. Start TCP TLS Server thread
+        // 2. Spawn TCP Server task on Tokio runtime
         let inner_serv = engine_inner.clone();
-        std::thread::spawn(move || {
-            network::run_server_loop(inner_serv);
+        crate::TOKIO_RUNTIME.spawn(async move {
+            network::run_server_loop(inner_serv).await;
         });
 
         // 3. Start Clipboard Sync thread
@@ -101,15 +119,15 @@ impl FlowManager {
             clipboard::run_clipboard_loop();
         });
 
-        // 4. Start Edge Detection thread
+        // 4. Spawn Edge Detection task on Tokio runtime
         let inner_edge = engine_inner.clone();
-        std::thread::spawn(move || {
-            edge::run_x11_edge_polling(inner_edge);
+        crate::TOKIO_RUNTIME.spawn(async move {
+            edge::run_x11_edge_polling(inner_edge).await;
         });
 
-        // 5. Start Handoff channel listener thread
-        std::thread::spawn(move || {
-            handoff::run_handoff_loop();
+        // 5. Spawn Handoff channel listener task on Tokio runtime
+        crate::TOKIO_RUNTIME.spawn(async move {
+            handoff::run_handoff_loop().await;
         });
     }
 
@@ -177,9 +195,19 @@ impl FlowManager {
             .store(cfg.settings.flow_hold_ctrl_only, Ordering::Relaxed);
         self.flow_handoff_timeout_ms
             .store(cfg.settings.flow_handoff_timeout_ms, Ordering::Relaxed);
+        self.flow_warning_line_distance
+            .store(cfg.settings.flow_warning_line_distance, Ordering::Relaxed);
+        self.flow_cooldown_ms
+            .store(cfg.settings.flow_cooldown_ms, Ordering::Relaxed);
+        self.flow_ack_timeout_ms
+            .store(cfg.settings.flow_ack_timeout_ms, Ordering::Relaxed);
+        self.flow_max_backoff_ms
+            .store(cfg.settings.flow_max_backoff_ms, Ordering::Relaxed);
+        self.flow_arm_timeout_ms
+            .store(cfg.settings.flow_arm_timeout_ms, Ordering::Relaxed);
     }
 
-    pub fn handle_raw_motion(&self, dx: i32, dy: i32) -> Option<EdgeEvent> {
+    pub fn handle_raw_motion(&self, dx: i32, dy: i32) -> CursorZone {
         let mut vx = self.virtual_x.lock_safe();
         let mut vy = self.virtual_y.lock_safe();
 
@@ -190,20 +218,31 @@ impl FlowManager {
         *vy = (*vy + dy).clamp(0, sh);
 
         let threshold = self.flow_edge_threshold.load(Ordering::Relaxed);
-        let mut edge = None;
+        let warning_dist = self.flow_warning_line_distance.load(Ordering::Relaxed);
 
-        // Boundary checks
+        // 1. Check fire zone (highest priority)
         if *vx <= threshold {
-            edge = Some(EdgeEvent::Left);
+            return CursorZone::FireZone(EdgeEvent::Left);
         } else if *vx >= sw - threshold {
-            edge = Some(EdgeEvent::Right);
+            return CursorZone::FireZone(EdgeEvent::Right);
         } else if *vy <= threshold {
-            edge = Some(EdgeEvent::Top);
+            return CursorZone::FireZone(EdgeEvent::Top);
         } else if *vy >= sh - threshold {
-            edge = Some(EdgeEvent::Bottom);
+            return CursorZone::FireZone(EdgeEvent::Bottom);
         }
 
-        edge
+        // 2. Check prep zone
+        if *vx <= warning_dist {
+            return CursorZone::PrepZone(EdgeEvent::Left);
+        } else if *vx >= sw - warning_dist {
+            return CursorZone::PrepZone(EdgeEvent::Right);
+        } else if *vy <= warning_dist {
+            return CursorZone::PrepZone(EdgeEvent::Top);
+        } else if *vy >= sh - warning_dist {
+            return CursorZone::PrepZone(EdgeEvent::Bottom);
+        }
+
+        CursorZone::Safe
     }
 
     pub fn get_active_hardware_peer_name(&self) -> Option<String> {

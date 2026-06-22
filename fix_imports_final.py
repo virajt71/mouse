@@ -32,7 +32,7 @@ for root, _, files in os.walk('.'):
                 fix_file(path, 'gui')
             elif path.startswith('./engine/src'):
                 fix_file(path, 'engine')
-            elif path.startswith('./src'):
+            elif path.startswith('./app/src'):
                 fix_file(path, 'root')
             elif path.startswith('./engine/tests'):
                 # tests usually use the crate name

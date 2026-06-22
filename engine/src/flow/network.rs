@@ -1,19 +1,42 @@
 use crate::lock_ext::MutexExt;
 use super::FLOW_MANAGER;
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
-use std::net::{TcpListener, TcpStream, UdpSocket};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
+use sha2::Digest;
 
 pub static DISCOVERED_PEERS: std::sync::LazyLock<RwLock<HashMap<String, (String, u8, Instant)>>> =
     std::sync::LazyLock::new(|| RwLock::new(HashMap::new()));
-pub static ACTIVE_CONNECTIONS: std::sync::LazyLock<RwLock<HashMap<String, TcpStream>>> =
+pub static ACTIVE_CONNECTIONS: std::sync::LazyLock<RwLock<HashMap<String, Arc<tokio::sync::Mutex<tokio::net::TcpStream>>>>> =
     std::sync::LazyLock::new(|| RwLock::new(HashMap::new()));
 pub static CONNECTING_PEERS: std::sync::LazyLock<RwLock<std::collections::HashSet<String>>> =
     std::sync::LazyLock::new(|| RwLock::new(std::collections::HashSet::new()));
 
 pub static IS_SEARCHING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Per-IP connection rate limiter: (attempt_count, window_start).
+/// Allows at most 5 new TCP connections per 60-second sliding window per source IP.
+static CONNECTION_RATE_LIMITER: std::sync::LazyLock<
+    std::sync::Mutex<HashMap<std::net::IpAddr, (u32, Instant)>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+
+const RATE_LIMIT_MAX_CONNS: u32 = 5;
+const RATE_LIMIT_WINDOW: Duration = Duration::from_secs(60);
+
+/// Returns `true` if the connection is within rate limits, `false` if it should be dropped.
+fn check_rate_limit(ip: std::net::IpAddr) -> bool {
+    let mut limiter = CONNECTION_RATE_LIMITER.lock().unwrap();
+    let now = Instant::now();
+    let entry = limiter.entry(ip).or_insert((0, now));
+    if entry.1.elapsed() >= RATE_LIMIT_WINDOW {
+        // Window expired — reset counter
+        *entry = (1, now);
+        true
+    } else {
+        entry.0 += 1;
+        entry.0 <= RATE_LIMIT_MAX_CONNS
+    }
+}
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub enum FlowEvent {
@@ -33,13 +56,32 @@ pub enum FlowEvent {
     FlowHandoffAck {
         peer_id: String,
     },
+    FlowHandoffArm {
+        peer_id: String,
+        entry_edge: crate::flow::edge::EdgeEvent,
+    },
+    FlowHandoffDisarm {
+        peer_id: String,
+    },
+    FlowReceptionAck {
+        peer_id: String,
+    },
 }
 
-pub fn run_discovery_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) {
+pub struct NetworkPeerTransport;
+
+#[async_trait::async_trait]
+impl crate::flow::ports::PeerTransport for NetworkPeerTransport {
+    async fn send_event(&self, peer_name: &str, event: &FlowEvent) -> anyhow::Result<()> {
+        send_event_to_peer(peer_name, event).await
+    }
+}
+
+pub async fn run_discovery_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) {
     use std::sync::atomic::Ordering;
     let mut socket_opt = None;
     while engine_inner.running.load(Ordering::Acquire) {
-        match UdpSocket::bind("0.0.0.0:50519") {
+        match tokio::net::UdpSocket::bind("0.0.0.0:50519").await {
             Ok(s) => {
                 socket_opt = Some(s);
                 break;
@@ -49,125 +91,138 @@ pub fn run_discovery_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) 
                     "[Flow Network] Failed to bind discovery UDP socket: {}. Retrying in 5s...",
                     e
                 );
-                std::thread::sleep(Duration::from_secs(5));
+                tokio::time::sleep(Duration::from_secs(5)).await;
             }
         }
     }
 
     let socket = match socket_opt {
-        Some(s) => s,
+        Some(s) => Arc::new(s),
         None => return,
     };
     let _ = socket.set_broadcast(true);
-    let _ = socket.set_read_timeout(Some(Duration::from_millis(500)));
 
     log::info!("[Flow Network] UDP Discovery listener running on port 50519...");
 
-    // Spawn broadcast thread
-    let socket_bc = match socket.try_clone() {
-        Ok(s) => s,
-        Err(_) => return,
-    };
-    let cfg_bc = engine_inner.clone();
-    thread_spawn_broadcast(socket_bc, cfg_bc);
+    // Spawn broadcast task
+    let socket_bc = socket.clone();
+    tokio::spawn(async move {
+        loop {
+            let enabled = FLOW_MANAGER.flow_enabled.load(Ordering::Relaxed);
+            let searching = IS_SEARCHING.load(Ordering::Relaxed);
+
+            if enabled || searching {
+                let name = FLOW_MANAGER.flow_local_name.read().unwrap().clone();
+                let channel = FLOW_MANAGER.flow_local_channel_index.load(Ordering::Relaxed);
+                let msg = format!("MOUSER_DISCOVER:{}:{}", name, channel);
+                let _ = socket_bc.send_to(msg.as_bytes(), "255.255.255.255:50519").await;
+            }
+            tokio::time::sleep(Duration::from_secs(3)).await;
+        }
+    });
 
     let mut buf = [0u8; 1024];
     let mut last_detected_peer_time: Option<Instant> = None;
     loop {
-        if let Ok((len, src)) = socket.recv_from(&mut buf) {
-            let msg = String::from_utf8_lossy(&buf[..len]);
-            let parts: Vec<&str> = msg.split(':').collect();
-            if parts.is_empty() {
-                continue;
-            }
+        if !engine_inner.running.load(Ordering::Acquire) {
+            break;
+        }
 
-            let local_name = FLOW_MANAGER.flow_local_name.read().unwrap().clone();
+        tokio::select! {
+            res = socket.recv_from(&mut buf) => {
+                match res {
+                    Ok((len, src)) => {
+                        let msg = String::from_utf8_lossy(&buf[..len]);
+                        let parts: Vec<&str> = msg.split(':').collect();
+                        if parts.is_empty() {
+                            continue;
+                        }
 
-            if parts[0] == "MOUSER_DISCOVER" && parts.len() > 1 {
-                let peer_name = parts[1].to_string();
-                if peer_name != local_name {
-                    let peer_channel = if parts.len() > 2 {
-                        parts[2].parse::<u8>().unwrap_or(0)
-                    } else {
-                        0
-                    };
-                    // Register peer IP and channel
-                    let peer_ip = src.ip().to_string();
-                    DISCOVERED_PEERS
-                        .write()
-                        .unwrap()
-                        .insert(peer_name.clone(), (peer_ip.clone(), peer_channel, Instant::now()));
+                        let local_name = FLOW_MANAGER.flow_local_name.read().unwrap().clone();
 
-                    // Respond with identity containing local name and channel
-                    let reply = format!("MOUSER_IDENTITY:{}:{}", local_name, {
-                        FLOW_MANAGER.flow_local_channel_index.load(Ordering::Relaxed)
-                    });
-                    let _ = socket.send_to(reply.as_bytes(), src);
+                        if parts[0] == "MOUSER_DISCOVER" && parts.len() > 1 {
+                            let peer_name = parts[1].to_string();
+                            if peer_name != local_name {
+                                let peer_channel = if parts.len() > 2 {
+                                    parts[2].parse::<u8>().unwrap_or(0)
+                                } else {
+                                    0
+                                };
+                                let peer_ip = src.ip().to_string();
+                                DISCOVERED_PEERS
+                                    .write()
+                                    .unwrap()
+                                    .insert(peer_name.clone(), (peer_ip.clone(), peer_channel, Instant::now()));
 
-                    // Update flow_peers in config if already exists and changed
-                    {
-                        let mut cfg = engine_inner.config.lock_safe();
-                        if let Some(peer) = cfg.settings.flow_peers.iter_mut().find(|p| p.name == peer_name) {
-                            if peer.channel_index != peer_channel {
-                                peer.channel_index = peer_channel;
-                                let _ = cfg.save();
-                                engine_inner.config_generation.fetch_add(1, Ordering::SeqCst);
-                                if let Ok(lock) = engine_inner.config_change_listener.lock() {
-                                    if let Some(ref callback) = *lock {
-                                        callback();
+                                let reply = format!("MOUSER_IDENTITY:{}:{}", local_name, {
+                                    FLOW_MANAGER.flow_local_channel_index.load(Ordering::Relaxed)
+                                });
+                                let _ = socket.send_to(reply.as_bytes(), src).await;
+
+                                {
+                                    let mut cfg = engine_inner.config.lock_safe();
+                                    if let Some(peer) = cfg.settings.flow_peers.iter_mut().find(|p| p.name == peer_name) {
+                                        if peer.channel_index != peer_channel {
+                                            peer.channel_index = peer_channel;
+                                            let _ = cfg.save();
+                                            engine_inner.config_generation.fetch_add(1, Ordering::SeqCst);
+                                            if let Ok(lock) = engine_inner.config_change_listener.lock() {
+                                                if let Some(ref callback) = *lock {
+                                                    callback();
+                                                }
+                                            }
+                                        }
                                     }
                                 }
+
+                                trigger_auto_connect(&peer_name, &peer_ip, &engine_inner).await;
+                            }
+                        } else if parts[0] == "MOUSER_IDENTITY" && parts.len() > 1 {
+                            let peer_name = parts[1].to_string();
+                            if peer_name != local_name {
+                                let peer_channel = if parts.len() > 2 {
+                                    parts[2].parse::<u8>().unwrap_or(0)
+                                } else {
+                                    0
+                                };
+                                let peer_ip = src.ip().to_string();
+                                DISCOVERED_PEERS
+                                    .write()
+                                    .unwrap()
+                                    .insert(peer_name.clone(), (peer_ip.clone(), peer_channel, Instant::now()));
+
+                                {
+                                    let mut cfg = engine_inner.config.lock_safe();
+                                    if let Some(peer) = cfg.settings.flow_peers.iter_mut().find(|p| p.name == peer_name) {
+                                        if peer.channel_index != peer_channel {
+                                            peer.channel_index = peer_channel;
+                                            let _ = cfg.save();
+                                            engine_inner.config_generation.fetch_add(1, Ordering::SeqCst);
+                                            if let Ok(lock) = engine_inner.config_change_listener.lock() {
+                                                if let Some(ref callback) = *lock {
+                                                    callback();
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                trigger_auto_connect(&peer_name, &peer_ip, &engine_inner).await;
                             }
                         }
                     }
-
-                    trigger_auto_connect(&peer_name, &peer_ip, &engine_inner);
-                }
-            } else if parts[0] == "MOUSER_IDENTITY" && parts.len() > 1 {
-                let peer_name = parts[1].to_string();
-                if peer_name != local_name {
-                    let peer_channel = if parts.len() > 2 {
-                        parts[2].parse::<u8>().unwrap_or(0)
-                    } else {
-                        0
-                    };
-                    let peer_ip = src.ip().to_string();
-                    DISCOVERED_PEERS
-                        .write()
-                        .unwrap()
-                        .insert(peer_name.clone(), (peer_ip.clone(), peer_channel, Instant::now()));
-
-                    // Update flow_peers in config if already exists and changed
-                    {
-                        let mut cfg = engine_inner.config.lock_safe();
-                        if let Some(peer) = cfg.settings.flow_peers.iter_mut().find(|p| p.name == peer_name) {
-                            if peer.channel_index != peer_channel {
-                                peer.channel_index = peer_channel;
-                                let _ = cfg.save();
-                                engine_inner.config_generation.fetch_add(1, Ordering::SeqCst);
-                                if let Ok(lock) = engine_inner.config_change_listener.lock() {
-                                    if let Some(ref callback) = *lock {
-                                        callback();
-                                    }
-                                }
-                            }
-                        }
+                    Err(e) => {
+                        log::error!("[Flow Network] UDP recv error: {}", e);
                     }
-
-                    trigger_auto_connect(&peer_name, &peer_ip, &engine_inner);
                 }
+            }
+            _ = tokio::time::sleep(Duration::from_millis(500)) => {
+                let mut peers = DISCOVERED_PEERS.write().unwrap();
+                peers.retain(|_, (_, _, time)| time.elapsed() < Duration::from_secs(10));
             }
         }
 
-        // Clean up expired peers (older than 10 seconds)
-        {
-            let mut peers = DISCOVERED_PEERS.write().unwrap();
-            peers.retain(|_, (_, _, time)| time.elapsed() < Duration::from_secs(10));
-        }
-
-        // Auto-disable flow if enabled but no peers are detected/connected for a certain period.
         let flow_enabled = FLOW_MANAGER.flow_enabled.load(Ordering::Relaxed);
-
         if flow_enabled {
             let has_active = !ACTIVE_CONNECTIONS.read().unwrap().is_empty();
             let has_discovered = !DISCOVERED_PEERS.read().unwrap().is_empty();
@@ -181,11 +236,7 @@ pub fn run_discovery_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) 
                         let mut cfg = engine_inner.config.lock_safe();
                         cfg.settings.flow_enabled = false;
                         let _ = cfg.save();
-                        
-                        // Update cached settings in FLOW_MANAGER
                         FLOW_MANAGER.update_config(&cfg);
-                        
-                        // Increment generation to trigger GUI reload
                         engine_inner.config_generation.fetch_add(1, Ordering::SeqCst);
                         if let Ok(lock) = engine_inner.config_change_listener.lock() {
                             if let Some(ref callback) = *lock {
@@ -202,27 +253,11 @@ pub fn run_discovery_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) 
     }
 }
 
-fn thread_spawn_broadcast(socket: UdpSocket, _engine_inner: Arc<crate::engine::inner::EngineInner>) {
-    use std::sync::atomic::Ordering;
-    std::thread::spawn(move || loop {
-        let enabled = FLOW_MANAGER.flow_enabled.load(Ordering::Relaxed);
-        let searching = IS_SEARCHING.load(Ordering::Relaxed);
-
-        if enabled || searching {
-            let name = FLOW_MANAGER.flow_local_name.read().unwrap().clone();
-            let channel = FLOW_MANAGER.flow_local_channel_index.load(Ordering::Relaxed);
-            let msg = format!("MOUSER_DISCOVER:{}:{}", name, channel);
-            let _ = socket.send_to(msg.as_bytes(), "255.255.255.255:50519");
-        }
-        std::thread::sleep(Duration::from_secs(3));
-    });
-}
-
-pub fn run_server_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) {
+pub async fn run_server_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) {
     use std::sync::atomic::Ordering;
     let mut listener_opt = None;
     while engine_inner.running.load(Ordering::Acquire) {
-        match TcpListener::bind("0.0.0.0:50520") {
+        match tokio::net::TcpListener::bind("0.0.0.0:50520").await {
             Ok(l) => {
                 listener_opt = Some(l);
                 break;
@@ -232,7 +267,7 @@ pub fn run_server_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) {
                     "[Flow Network] Failed to bind TCP listener: {}. Retrying in 5s...",
                     e
                 );
-                std::thread::sleep(Duration::from_secs(5));
+                tokio::time::sleep(Duration::from_secs(5)).await;
             }
         }
     }
@@ -244,30 +279,47 @@ pub fn run_server_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) {
 
     log::info!("[Flow Network] TCP Control Server listening on port 50520...");
 
-    for stream in listener.incoming() {
-        match stream {
-            Ok(stream) => {
-                let inner = engine_inner.clone();
-                std::thread::spawn(move || {
-                    if let Err(e) = handle_client(stream, inner) {
-                        log::error!("[Flow Network] Error handling client: {}", e);
+    loop {
+        if !engine_inner.running.load(Ordering::Acquire) {
+            break;
+        }
+
+        tokio::select! {
+            res = listener.accept() => {
+                match res {
+                    Ok((stream, peer_addr)) => {
+                        let peer_ip = peer_addr.ip();
+                        if !check_rate_limit(peer_ip) {
+                            log::warn!(
+                                "[Flow Network] Rate limit exceeded for {}. Dropping connection.",
+                                peer_ip
+                            );
+                            drop(stream);
+                        } else {
+                            let inner = engine_inner.clone();
+                            tokio::spawn(async move {
+                                if let Err(e) = handle_client(stream, inner).await {
+                                    log::error!("[Flow Network] Error handling client: {}", e);
+                                }
+                            });
+                        }
                     }
-                });
+                    Err(e) => {
+                        log::error!("[Flow Network] Connection accept failed: {}", e);
+                    }
+                }
             }
-            Err(e) => {
-                log::error!("[Flow Network] Connection accept failed: {}", e);
-            }
+            _ = tokio::time::sleep(Duration::from_millis(500)) => {}
         }
     }
 }
 
-pub fn connect_to_peer(
+pub async fn connect_to_peer(
     name: &str,
     ip: &str,
     port: u16,
     engine_inner: Arc<crate::engine::inner::EngineInner>,
 ) {
-    // Skip if already connected or connecting
     {
         let conns = ACTIVE_CONNECTIONS.read().unwrap();
         if conns.contains_key(name) {
@@ -299,18 +351,24 @@ pub fn connect_to_peer(
         name,
         addr
     );
-    let Ok(mut stream) = TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_secs(5))
-    else {
-        return;
+
+    let stream_res = tokio::time::timeout(
+        Duration::from_secs(5),
+        tokio::net::TcpStream::connect(&addr),
+    ).await;
+
+    let mut stream = match stream_res {
+        Ok(Ok(s)) => s,
+        _ => return,
     };
 
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
-
-    // Read challenge
-    let mut reader = BufReader::new(stream.try_clone().unwrap());
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     let mut line = String::new();
-    if reader.read_line(&mut line).is_err() {
-        return;
+    {
+        let mut reader = BufReader::new(&mut stream);
+        if reader.read_line(&mut line).await.is_err() {
+            return;
+        }
     }
 
     let salt = line
@@ -319,7 +377,6 @@ pub fn connect_to_peer(
         .unwrap_or("")
         .to_string();
 
-    // Get PIN from config (stored as fingerprint field for now)
     let pin = {
         let cfg = engine_inner.config.lock_safe();
         cfg.settings
@@ -348,30 +405,32 @@ pub fn connect_to_peer(
         .flow_local_name
         .clone();
 
-    let _ = stream.write_all(format!("MOUSER_RESPONSE:{}:{}\n", local_name, hash).as_bytes());
+    if stream.write_all(format!("MOUSER_RESPONSE:{}:{}\n", local_name, hash).as_bytes()).await.is_err() {
+        return;
+    }
 
     line.clear();
-    if reader.read_line(&mut line).is_err() {
-        return;
+    {
+        let mut reader = BufReader::new(&mut stream);
+        if reader.read_line(&mut line).await.is_err() {
+            return;
+        }
     }
     if line.trim() != "MOUSER_OK" {
         return;
     }
 
-    let _ = stream.set_read_timeout(None);
-
     log::info!("[Flow Network] Connected to peer '{}'", name);
+    let stream_arc = Arc::new(tokio::sync::Mutex::new(stream));
     {
         let mut conns = ACTIVE_CONNECTIONS.write().unwrap();
-        conns.insert(name.to_string(), stream.try_clone().unwrap());
+        conns.insert(name.to_string(), stream_arc.clone());
     }
 
-    // Spawn listener thread for the connected peer's events
-    let stream_clone = stream.try_clone().unwrap();
     let name_clone = name.to_string();
     let inner_clone = engine_inner.clone();
-    std::thread::spawn(move || {
-        if let Err(e) = process_peer_events(stream_clone, name_clone.clone(), inner_clone) {
+    tokio::spawn(async move {
+        if let Err(e) = process_peer_events(stream_arc, name_clone.clone(), inner_clone).await {
             log::error!(
                 "[Flow Network] Error in process_peer_events for '{}': {}",
                 name_clone,
@@ -381,7 +440,7 @@ pub fn connect_to_peer(
     });
 }
 
-fn trigger_auto_connect(
+async fn trigger_auto_connect(
     peer_name: &str,
     peer_ip: &str,
     engine_inner: &Arc<crate::engine::inner::EngineInner>,
@@ -409,27 +468,38 @@ fn trigger_auto_connect(
             let ip_clone = peer_ip.to_string();
             let name_clone = peer_name.to_string();
             let inner_clone = engine_inner.clone();
-            std::thread::spawn(move || {
-                connect_to_peer(&name_clone, &ip_clone, 50520, inner_clone);
+            tokio::spawn(async move {
+                connect_to_peer(&name_clone, &ip_clone, 50520, inner_clone).await;
             });
         }
     }
 }
 
-fn handle_client(
-    mut stream: TcpStream,
+async fn handle_client(
+    mut stream: tokio::net::TcpStream,
     engine_inner: Arc<crate::engine::inner::EngineInner>,
 ) -> anyhow::Result<()> {
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
-    let mut reader = BufReader::new(stream.try_clone()?);
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+    let salt = format!("{:x}", Instant::now().elapsed().as_nanos());
+    let write_res = tokio::time::timeout(
+        Duration::from_secs(5),
+        stream.write_all(format!("MOUSER_CHALLENGE:{}\n", salt).as_bytes())
+    ).await;
+
+    if write_res.is_err() || write_res.unwrap().is_err() {
+        return Ok(());
+    }
+
+    let mut reader = BufReader::new(&mut stream);
     let mut line = String::new();
 
-    // 1. PIN-based pairing check
-    let salt = format!("{:x}", Instant::now().elapsed().as_nanos());
-    stream.write_all(format!("MOUSER_CHALLENGE:{}\n", salt).as_bytes())?;
+    let read_res = tokio::time::timeout(
+        Duration::from_secs(5),
+        reader.read_line(&mut line)
+    ).await;
 
-    line.clear();
-    if reader.read_line(&mut line)? == 0 {
+    if read_res.is_err() || read_res.unwrap().unwrap_or(0) == 0 {
         return Ok(());
     }
 
@@ -466,36 +536,42 @@ fn handle_client(
     let expected_hash = format!("{:x}", sha2::Sha256::digest(input_str.as_bytes()));
 
     if client_hash != expected_hash {
-        stream.write_all(b"MOUSER_FAIL\n")?;
+        let _ = stream.write_all(b"MOUSER_FAIL\n").await;
         return Ok(());
     }
 
-    stream.write_all(b"MOUSER_OK\n")?;
+    stream.write_all(b"MOUSER_OK\n").await?;
     log::info!(
         "[Flow Network] Peer '{}' authenticated successfully.",
         client_name
     );
 
+    let stream_arc = Arc::new(tokio::sync::Mutex::new(stream));
     {
         let mut conns = ACTIVE_CONNECTIONS.write().unwrap();
-        conns.insert(client_name.clone(), stream.try_clone()?);
+        conns.insert(client_name.clone(), stream_arc.clone());
     }
 
-    let _ = stream.set_read_timeout(None);
-    process_peer_events(stream, client_name, engine_inner)
+    process_peer_events(stream_arc, client_name, engine_inner).await
 }
 
-fn process_peer_events(
-    stream: TcpStream,
+async fn process_peer_events(
+    stream: Arc<tokio::sync::Mutex<tokio::net::TcpStream>>,
     client_name: String,
     engine_inner: Arc<crate::engine::inner::EngineInner>,
 ) -> anyhow::Result<()> {
-    let mut reader = BufReader::new(stream.try_clone()?);
-    let mut line = String::new();
+    use tokio::io::AsyncBufReadExt;
 
+    let mut line = String::new();
     loop {
         line.clear();
-        if reader.read_line(&mut line)? == 0 {
+        let read_bytes = {
+            let mut guard = stream.lock().await;
+            let mut reader = tokio::io::BufReader::new(&mut *guard);
+            reader.read_line(&mut line).await?
+        };
+
+        if read_bytes == 0 {
             break;
         }
 
@@ -503,6 +579,7 @@ fn process_peer_events(
             match event {
                 FlowEvent::MouseMove { dx, dy } => {
                     FLOW_MANAGER.set_current_controller(Some(client_name.clone()));
+                    let mut should_return = false;
                     if let Some(ref inner) = *FLOW_MANAGER.engine_inner.lock_safe() {
                         let is_paired = {
                             let peers = FLOW_MANAGER.flow_peers.read().unwrap();
@@ -510,15 +587,14 @@ fn process_peer_events(
                         };
 
                         if is_paired {
-                            if let Some(edge_ev) = FLOW_MANAGER.handle_raw_motion(dx, dy) {
+                            if let crate::flow::CursorZone::FireZone(edge_ev) = FLOW_MANAGER.handle_raw_motion(dx, dy) {
                                 if let Some(peer) = crate::flow::topology::resolve_peer(edge_ev) {
                                     if peer.peer_id == client_name {
                                         log::info!(
                                             "[Flow Network] Edge transition back to controller '{}'",
                                             client_name
                                         );
-                                        let _ =
-                                            send_event_to_peer(&client_name, &FlowEvent::ReturnToLocal);
+                                        should_return = true;
                                     }
                                 }
                             }
@@ -542,6 +618,9 @@ fn process_peer_events(
                             ];
                             let _ = uinput_dev.emit(&evs);
                         }
+                    }
+                    if should_return {
+                        let _ = send_event_to_peer(&client_name, &FlowEvent::ReturnToLocal).await;
                     }
                 }
                 FlowEvent::MouseButton { code, value } => {
@@ -605,6 +684,15 @@ fn process_peer_events(
                 }
                 FlowEvent::FlowHandoffAck { peer_id } => {
                     crate::flow::handoff::handle_handoff_ack(peer_id);
+                }
+                FlowEvent::FlowHandoffArm { peer_id, entry_edge } => {
+                    crate::flow::handoff::handle_handoff_arm(peer_id, entry_edge);
+                }
+                FlowEvent::FlowHandoffDisarm { peer_id } => {
+                    crate::flow::handoff::handle_handoff_disarm(peer_id);
+                }
+                FlowEvent::FlowReceptionAck { peer_id } => {
+                    crate::flow::handoff::handle_reception_ack(peer_id);
                 }
                 FlowEvent::ReturnToLocal => {
                     log::info!(
@@ -699,17 +787,20 @@ fn process_peer_events(
     Ok(())
 }
 
-pub fn send_event_to_peer(peer_name: &str, event: &FlowEvent) -> anyhow::Result<()> {
+pub async fn send_event_to_peer(peer_name: &str, event: &FlowEvent) -> anyhow::Result<()> {
     let serialized = serde_json::to_string(event)?;
-    let mut conns = ACTIVE_CONNECTIONS.write().unwrap();
-    if let Some(s) = conns.get_mut(peer_name) {
-        s.write_all(format!("{}\n", serialized).as_bytes())?;
-        s.flush()?;
+    let s = {
+        let conns = ACTIVE_CONNECTIONS.read().unwrap();
+        conns.get(peer_name).cloned()
+    };
+    if let Some(s) = s {
+        let mut guard = s.lock().await;
+        use tokio::io::AsyncWriteExt;
+        guard.write_all(format!("{}\n", serialized).as_bytes()).await?;
+        guard.flush().await?;
     }
     Ok(())
 }
-
-use sha2::Digest;
 
 #[cfg(test)]
 mod tests {
@@ -735,6 +826,24 @@ mod tests {
                 content: vec![65, 66, 67],
             },
             FlowEvent::ReturnToLocal,
+            FlowEvent::FlowHandoffRequest {
+                peer_id: "peer_req".to_string(),
+                entry_edge: crate::flow::edge::EdgeEvent::Left,
+                cursor_pos: (100, 200),
+            },
+            FlowEvent::FlowHandoffAck {
+                peer_id: "peer_ack".to_string(),
+            },
+            FlowEvent::FlowHandoffArm {
+                peer_id: "peer_arm".to_string(),
+                entry_edge: crate::flow::edge::EdgeEvent::Right,
+            },
+            FlowEvent::FlowHandoffDisarm {
+                peer_id: "peer_disarm".to_string(),
+            },
+            FlowEvent::FlowReceptionAck {
+                peer_id: "peer_rec".to_string(),
+            },
         ];
 
         for event in events {
@@ -808,6 +917,39 @@ mod tests {
                     assert_eq!(c1, c2);
                 }
                 (FlowEvent::ReturnToLocal, FlowEvent::ReturnToLocal) => {}
+                (
+                    FlowEvent::FlowHandoffRequest { peer_id: p1, entry_edge: e1, cursor_pos: c1 },
+                    FlowEvent::FlowHandoffRequest { peer_id: p2, entry_edge: e2, cursor_pos: c2 },
+                ) => {
+                    assert_eq!(p1, p2);
+                    assert_eq!(e1, e2);
+                    assert_eq!(c1, c2);
+                }
+                (
+                    FlowEvent::FlowHandoffAck { peer_id: p1 },
+                    FlowEvent::FlowHandoffAck { peer_id: p2 },
+                ) => {
+                    assert_eq!(p1, p2);
+                }
+                (
+                    FlowEvent::FlowHandoffArm { peer_id: p1, entry_edge: e1 },
+                    FlowEvent::FlowHandoffArm { peer_id: p2, entry_edge: e2 },
+                ) => {
+                    assert_eq!(p1, p2);
+                    assert_eq!(e1, e2);
+                }
+                (
+                    FlowEvent::FlowHandoffDisarm { peer_id: p1 },
+                    FlowEvent::FlowHandoffDisarm { peer_id: p2 },
+                ) => {
+                    assert_eq!(p1, p2);
+                }
+                (
+                    FlowEvent::FlowReceptionAck { peer_id: p1 },
+                    FlowEvent::FlowReceptionAck { peer_id: p2 },
+                ) => {
+                    assert_eq!(p1, p2);
+                }
                 _ => panic!(
                     "Event mismatch after deserialization: expected {:?}, got {:?}",
                     event, deserialized
@@ -823,7 +965,6 @@ mod tests {
         let input_str = format!("{}{}", salt, pin);
         let expected_hash = format!("{:x}", sha2::Sha256::digest(input_str.as_bytes()));
 
-        // Verification logic match
         let client_hash = expected_hash.clone();
         let verification_input = format!("{}{}", salt, pin);
         let verified_hash = format!("{:x}", sha2::Sha256::digest(verification_input.as_bytes()));

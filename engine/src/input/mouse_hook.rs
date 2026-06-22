@@ -133,6 +133,7 @@ impl MouseHook {
                 let mut pressed_keys = std::collections::HashSet::new();
                 let mut pending_dx = 0i32;
                 let mut pending_dy = 0i32;
+                let mut armed_edge: Option<crate::flow::edge::EdgeEvent> = None;
 
                 while running.load(Ordering::Acquire) {
                     let timeout = PollTimeout::try_from(Duration::from_millis(200)).unwrap_or(PollTimeout::NONE);
@@ -154,34 +155,62 @@ impl MouseHook {
                                                 if !crate::flow::FLOW_MANAGER.is_forwarding_to_remote() {
                                                     let enabled = crate::flow::FLOW_MANAGER.flow_enabled.load(Ordering::Relaxed);
                                                     if enabled {
-                                                        if let Some(edge_ev) = crate::flow::FLOW_MANAGER.handle_raw_motion(dx, dy) {
-                                                            let mode = crate::flow::FLOW_MANAGER.flow_mouse_mode.read().unwrap().clone();
-                                                            if mode == "hardware" {
-                                                                let hold_key = crate::flow::FLOW_MANAGER.flow_hold_key.read().unwrap().clone();
-                                                                let ctrl_only = crate::flow::FLOW_MANAGER.flow_hold_ctrl_only.load(Ordering::Relaxed);
-                                                                let mut satisfied = crate::flow::switching::is_hold_key_satisfied(&hold_key);
-                                                                if ctrl_only {
-                                                                    satisfied = satisfied && crate::flow::edge::is_ctrl_held();
-                                                                }
-                                                                if satisfied {
-                                                                    crate::flow::edge::emit_edge_event(edge_ev);
+                                                        let zone = crate::flow::FLOW_MANAGER.handle_raw_motion(dx, dy);
+                                                        let mode = crate::flow::FLOW_MANAGER.flow_mouse_mode.read().unwrap().clone();
+                                                        let hold_key = crate::flow::FLOW_MANAGER.flow_hold_key.read().unwrap().clone();
+                                                        let ctrl_only = crate::flow::FLOW_MANAGER.flow_hold_ctrl_only.load(Ordering::Relaxed);
+                                                        let mut satisfied = crate::flow::switching::is_hold_key_satisfied(&hold_key);
+                                                        if ctrl_only {
+                                                            satisfied = satisfied && crate::flow::edge::is_ctrl_held();
+                                                        }
+
+                                                        if mode == "hardware" {
+                                                            if satisfied {
+                                                                match zone {
+                                                                    crate::flow::CursorZone::FireZone(edge) => {
+                                                                        if armed_edge.is_none() {
+                                                                            crate::flow::edge::emit_edge_event(crate::flow::edge::EdgeZoneEvent::EnteredPrepZone(edge));
+                                                                            armed_edge = Some(edge);
+                                                                        }
+                                                                        crate::flow::edge::emit_edge_event(crate::flow::edge::EdgeZoneEvent::HitScreenEdge(edge));
+                                                                    }
+                                                                    crate::flow::CursorZone::PrepZone(edge) => {
+                                                                        if armed_edge.is_none() {
+                                                                            crate::flow::edge::emit_edge_event(crate::flow::edge::EdgeZoneEvent::EnteredPrepZone(edge));
+                                                                            armed_edge = Some(edge);
+                                                                        }
+                                                                    }
+                                                                    crate::flow::CursorZone::Safe => {
+                                                                        if let Some(armed) = armed_edge {
+                                                                            crate::flow::edge::emit_edge_event(crate::flow::edge::EdgeZoneEvent::ReturnedToSafeZone(armed));
+                                                                            armed_edge = None;
+                                                                        }
+                                                                    }
                                                                 }
                                                             } else {
-                                                                // Legacy/existing software mode logic:
-                                                                if let Some(peer) = crate::flow::topology::resolve_peer(edge_ev) {
-                                                                    log::info!("[Flow] Software mode edge transition → {}", peer.peer_id);
-                                                                    crate::flow::FLOW_MANAGER.set_active_peer(Some(peer.peer_id.clone()));
-                                                                    
-                                                                    // Reset coordinates to opposite edge to prevent loop bouncing
-                                                                    let sw = *crate::flow::FLOW_MANAGER.screen_width.read().unwrap();
-                                                                    let sh = *crate::flow::FLOW_MANAGER.screen_height.read().unwrap();
-                                                                    let mut vx = crate::flow::FLOW_MANAGER.virtual_x.lock_safe();
-                                                                    let mut vy = crate::flow::FLOW_MANAGER.virtual_y.lock_safe();
-                                                                    match edge_ev {
-                                                                        crate::flow::edge::EdgeEvent::Left => *vx = sw - 20,
-                                                                        crate::flow::edge::EdgeEvent::Right => *vx = 20,
-                                                                        crate::flow::edge::EdgeEvent::Top => *vy = sh - 20,
-                                                                        crate::flow::edge::EdgeEvent::Bottom => *vy = 20,
+                                                                if let Some(armed) = armed_edge {
+                                                                    crate::flow::edge::emit_edge_event(crate::flow::edge::EdgeZoneEvent::ReturnedToSafeZone(armed));
+                                                                    armed_edge = None;
+                                                                }
+                                                            }
+                                                        } else {
+                                                            // Software mode (legacy/direct transition at screen edge)
+                                                            if let crate::flow::CursorZone::FireZone(edge) = zone {
+                                                                if satisfied {
+                                                                    if let Some(peer) = crate::flow::topology::resolve_peer(edge) {
+                                                                        log::info!("[Flow] Software mode edge transition → {}", peer.peer_id);
+                                                                        crate::flow::FLOW_MANAGER.set_active_peer(Some(peer.peer_id.clone()));
+                                                                        
+                                                                        let sw = *crate::flow::FLOW_MANAGER.screen_width.read().unwrap();
+                                                                        let sh = *crate::flow::FLOW_MANAGER.screen_height.read().unwrap();
+                                                                        let mut vx = crate::flow::FLOW_MANAGER.virtual_x.lock_safe();
+                                                                        let mut vy = crate::flow::FLOW_MANAGER.virtual_y.lock_safe();
+                                                                        match edge {
+                                                                            crate::flow::edge::EdgeEvent::Left => *vx = sw - 20,
+                                                                            crate::flow::edge::EdgeEvent::Right => *vx = 20,
+                                                                            crate::flow::edge::EdgeEvent::Top => *vy = sh - 20,
+                                                                            crate::flow::edge::EdgeEvent::Bottom => *vy = 20,
+                                                                        }
                                                                     }
                                                                 }
                                                             }
