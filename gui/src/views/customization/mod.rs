@@ -19,6 +19,10 @@ use sidebar::draw_sidebar;
 pub use sidebar::SidebarTab;
 use tabs::{show_buttons_tab, show_flow_tab, show_point_scroll_tab, show_profiles_settings_tab};
 
+thread_local! {
+    pub static CONFIRM_DELETE_PROFILE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn show(
     ui: &mut egui::Ui,
@@ -242,7 +246,7 @@ pub fn show(
             // In right-to-left layout, drawing in reverse order preserves left-to-right alphabetical sequence
             for p_name in custom_profiles.iter().rev() {
                 let is_active = config.active_app_profile == *p_name;
-                let is_brave = p_name.to_lowercase().contains("brave");
+                let profile_icon = config.get_profile(p_name).map(|p| p.icon.as_str()).unwrap_or("");
 
                 let (p_rect, p_res) =
                     ui.allocate_exact_size(vec2(23.0, 23.0), egui::Sense::click());
@@ -266,110 +270,24 @@ pub fn show(
                     }
 
                     if delete_res.clicked() {
-                        engine.delete_profile(p_name);
+                        CONFIRM_DELETE_PROFILE.with(|c| *c.borrow_mut() = Some(p_name.clone()));
                         delete_clicked = true;
                     }
 
                     let pc = p_rect.center();
 
-                    if is_brave {
-                        let sc = pc;
-                        let shield_pts = vec![
-                            pos2(sc.x - 10.0, sc.y - 10.0),
-                            pos2(sc.x + 10.0, sc.y - 10.0),
-                            pos2(sc.x + 10.0, sc.y + 1.0),
-                            pos2(sc.x + 5.0, sc.y + 8.0),
-                            pos2(sc.x, sc.y + 11.5),
-                            pos2(sc.x - 5.0, sc.y + 8.0),
-                            pos2(sc.x - 10.0, sc.y + 1.0),
-                        ];
-
-                        let shield_fill = if p_res.hovered() {
-                            Color32::from_rgb(251, 146, 60)
-                        } else {
-                            Color32::from_rgb(249, 115, 22)
-                        };
-                        ui.painter().add(egui::Shape::convex_polygon(
-                            shield_pts,
-                            shield_fill,
-                            Stroke::NONE,
-                        ));
-
-                        let lion_stroke = Stroke::new(1.2, Color32::WHITE);
-                        ui.painter().line_segment(
-                            [pos2(sc.x, sc.y - 2.0), pos2(sc.x, sc.y + 3.0)],
-                            lion_stroke,
-                        );
-                        ui.painter().line_segment(
-                            [pos2(sc.x - 2.0, sc.y + 3.0), pos2(sc.x + 2.0, sc.y + 3.0)],
-                            lion_stroke,
-                        );
-                        ui.painter().line_segment(
-                            [pos2(sc.x - 4.0, sc.y - 4.0), pos2(sc.x, sc.y - 2.0)],
-                            lion_stroke,
-                        );
-                        ui.painter().line_segment(
-                            [pos2(sc.x + 4.0, sc.y - 4.0), pos2(sc.x, sc.y - 2.0)],
-                            lion_stroke,
-                        );
-                        ui.painter().line_segment(
-                            [pos2(sc.x - 5.0, sc.y - 1.0), pos2(sc.x - 3.0, sc.y + 3.0)],
-                            lion_stroke,
-                        );
-                        ui.painter().line_segment(
-                            [pos2(sc.x + 5.0, sc.y - 1.0), pos2(sc.x + 3.0, sc.y + 3.0)],
-                            lion_stroke,
-                        );
-                        ui.painter().line_segment(
-                            [pos2(sc.x - 4.0, sc.y - 7.0), pos2(sc.x - 2.0, sc.y - 5.0)],
-                            lion_stroke,
-                        );
-                        ui.painter().line_segment(
-                            [pos2(sc.x + 4.0, sc.y - 7.0), pos2(sc.x + 2.0, sc.y - 5.0)],
-                            lion_stroke,
-                        );
-                        ui.painter().line_segment(
-                            [pos2(sc.x, sc.y - 7.0), pos2(sc.x, sc.y - 4.0)],
-                            lion_stroke,
-                        );
+                    let fallback_color = if p_res.hovered() {
+                        Color32::from_rgb(0, 212, 200)
                     } else {
-                        let initial = p_name
-                            .chars()
-                            .next()
-                            .unwrap_or('?')
-                            .to_uppercase()
-                            .to_string();
-                        let circle_color = if is_active {
-                            Color32::from_rgb(0x1a, 0x1a, 0x1a)
-                        } else if p_res.hovered() {
-                            Color32::from_rgb(0x2a, 0x2a, 0x2a)
-                        } else {
-                            Color32::from_rgb(0x22, 0x22, 0x22)
-                        };
-                        let border_color = if is_active {
-                            Color32::from_rgb(0, 212, 200)
-                        } else if p_res.hovered() {
-                            Color32::from_rgb(0x88, 0x88, 0x88)
-                        } else {
-                            Color32::from_rgb(0x44, 0x44, 0x44)
-                        };
-
-                        ui.painter()
-                            .circle(pc, 11.5, circle_color, Stroke::new(1.0, border_color));
-
-                        let text_color = if is_active {
-                            Color32::from_rgb(0, 212, 200)
-                        } else {
-                            Color32::WHITE
-                        };
-                        ui.painter().text(
-                            pos2(pc.x, pc.y - 0.5),
-                            egui::Align2::CENTER_CENTER,
-                            initial,
-                            egui::FontId::proportional(11.0),
-                            text_color,
-                        );
-                    }
+                        Color32::WHITE
+                    };
+                    crate::icon_loader::draw_app_icon(
+                        ui,
+                        profile_icon,
+                        pc,
+                        11.5,
+                        fallback_color,
+                    );
 
                     // Draw close/delete button overlay (only on active profile hover/interact)
                     let is_profile_hovered = p_res.hovered() || delete_res.hovered();
@@ -404,95 +322,18 @@ pub fn show(
                 } else {
                     let pc = p_rect.center();
 
-                    if is_brave {
-                        let sc = pc;
-                        let shield_pts = vec![
-                            pos2(sc.x - 10.0, sc.y - 10.0),
-                            pos2(sc.x + 10.0, sc.y - 10.0),
-                            pos2(sc.x + 10.0, sc.y + 1.0),
-                            pos2(sc.x + 5.0, sc.y + 8.0),
-                            pos2(sc.x, sc.y + 11.5),
-                            pos2(sc.x - 5.0, sc.y + 8.0),
-                            pos2(sc.x - 10.0, sc.y + 1.0),
-                        ];
-
-                        let shield_fill = if p_res.hovered() {
-                            Color32::from_rgb(251, 146, 60)
-                        } else {
-                            Color32::from_rgb(249, 115, 22)
-                        };
-                        ui.painter().add(egui::Shape::convex_polygon(
-                            shield_pts,
-                            shield_fill,
-                            Stroke::NONE,
-                        ));
-
-                        let lion_stroke = Stroke::new(1.2, Color32::WHITE);
-                        ui.painter().line_segment(
-                            [pos2(sc.x, sc.y - 2.0), pos2(sc.x, sc.y + 3.0)],
-                            lion_stroke,
-                        );
-                        ui.painter().line_segment(
-                            [pos2(sc.x - 2.0, sc.y + 3.0), pos2(sc.x + 2.0, sc.y + 3.0)],
-                            lion_stroke,
-                        );
-                        ui.painter().line_segment(
-                            [pos2(sc.x - 4.0, sc.y - 4.0), pos2(sc.x, sc.y - 2.0)],
-                            lion_stroke,
-                        );
-                        ui.painter().line_segment(
-                            [pos2(sc.x + 4.0, sc.y - 4.0), pos2(sc.x, sc.y - 2.0)],
-                            lion_stroke,
-                        );
-                        ui.painter().line_segment(
-                            [pos2(sc.x - 5.0, sc.y - 1.0), pos2(sc.x - 3.0, sc.y + 3.0)],
-                            lion_stroke,
-                        );
-                        ui.painter().line_segment(
-                            [pos2(sc.x + 5.0, sc.y - 1.0), pos2(sc.x + 3.0, sc.y + 3.0)],
-                            lion_stroke,
-                        );
-                        ui.painter().line_segment(
-                            [pos2(sc.x - 4.0, sc.y - 7.0), pos2(sc.x - 2.0, sc.y - 5.0)],
-                            lion_stroke,
-                        );
-                        ui.painter().line_segment(
-                            [pos2(sc.x + 4.0, sc.y - 7.0), pos2(sc.x + 2.0, sc.y - 5.0)],
-                            lion_stroke,
-                        );
-                        ui.painter().line_segment(
-                            [pos2(sc.x, sc.y - 7.0), pos2(sc.x, sc.y - 4.0)],
-                            lion_stroke,
-                        );
+                    let fallback_color = if p_res.hovered() {
+                        theme::accent_color(ui.ctx())
                     } else {
-                        let initial = p_name
-                            .chars()
-                            .next()
-                            .unwrap_or('?')
-                            .to_uppercase()
-                            .to_string();
-                        let circle_color = if p_res.hovered() {
-                            Color32::from_rgb(0x2a, 0x2a, 0x2a)
-                        } else {
-                            Color32::from_rgb(0x22, 0x22, 0x22)
-                        };
-                        let border_color = if p_res.hovered() {
-                            Color32::from_rgb(0x88, 0x88, 0x88)
-                        } else {
-                            Color32::from_rgb(0x44, 0x44, 0x44)
-                        };
-
-                        ui.painter()
-                            .circle(pc, 11.5, circle_color, Stroke::new(1.0, border_color));
-
-                        ui.painter().text(
-                            pos2(pc.x, pc.y - 0.5),
-                            egui::Align2::CENTER_CENTER,
-                            initial,
-                            egui::FontId::proportional(11.0),
-                            Color32::WHITE,
-                        );
-                    }
+                        Color32::WHITE
+                    };
+                    crate::icon_loader::draw_app_icon(
+                        ui,
+                        profile_icon,
+                        pc,
+                        11.5,
+                        fallback_color,
+                    );
                 }
 
                 if p_res.clicked() && !delete_clicked {
@@ -682,7 +523,7 @@ pub fn show(
 
                 modal_ui.add_space(8.0);
                 modal_ui.add(egui::Label::new(
-                    RichText::new("RECORD KEYBOARD SHORTCUT")
+                    RichText::new("Record Shortcut")
                         .color(Color32::WHITE)
                         .size(14.0)
                         .strong(),
@@ -839,4 +680,28 @@ pub fn show(
 
     // ── 7. Linux Application Selector Modal ──────────────────────────────────
     draw_add_app_modal(ctx, engine, config);
+
+    let mut profile_to_delete = None;
+    CONFIRM_DELETE_PROFILE.with(|c| {
+        if let Some(ref profile) = *c.borrow() {
+            profile_to_delete = Some(profile.clone());
+        }
+    });
+
+    if let Some(profile) = profile_to_delete {
+        let title = format!("Delete \"{}\"?", profile);
+        let body = "Its custom mappings won't be recovered.";
+        if let Some(confirmed) = crate::widgets::show_confirm_dialog(
+            ctx,
+            &title,
+            body,
+            "Delete profile",
+            "Cancel",
+        ) {
+            if confirmed {
+                engine.delete_profile(&profile);
+            }
+            CONFIRM_DELETE_PROFILE.with(|c| *c.borrow_mut() = None);
+        }
+    }
 }

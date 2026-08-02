@@ -9,6 +9,7 @@ use mouser_engine::Engine;
 thread_local! {
     pub static SELECTED_EDIT_GROUP: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
     pub static NEW_GROUP_NAME: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+    pub static CONFIRM_DELETE_GROUP: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
 }
 
 pub fn render_section_profiles(ui: &mut egui::Ui, config: &mut Config, engine: &Engine) {
@@ -93,8 +94,7 @@ pub fn render_section_profiles(ui: &mut egui::Ui, config: &mut Config, engine: &
                     )
                     .clicked()
                 {
-                    engine.delete_profile_group(&editing_group);
-                    SELECTED_EDIT_GROUP.with(|g| g.borrow_mut().clear());
+                    CONFIRM_DELETE_GROUP.with(|c| *c.borrow_mut() = Some(editing_group.clone()));
                 }
             }
         }
@@ -119,4 +119,29 @@ pub fn render_section_profiles(ui: &mut egui::Ui, config: &mut Config, engine: &
             });
         });
     });
+
+    let mut group_to_delete = None;
+    CONFIRM_DELETE_GROUP.with(|c| {
+        if let Some(ref group) = *c.borrow() {
+            group_to_delete = Some(group.clone());
+        }
+    });
+
+    if let Some(group) = group_to_delete {
+        let title = format!("Delete \"{}\"?", group);
+        let body = "This removes all button and gesture mappings in this group. This can't be undone.";
+        if let Some(confirmed) = crate::widgets::show_confirm_dialog(
+            ui.ctx(),
+            &title,
+            body,
+            "Delete group",
+            "Keep group",
+        ) {
+            if confirmed {
+                engine.delete_profile_group(&group);
+                SELECTED_EDIT_GROUP.with(|g| g.borrow_mut().clear());
+            }
+            CONFIRM_DELETE_GROUP.with(|c| *c.borrow_mut() = None);
+        }
+    }
 }

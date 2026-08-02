@@ -6,6 +6,7 @@
 )]
 pub mod app;
 pub mod desktop_apps;
+pub mod icon_loader;
 pub mod theme;
 pub mod translation;
 pub mod updater;

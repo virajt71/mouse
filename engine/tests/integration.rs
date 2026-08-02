@@ -36,6 +36,7 @@ fn test_profile_matching_logic() {
             label: "Default".to_string(),
             apps: vec![],
             mappings: HashMap::new(),
+            icon: String::new(),
         },
     );
     profiles.insert(
@@ -44,6 +45,7 @@ fn test_profile_matching_logic() {
             label: "Chrome".to_string(),
             apps: vec!["chrome".to_string()],
             mappings: HashMap::new(),
+            icon: String::new(),
         },
     );
     profiles.insert(
@@ -52,6 +54,7 @@ fn test_profile_matching_logic() {
             label: "Firefox".to_string(),
             apps: vec!["firefox".to_string()],
             mappings: HashMap::new(),
+            icon: String::new(),
         },
     );
 
@@ -100,6 +103,7 @@ fn test_profile_matching_mixed_case() {
             label: "Default".to_string(),
             apps: vec![],
             mappings: HashMap::new(),
+            icon: String::new(),
         },
     );
     profiles.insert(
@@ -108,6 +112,7 @@ fn test_profile_matching_mixed_case() {
             label: "VS Code".to_string(),
             apps: vec!["code".to_string()],
             mappings: HashMap::new(),
+            icon: String::new(),
         },
     );
     config
@@ -131,6 +136,7 @@ fn test_profile_matching_no_match_returns_global() {
             label: "Default".to_string(),
             apps: vec![],
             mappings: HashMap::new(),
+            icon: String::new(),
         },
     );
     profiles.insert(
@@ -139,6 +145,7 @@ fn test_profile_matching_no_match_returns_global() {
             label: "Chrome".to_string(),
             apps: vec!["chrome".to_string()],
             mappings: HashMap::new(),
+            icon: String::new(),
         },
     );
     config
@@ -179,6 +186,7 @@ fn test_normalize_apps_idempotent() {
             label: "Default".to_string(),
             apps: vec!["chrome".to_string(), "firefox".to_string()],
             mappings: HashMap::new(),
+            icon: String::new(),
         },
     );
     config

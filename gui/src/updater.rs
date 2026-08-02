@@ -223,7 +223,7 @@ impl Updater {
         // Create mock binary at local path (just copy current running exe to represent new file)
         let Some(data_dir) = dirs::data_local_dir() else {
             let mut status = status_ref.lock_safe();
-            *status = UpdateStatus::Failed("Could not resolve local data dir".to_string());
+            *status = UpdateStatus::Failed("Couldn't find a place to save the update. Check your disk permissions and try again.".to_string());
             ctx.request_repaint();
             return;
         };
@@ -277,7 +277,7 @@ impl Updater {
 
         let Some(data_dir) = dirs::data_local_dir() else {
             let mut status = status_ref.lock_safe();
-            *status = UpdateStatus::Failed("Could not resolve local data dir".to_string());
+            *status = UpdateStatus::Failed("Couldn't find a place to save the update. Check your disk permissions and try again.".to_string());
             ctx.request_repaint();
             return;
         };
@@ -301,7 +301,7 @@ impl Updater {
                         Ok(false) => {
                             let mut status = status_ref.lock_safe();
                             *status = UpdateStatus::Failed(
-                                "SHA256 signature verification failed!".to_string(),
+                                "Update file failed a security check and won't be installed. Try downloading again.".to_string(),
                             );
                             ctx.request_repaint();
                             return;

@@ -52,7 +52,7 @@ pub fn draw_add_app_modal(
                     // Title and Close Button
                     ui.horizontal(|ui| {
                         ui.label(
-                            RichText::new("ADD APPLICATION PROFILE")
+                            RichText::new("Add Application Profile")
                                 .color(Color32::WHITE)
                                 .size(13.0)
                                 .strong(),
@@ -122,7 +122,7 @@ pub fn draw_add_app_modal(
                             ui.vertical_centered(|ui| {
                                 ui.add_space(40.0);
                                 ui.label(
-                                    RichText::new("No applications found")
+                                    RichText::new("No applications found. Try a different search term.")
                                         .color(theme::muted_text(ctx))
                                         .size(12.0),
                                 );
@@ -190,65 +190,20 @@ pub fn draw_add_app_modal(
                                         );
 
                                         // Draw app icon or fallback badge
-                                        let is_brave = app.name.to_lowercase().contains("brave");
                                         let icon_center =
                                             pos2(item_rect.min.x + 24.0, item_rect.center().y);
-                                        if is_brave {
-                                            let sc = icon_center;
-                                            let shield_pts = vec![
-                                                pos2(sc.x - 7.0, sc.y - 7.0),
-                                                pos2(sc.x + 7.0, sc.y - 7.0),
-                                                pos2(sc.x + 7.0, sc.y + 0.5),
-                                                pos2(sc.x + 3.5, sc.y + 5.5),
-                                                pos2(sc.x, sc.y + 8.0),
-                                                pos2(sc.x - 3.5, sc.y + 5.5),
-                                                pos2(sc.x - 7.0, sc.y + 0.5),
-                                            ];
-                                            let shield_color = if is_assigned {
-                                                Color32::from_rgb(180, 80, 15)
-                                            } else {
-                                                Color32::from_rgb(249, 115, 22)
-                                            };
-                                            ui.painter().add(egui::Shape::convex_polygon(
-                                                shield_pts,
-                                                shield_color,
-                                                Stroke::NONE,
-                                            ));
+                                        let fallback_color = if is_assigned {
+                                            Color32::from_rgb(0x66, 0x66, 0x66)
                                         } else {
-                                            let initial = app
-                                                .name
-                                                .chars()
-                                                .next()
-                                                .unwrap_or('?')
-                                                .to_uppercase()
-                                                .to_string();
-                                            let circle_color = if is_assigned {
-                                                Color32::from_rgb(0x1a, 0x1a, 0x1a)
-                                            } else {
-                                                Color32::from_rgb(0x2d, 0x2d, 0x2d)
-                                            };
-                                            let text_color = if is_assigned {
-                                                Color32::from_rgb(0x66, 0x66, 0x66)
-                                            } else {
-                                                Color32::WHITE
-                                            };
-                                            ui.painter().circle(
-                                                icon_center,
-                                                9.0,
-                                                circle_color,
-                                                Stroke::new(
-                                                    1.0,
-                                                    Color32::from_rgb(0x44, 0x44, 0x44),
-                                                ),
-                                            );
-                                            ui.painter().text(
-                                                pos2(icon_center.x, icon_center.y - 0.5),
-                                                egui::Align2::CENTER_CENTER,
-                                                initial,
-                                                egui::FontId::proportional(9.0),
-                                                text_color,
-                                            );
-                                        }
+                                            theme::accent_color(ctx)
+                                        };
+                                        crate::icon_loader::draw_app_icon(
+                                            ui,
+                                            &app.icon,
+                                            icon_center,
+                                            9.0,
+                                            fallback_color,
+                                        );
 
                                         // Text details
                                         let name_color = if is_assigned {
@@ -296,10 +251,12 @@ pub fn draw_add_app_modal(
                                             engine.add_profile(&app.name);
                                             // 2. Update its app bindings
                                             engine.update_app_bindings(&app.name, &app.exec);
-                                            // 3. Switch to it as the active profile
+                                            // 3. Set profile icon
+                                            engine.set_profile_icon(&app.name, &app.icon);
+                                            // 4. Switch to it as the active profile
                                             engine.select_profile(&app.name);
                                             config.active_app_profile = app.name.clone();
-                                            // 4. Hide modal
+                                            // 5. Hide modal
                                             SHOW_ADD_APP_MODAL.with(|s| *s.borrow_mut() = false);
                                         }
                                     }

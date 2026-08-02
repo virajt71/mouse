@@ -77,6 +77,7 @@ impl Engine {
                                 label: name.to_string(),
                                 apps: Vec::new(),
                                 mappings: std::collections::HashMap::new(),
+                                icon: String::new(),
                             }
                         });
                     let mut new_profile = global_profile;
@@ -86,6 +87,21 @@ impl Engine {
                     let _ = cfg.save();
                     self.increment_config_generation(&cfg);
                 }
+            }
+        }
+    }
+
+    pub fn set_profile_icon(&self, name: &str, icon: &str) {
+        if icon.is_empty() {
+            return;
+        }
+        let mut cfg = self.inner.config.lock_safe();
+        let active_group = cfg.active_group.clone();
+        if let Some(group) = cfg.profile_groups.get_mut(&active_group) {
+            if let Some(profile) = group.profiles.get_mut(name) {
+                profile.icon = icon.to_string();
+                let _ = cfg.save();
+                self.increment_config_generation(&cfg);
             }
         }
     }
@@ -314,6 +330,7 @@ impl Engine {
                         label: "Default (All Apps)".to_string(),
                         apps: vec![],
                         mappings: default_mappings,
+                        icon: String::new(),
                     },
                 );
                 cfg.profile_groups

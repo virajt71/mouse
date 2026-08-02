@@ -9,6 +9,8 @@ pub struct Profile {
     pub label: String,
     pub apps: Vec<String>,
     pub mappings: HashMap<String, String>,
+    #[serde(default)]
+    pub icon: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
@@ -195,6 +197,7 @@ impl Default for Config {
             label: "Default (All Apps)".to_string(),
             apps: vec![],
             mappings: default_mappings,
+            icon: String::new(),
         };
 
         let mut profiles = HashMap::new();
@@ -423,6 +426,7 @@ mod tests {
             label: "Brave Web Browser".to_string(),
             apps: vec!["brave-browser-stable".to_string()],
             mappings: HashMap::new(),
+            icon: String::new(),
         };
         if let Some(group) = config.profile_groups.get_mut("default") {
             group
