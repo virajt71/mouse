@@ -56,17 +56,18 @@ impl Engine {
 
     pub fn select_profile(&self, name: &str) {
         log::info!("[Engine] Selecting GUI active app profile: {}", name);
-        {
+        let cfg_snapshot = {
             let mut cfg = self.inner.config.lock_safe();
             cfg.active_app_profile = name.to_string();
             let _ = cfg.save();
-            self.increment_config_generation(&cfg);
-        }
+            cfg.clone()
+        };
+        self.increment_config_generation(&cfg_snapshot);
     }
 
     pub fn add_profile(&self, name: &str) {
         log::info!("[Engine] Adding profile: {}", name);
-        {
+        let cfg_opt = {
             let mut cfg = self.inner.config.lock_safe();
             let active_group = cfg.active_group.clone();
             if let Some(group) = cfg.profile_groups.get_mut(&active_group) {
@@ -85,9 +86,16 @@ impl Engine {
                     new_profile.apps = Vec::new();
                     group.profiles.insert(name.to_string(), new_profile);
                     let _ = cfg.save();
-                    self.increment_config_generation(&cfg);
+                    Some(cfg.clone())
+                } else {
+                    None
                 }
+            } else {
+                None
             }
+        };
+        if let Some(cfg) = cfg_opt {
+            self.increment_config_generation(&cfg);
         }
     }
 
@@ -95,14 +103,23 @@ impl Engine {
         if icon.is_empty() {
             return;
         }
-        let mut cfg = self.inner.config.lock_safe();
-        let active_group = cfg.active_group.clone();
-        if let Some(group) = cfg.profile_groups.get_mut(&active_group) {
-            if let Some(profile) = group.profiles.get_mut(name) {
-                profile.icon = icon.to_string();
-                let _ = cfg.save();
-                self.increment_config_generation(&cfg);
+        let cfg_opt = {
+            let mut cfg = self.inner.config.lock_safe();
+            let active_group = cfg.active_group.clone();
+            if let Some(group) = cfg.profile_groups.get_mut(&active_group) {
+                if let Some(profile) = group.profiles.get_mut(name) {
+                    profile.icon = icon.to_string();
+                    let _ = cfg.save();
+                    Some(cfg.clone())
+                } else {
+                    None
+                }
+            } else {
+                None
             }
+        };
+        if let Some(cfg) = cfg_opt {
+            self.increment_config_generation(&cfg);
         }
     }
 
@@ -111,7 +128,7 @@ impl Engine {
         if name == "global" {
             return;
         }
-        {
+        let cfg_opt = {
             let mut cfg = self.inner.config.lock_safe();
             let active_group = cfg.active_group.clone();
             if let Some(group) = cfg.profile_groups.get_mut(&active_group) {
@@ -120,8 +137,13 @@ impl Engine {
                     cfg.active_app_profile = "global".to_string();
                 }
                 let _ = cfg.save();
-                self.increment_config_generation(&cfg);
+                Some(cfg.clone())
+            } else {
+                None
             }
+        };
+        if let Some(cfg) = cfg_opt {
+            self.increment_config_generation(&cfg);
         }
         self.refresh_active_profile();
     }
@@ -139,7 +161,7 @@ impl Engine {
             .trim()
             .to_lowercase();
 
-        {
+        let cfg_opt = {
             let mut cfg = self.inner.config.lock_safe();
             let active_group = cfg.active_group.clone();
             if let Some(group) = cfg.profile_groups.get_mut(&active_group) {
@@ -164,9 +186,16 @@ impl Engine {
                         profile.apps = vec![clean_exe];
                     }
                     let _ = cfg.save();
-                    self.increment_config_generation(&cfg);
+                    Some(cfg.clone())
+                } else {
+                    None
                 }
+            } else {
+                None
             }
+        };
+        if let Some(cfg) = cfg_opt {
+            self.increment_config_generation(&cfg);
         }
     }
 
@@ -176,7 +205,7 @@ impl Engine {
         mappings: std::collections::HashMap<String, String>,
     ) {
         log::info!("[Engine] Updating mappings for profile {}", profile_name);
-        {
+        let cfg_opt = {
             let mut cfg = self.inner.config.lock_safe();
             let active_group = cfg.active_group.clone();
             if let Some(group) = cfg.profile_groups.get_mut(&active_group) {
@@ -185,9 +214,16 @@ impl Engine {
                         profile.mappings.insert(k, v);
                     }
                     let _ = cfg.save();
-                    self.increment_config_generation(&cfg);
+                    Some(cfg.clone())
+                } else {
+                    None
                 }
+            } else {
+                None
             }
+        };
+        if let Some(cfg) = cfg_opt {
+            self.increment_config_generation(&cfg);
         }
         log::info!("[Engine] Saved mappings, refreshing active profile...");
         self.refresh_active_profile();

@@ -197,17 +197,17 @@ impl Engine {
 
     pub fn increment_config_generation(&self, cfg: &Config) {
         crate::flow::FLOW_MANAGER.update_config(cfg);
-        self.inner.config_generation.fetch_add(1, Ordering::Relaxed);
+        let gen = self.inner.config_generation.fetch_add(1, Ordering::Relaxed) + 1;
         if let Ok(lock) = self.inner.config_change_listener.lock() {
             if let Some(ref callback) = *lock {
-                callback();
+                callback(cfg, gen);
             }
         }
     }
 
     pub fn set_config_change_listener<F>(&self, listener: F)
     where
-        F: Fn() + Send + Sync + 'static,
+        F: Fn(&Config, u64) + Send + Sync + 'static,
     {
         *self.inner.config_change_listener.lock_safe() = Some(Box::new(listener));
     }

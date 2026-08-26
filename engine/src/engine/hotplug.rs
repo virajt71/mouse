@@ -306,10 +306,17 @@ impl Engine {
                         }
 
                         if let Some(active_ch) = new_client.active_host_channel() {
-                            let mut cfg = inner_clone.config.lock_safe();
-                            if cfg.settings.flow_local_channel_index != active_ch {
-                                cfg.settings.flow_local_channel_index = active_ch;
-                                let _ = cfg.save();
+                            let cfg_opt = {
+                                let mut cfg = inner_clone.config.lock_safe();
+                                if cfg.settings.flow_local_channel_index != active_ch {
+                                    cfg.settings.flow_local_channel_index = active_ch;
+                                    let _ = cfg.save();
+                                    Some(cfg.clone())
+                                } else {
+                                    None
+                                }
+                            };
+                            if let Some(cfg) = cfg_opt {
                                 engine_clone.increment_config_generation(&cfg);
                             }
                         }

@@ -111,10 +111,10 @@ pub fn run_discovery_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) 
                             if peer.channel_index != peer_channel {
                                 peer.channel_index = peer_channel;
                                 let _ = cfg.save();
-                                engine_inner.config_generation.fetch_add(1, Ordering::SeqCst);
+                                let gen = engine_inner.config_generation.fetch_add(1, Ordering::SeqCst) + 1;
                                 if let Ok(lock) = engine_inner.config_change_listener.lock() {
                                     if let Some(ref callback) = *lock {
-                                        callback();
+                                        callback(&cfg, gen);
                                     }
                                 }
                             }
@@ -144,10 +144,10 @@ pub fn run_discovery_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) 
                             if peer.channel_index != peer_channel {
                                 peer.channel_index = peer_channel;
                                 let _ = cfg.save();
-                                engine_inner.config_generation.fetch_add(1, Ordering::SeqCst);
+                                let gen = engine_inner.config_generation.fetch_add(1, Ordering::SeqCst) + 1;
                                 if let Ok(lock) = engine_inner.config_change_listener.lock() {
                                     if let Some(ref callback) = *lock {
-                                        callback();
+                                        callback(&cfg, gen);
                                     }
                                 }
                             }
@@ -186,10 +186,10 @@ pub fn run_discovery_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) 
                         FLOW_MANAGER.update_config(&cfg);
                         
                         // Increment generation to trigger GUI reload
-                        engine_inner.config_generation.fetch_add(1, Ordering::SeqCst);
+                        let gen = engine_inner.config_generation.fetch_add(1, Ordering::SeqCst) + 1;
                         if let Ok(lock) = engine_inner.config_change_listener.lock() {
                             if let Some(ref callback) = *lock {
-                                callback();
+                                callback(&cfg, gen);
                             }
                         }
                     }

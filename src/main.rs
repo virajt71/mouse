@@ -84,10 +84,9 @@ fn main() -> Result<(), eframe::Error> {
         };
 
         // Broadcast config changes over gRPC
-        let engine_cfg = engine.clone();
         let config_bc_clone = config_bc.clone();
-        engine.set_config_change_listener(move || {
-            engine::grpc::broadcast_config(&engine_cfg, &config_bc_clone);
+        engine.set_config_change_listener(move |cfg, gen| {
+            engine::grpc::broadcast_config(cfg, gen, &config_bc_clone);
         });
 
         // Broadcast device state changes over gRPC

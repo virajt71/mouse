@@ -414,8 +414,12 @@ pub fn start_grpc_server(
 }
 
 /// Push a fresh config snapshot to all watching GUI clients.
-pub fn broadcast_config(engine: &Engine, tx: &ConfigBroadcast) {
-    let msg = config_to_proto(engine);
+pub fn broadcast_config(cfg: &crate::config::Config, generation: u64, tx: &ConfigBroadcast) {
+    let json = serde_json::to_string(cfg).unwrap_or_default();
+    let msg = ConfigResponse {
+        config_json: json,
+        generation,
+    };
     let _ = tx.0.send(msg);
 }
 

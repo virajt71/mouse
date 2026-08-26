@@ -20,18 +20,19 @@ impl Engine {
     }
 
     pub fn toggle_smart_shift(&self) {
-        let (mode, enabled, threshold) = {
+        let (mode, enabled, threshold, cfg_snapshot) = {
             let mut cfg = self.inner.config.lock_safe();
             let next_enabled = !cfg.settings.smart_shift_enabled;
             cfg.settings.smart_shift_enabled = next_enabled;
             let _ = cfg.save();
-            self.increment_config_generation(&cfg);
             (
                 cfg.settings.smart_shift_mode.clone(),
                 next_enabled,
                 cfg.settings.smart_shift_threshold as u8,
+                cfg.clone(),
             )
         };
+        self.increment_config_generation(&cfg_snapshot);
         log::info!("[Engine] Toggling SmartShift: enabled={}", enabled);
 
         let inner_clone = self.inner.clone();
@@ -52,7 +53,7 @@ impl Engine {
     }
 
     pub fn switch_scroll_mode(&self) {
-        let (mode, threshold) = {
+        let (mode, threshold, cfg_snapshot) = {
             let mut cfg = self.inner.config.lock_safe();
             let next_mode = if cfg.settings.smart_shift_mode == "ratchet" {
                 "freespin"
@@ -62,12 +63,13 @@ impl Engine {
             cfg.settings.smart_shift_mode = next_mode.to_string();
             cfg.settings.smart_shift_enabled = false;
             let _ = cfg.save();
-            self.increment_config_generation(&cfg);
             (
                 next_mode.to_string(),
                 cfg.settings.smart_shift_threshold as u8,
+                cfg.clone(),
             )
         };
+        self.increment_config_generation(&cfg_snapshot);
         log::info!(
             "[Engine] Switching scroll mode to ratchet/freespin fixed: mode={}",
             mode
@@ -92,7 +94,7 @@ impl Engine {
 
     pub fn cycle_dpi(&self) {
         let presets = [800, 1200, 1600, 2400];
-        let new_dpi = {
+        let (new_dpi, cfg_snapshot) = {
             let mut cfg = self.inner.config.lock_safe();
             let current = cfg.settings.dpi;
             let mut next_idx = 0;
@@ -105,9 +107,9 @@ impl Engine {
             let val = presets[next_idx];
             cfg.settings.dpi = val;
             let _ = cfg.save();
-            self.increment_config_generation(&cfg);
-            val
+            (val, cfg.clone())
         };
+        self.increment_config_generation(&cfg_snapshot);
         log::info!("[Engine] Cycling DPI to {}", new_dpi);
 
         let inner_clone = self.inner.clone();

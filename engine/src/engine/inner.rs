@@ -80,5 +80,5 @@ pub struct EngineInner {
     /// Used by the flow switcher to gate edge transitions on hold-key (§4.2).
     pub modifier_state: Arc<ModifierState>,
 
-    pub config_change_listener: Mutex<Option<Box<dyn Fn() + Send + Sync + 'static>>>,
+    pub config_change_listener: Mutex<Option<Box<dyn Fn(&Config, u64) + Send + Sync + 'static>>>,
 }

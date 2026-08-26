@@ -260,18 +260,18 @@ impl Engine {
             }
             HidppEvent::HostChannelChanged(ch) => {
                 log::info!("[Engine] Host channel changed to {}", ch);
-                let changed = {
+                let cfg_opt = {
                     let mut cfg = self.inner.config.lock_safe();
                     if cfg.settings.flow_local_channel_index != ch {
                         cfg.settings.flow_local_channel_index = ch;
                         let _ = cfg.save();
-                        true
+                        Some(cfg.clone())
                     } else {
-                        false
+                        None
                     }
                 };
-                if changed {
-                    self.increment_config_generation(&self.inner.config.lock_safe());
+                if let Some(cfg) = cfg_opt {
+                    self.increment_config_generation(&cfg);
                 }
                 self.update_cached_device_state();
             }
