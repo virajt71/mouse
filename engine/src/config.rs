@@ -408,6 +408,12 @@ impl Config {
         self.get_resolved_mappings(&self.active_app_profile)
     }
 
+    /// Loose identity matching between a foreground exe name and registered
+    /// application profiles — analogous to appcatalog's multi-identity
+    /// `Application.matches()` but minimal: normalizes release-channel
+    /// suffixes and checks substring containment so that e.g. the running
+    /// process `brave` still matches a profile registered under
+    /// `brave-browser-stable`.
     pub fn get_profile_for_app(&self, exe_name: &str) -> String {
         if exe_name.is_empty() {
             return "global".to_string();
@@ -416,7 +422,7 @@ impl Config {
         if let Some(group) = self.profile_groups.get(&self.active_group) {
             for (pname, pdata) in &group.profiles {
                 if let Some(app) = pdata.apps.first() {
-                    if app == &exe_lower {
+                    if execs_match(app, &exe_lower) {
                         return pname.clone();
                     }
                 }
@@ -424,6 +430,31 @@ impl Config {
         }
         "global".to_string()
     }
+}
+
+/// Strip release-channel suffixes distros commonly append to the real exec
+/// name (e.g. `brave-browser-stable` → `brave-browser`).
+pub fn normalize_exec(exec: &str) -> String {
+    let lower = exec.to_lowercase();
+    for suffix in ["-stable", "-beta", "-dev", "-nightly", "-unstable", "-esr"] {
+        if let Some(stripped) = lower.strip_suffix(suffix) {
+            return stripped.to_string();
+        }
+    }
+    lower
+}
+
+/// True if two exec names likely refer to the same application. Desktop
+/// files and `/proc/*/exe` frequently disagree on the exact binary name
+/// (wrapper script vs real executable, version-tagged package name, etc.),
+/// so exact string equality alone under-deduplicates.
+pub fn execs_match(a: &str, b: &str) -> bool {
+    let na = normalize_exec(a);
+    let nb = normalize_exec(b);
+    if na.is_empty() || nb.is_empty() {
+        return false;
+    }
+    na == nb || na.contains(&nb) || nb.contains(&na)
 }
 
 #[cfg(test)]
@@ -573,5 +604,37 @@ mod tests {
         let global_p = group.profiles.get("global").unwrap();
         assert!(global_p.apps.is_empty());
         assert_eq!(global_p.mappings.get("xbutton1").unwrap(), "alt_tab");
+    }
+
+    #[test]
+    fn test_get_profile_for_app_with_different_exec_variants() {
+        let mut config = Config::default();
+        let custom_profile = Profile {
+            label: "Brave Web Browser".into(),
+            apps: vec!["brave-browser-stable".into()],
+            mappings: HashMap::new(),
+            icon: "brave-browser".into(),
+        };
+        if let Some(group) = config.profile_groups.get_mut("default") {
+            group
+                .profiles
+                .insert("Brave Web Browser".into(), custom_profile);
+        }
+
+        // Foreground returns raw process basename (/proc/PID/exe → "brave"),
+        // but the profile was registered from the .desktop file's Exec line
+        // ("brave-browser-stable") — fuzzy match bridges the gap.
+        assert_eq!(
+            config.get_profile_for_app("brave"),
+            "Brave Web Browser",
+            "fuzzy match bridges process-vs-desktop exec gap"
+        );
+        assert_eq!(
+            config.get_profile_for_app("BRAVE-BROWSER-STABLE"),
+            "Brave Web Browser",
+            "case-insensitive exact still works"
+        );
+        assert_eq!(config.get_profile_for_app("unknown"), "global");
+        assert_eq!(config.get_profile_for_app(""), "global");
     }
 }

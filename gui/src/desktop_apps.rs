@@ -2,6 +2,8 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 
+use mouser_engine::config::{execs_match, normalize_exec};
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DesktopApp {
     pub name: String,
@@ -223,30 +225,15 @@ pub fn scan_running_processes() -> Vec<DesktopApp> {
     apps
 }
 
-/// Strip release-channel suffixes distros commonly append to the real exec
-/// name (e.g. `brave-browser-stable` vs the `brave` binary /proc resolves
-/// to), so both sides normalize to the same token.
-fn normalize_exec(exec: &str) -> String {
-    let lower = exec.to_lowercase();
-    for suffix in ["-stable", "-beta", "-dev", "-nightly", "-unstable", "-esr"] {
-        if let Some(stripped) = lower.strip_suffix(suffix) {
-            return stripped.to_string();
-        }
-    }
-    lower
-}
+// --- execs_match and normalize_exec imported from mouser_engine::config ---
 
-/// True if two exec names likely refer to the same application. Desktop
-/// files and `/proc/*/exe` frequently disagree on the exact binary name
-/// (wrapper script vs real executable, version-tagged package name, etc.),
-/// so exact string equality alone under-deduplicates.
-fn execs_match(a: &str, b: &str) -> bool {
+/// Strict exec comparison — normalize + exact equality only, no substring
+/// containment. Used for deduplicating installed desktop files against each
+/// other, where "antigravity" and "antigravity-ide" must remain separate.
+fn execs_strict(a: &str, b: &str) -> bool {
     let na = normalize_exec(a);
     let nb = normalize_exec(b);
-    if na.is_empty() || nb.is_empty() {
-        return false;
-    }
-    na == nb || na.contains(&nb) || nb.contains(&na)
+    !na.is_empty() && !nb.is_empty() && na == nb
 }
 
 pub fn scan_all_applications() -> Vec<DesktopApp> {
@@ -255,20 +242,21 @@ pub fn scan_all_applications() -> Vec<DesktopApp> {
 
     let mut combined: Vec<DesktopApp> = Vec::new();
 
-    // 1. Add all installed applications first: these carry real icons, so
-    // they always win the identity when both sources describe the same app.
+    // 1. Add all installed applications first. Use *strict* matching so that
+    // unrelated apps with a common prefix (e.g. "antigravity" vs
+    // "antigravity-ide") stay separate.
     for app in installed {
         if !app.exec.is_empty()
-            && !combined.iter().any(|existing| execs_match(&existing.exec, &app.exec))
+            && !combined.iter().any(|existing| execs_strict(&existing.exec, &app.exec))
         {
             combined.push(app);
         }
     }
 
     // 2. Add running applications only if no installed app already matches
-    // them (fuzzy, not exact) — otherwise a wrapper/binary name mismatch
-    // (e.g. brave-browser-stable vs brave) creates a second, icon-less
-    // duplicate entry for the same application.
+    // them (fuzzy, with substring containment) — a wrapper/binary name
+    // mismatch (e.g. brave-browser-stable vs brave) creates a second,
+    // icon-less duplicate when exact matching alone is used.
     for app in running {
         if !app.exec.is_empty()
             && !combined.iter().any(|existing| execs_match(&existing.exec, &app.exec))
@@ -348,8 +336,60 @@ mod tests {
     }
 
     #[test]
+    fn test_antigravity_and_antigravity_ide_stay_separate() {
+        let apps = vec![
+            DesktopApp {
+                name: "Antigravity".into(),
+                exec: "antigravity".into(),
+                icon: "antigravity".into(),
+                path: "antigravity.desktop".into(),
+            },
+            DesktopApp {
+                name: "Antigravity IDE".into(),
+                exec: "antigravity-ide".into(),
+                icon: "antigravity-ide".into(),
+                path: "antigravity-ide.desktop".into(),
+            },
+        ];
+
+        let mut combined: Vec<DesktopApp> = Vec::new();
+        for app in apps {
+            if !app.exec.is_empty()
+                && !combined.iter().any(|e: &DesktopApp| execs_strict(&e.exec, &app.exec))
+            {
+                combined.push(app);
+            }
+        }
+
+        assert_eq!(combined.len(), 2,
+            "antigravity and antigravity-ide should be separate entries");
+    }
+
+    #[test]
     fn test_scan_all_applications() {
         let apps = scan_all_applications();
         println!("Found {} applications.", apps.len());
+    }
+
+    #[test]
+    fn test_real_world_no_duplicates() {
+        let apps = scan_all_applications();
+        // Check that the two brave .desktop files don't create duplicates
+        // via name-dedup in scan_desktop_applications + execs_match in scan_all_applications
+        let brave_entries: Vec<_> = apps.iter().filter(|a| {
+            a.name.to_lowercase().contains("brave")
+        }).collect();
+        if brave_entries.len() > 1 {
+            println!("Found {} brave entries (DUPLICATE!):", brave_entries.len());
+            for a in brave_entries {
+                println!("  name={}, exec={}, icon={:?}", a.name, a.exec, a.icon);
+            }
+            panic!("Brave appears more than once in scanned apps");
+        } else if brave_entries.len() == 1 {
+            println!("OK: single brave entry: name={}, exec={}, icon={:?}",
+                brave_entries[0].name, brave_entries[0].exec, brave_entries[0].icon);
+        } else {
+            println!("Brave not found on this system, test skipped");
+        }
     }
 }

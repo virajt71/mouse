@@ -33,12 +33,34 @@ fn icon_theme_roots() -> Vec<PathBuf> {
     roots
 }
 
+fn load_svg(path: &Path, icon: &str, ctx: &egui::Context) -> Option<TextureHandle> {
+    let svg_data = std::fs::read(path).ok()?;
+    let tree =
+        resvg::usvg::Tree::from_data(&svg_data, &resvg::usvg::Options::default()).ok()?;
+    let tree_size = tree.size();
+    let scale = (256.0 / tree_size.width().max(tree_size.height())).min(1.0);
+    let w = (tree_size.width() * scale) as u32;
+    let h = (tree_size.height() * scale) as u32;
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(w.max(1), h.max(1))?;
+    let transform = resvg::tiny_skia::Transform::from_scale(scale as f32, scale as f32);
+    resvg::render(&tree, transform, &mut pixmap.as_mut());
+    let color_img = egui::ColorImage::from_rgba_unmultiplied(
+        [pixmap.width() as usize, pixmap.height() as usize],
+        pixmap.data(),
+    );
+    let tex = ctx.load_texture(
+        format!("app_icon_{}", icon),
+        color_img,
+        egui::TextureOptions::default(),
+    );
+    Some(tex)
+}
+
 pub fn resolve_icon_path(icon: &str) -> Option<PathBuf> {
     if icon.is_empty() {
         return None;
     }
 
-    // If it's already an absolute path, check if it exists
     let path = Path::new(icon);
     if path.is_absolute() && path.exists() {
         return Some(path.to_path_buf());
@@ -46,6 +68,7 @@ pub fn resolve_icon_path(icon: &str) -> Option<PathBuf> {
 
     let themes = icon_theme_roots();
     let sizes = [
+        "512x512", "512x512@2x",
         "256x256", "256x256@2x",
         "128x128", "128x128@2x",
         "96x96", "96x96@2x",
@@ -53,12 +76,11 @@ pub fn resolve_icon_path(icon: &str) -> Option<PathBuf> {
         "48x48", "48x48@2x",
         "32x32", "32x32@2x",
         "24x24", "24x24@2x",
-        "16x16", "16x16@2x"
+        "16x16", "16x16@2x",
     ];
     let categories = ["apps", "devices", "categories", "mimetypes", "places", "status"];
 
     for theme_dir in &themes {
-        // 1. Search size-bucket directories
         for size in &sizes {
             for category in &categories {
                 let base = theme_dir.join(size).join(category);
@@ -73,33 +95,36 @@ pub fn resolve_icon_path(icon: &str) -> Option<PathBuf> {
             }
         }
 
-        // 2. Search flat layouts under the theme (e.g. {theme}/apps/{icon}.png)
+        // Search scalable/ dirs for SVG icons
+        for category in &categories {
+            let base = theme_dir.join("scalable").join(category);
+            let svg = base.join(format!("{}.svg", icon));
+            if svg.exists() {
+                return Some(svg);
+            }
+        }
+
         for category in &categories {
             let base = theme_dir.join(category);
-            let p1 = base.join(icon);
-            if p1.exists() {
-                return Some(p1);
-            }
-            let p2 = base.join(format!("{}.png", icon));
-            if p2.exists() {
-                return Some(p2);
+            for ext in &["", ".png", ".svg"] {
+                let candidate = base.join(format!("{icon}{ext}"));
+                if candidate.exists() {
+                    return Some(candidate);
+                }
             }
         }
     }
 
-    // Fall back to /usr/share/pixmaps
     let base_pix = PathBuf::from("/usr/share/pixmaps");
-    let p1 = base_pix.join(icon);
-    if p1.exists() {
-        return Some(p1);
-    }
-    let p2 = base_pix.join(format!("{}.png", icon));
-    if p2.exists() {
-        return Some(p2);
+    for ext in &["", ".png", ".svg"] {
+        let candidate = base_pix.join(format!("{icon}{ext}"));
+        if candidate.exists() {
+            return Some(candidate);
+        }
     }
 
     log::debug!(
-        "[icon_loader] could not resolve a PNG for icon '{}' in any installed theme (it may only ship as SVG)",
+        "[icon_loader] could not resolve icon '{}' in any installed theme",
         icon
     );
 
@@ -119,8 +144,11 @@ pub fn get_app_icon_texture(ctx: &egui::Context, icon: &str) -> Option<TextureHa
 
     // Resolve path
     let tex_opt = if let Some(path) = resolve_icon_path(icon) {
-        if let Ok(bytes) = std::fs::read(&path) {
-            if let Ok(img) = image::load_from_memory(&bytes) {
+        let is_svg = path.extension().is_some_and(|e| e == "svg");
+        if is_svg {
+            load_svg(&path, icon, ctx)
+        } else if let Ok(bytes) = std::fs::read(&path) {
+            image::load_from_memory(&bytes).ok().and_then(|img| {
                 let rgba = img.to_rgba8();
                 let (w, h) = rgba.dimensions();
                 let color_img = egui::ColorImage::from_rgba_unmultiplied(
@@ -133,9 +161,7 @@ pub fn get_app_icon_texture(ctx: &egui::Context, icon: &str) -> Option<TextureHa
                     egui::TextureOptions::default(),
                 );
                 Some(tex)
-            } else {
-                None
-            }
+            })
         } else {
             None
         }
