@@ -10,7 +10,7 @@ impl Engine {
     pub fn refresh_active_profile(&self) {
         let (profile_name, mappings) = {
             let cfg = self.inner.config.lock_safe();
-            let target = cfg.active_app_profile.clone();
+            let target = self.inner.current_profile.lock_safe().clone();
             let mappings = cfg.get_resolved_mappings(&target);
             self.inner.cached_gesture_threshold.store(
                 cfg.settings.gesture_threshold.max(0) as u32,
@@ -196,7 +196,7 @@ impl Engine {
     pub fn apply_keyboard_backlight(&self) {
         let (backlight_effect, backlight_enabled) = {
             let cfg = self.inner.config.lock_safe();
-            let active_profile = cfg.active_app_profile.clone();
+            let active_profile = self.inner.current_profile.lock_safe().clone();
             if let Some(profile) = cfg.get_profile(&active_profile) {
                 let effect = profile.mappings.get("backlight_effect").cloned();
                 let enabled = profile.mappings.get("backlight_enabled").cloned();

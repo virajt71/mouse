@@ -1,0 +1,9 @@
+{
+  "uuid": "mouser-frontmost@mouser.dev",
+  "name": "Mouser Frontmost Window",
+  "description": "Exports focused window WM_CLASS over D-Bus for the Mouser-RS daemon",
+  "shell-version": [
+    "45", "46", "47", "48", "49", "50"
+  ],
+  "url": "https://github.com/virajt71/mouse"
+}

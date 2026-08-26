@@ -1,4 +1,3 @@
-use super::gnome::get_active_app_pid_gnome_shell;
 use super::hyprland::get_active_app_pid_hyprland;
 use super::i3::get_active_app_pid_i3;
 use super::kde::get_pid_from_kdotool;
@@ -13,7 +12,6 @@ pub fn get_active_app_pid_fallbacks(x11_queried: bool) -> Option<u32> {
         .unwrap_or_default()
         .to_lowercase();
 
-    let is_gnome = desktop.contains("GNOME");
     let is_kde = desktop.contains("KDE");
     let is_sway = desktop.contains("SWAY");
     let is_hyprland = desktop.contains("HYPRLAND");
@@ -26,12 +24,6 @@ pub fn get_active_app_pid_fallbacks(x11_queried: bool) -> Option<u32> {
             .map(|v| !v.is_empty())
             .unwrap_or(false);
 
-    // 1. GNOME Shell D-Bus Eval (GNOME ≤44 Wayland native apps)
-    if is_gnome && is_wayland {
-        if let Some(pid) = get_active_app_pid_gnome_shell() {
-            return Some(pid);
-        }
-    }
 
     // 2. kdotool — KDE Wayland native apps
     if is_kde && is_wayland {

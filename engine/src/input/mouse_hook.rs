@@ -1,6 +1,6 @@
 use crate::lock_ext::MutexExt;
 use anyhow::{anyhow, Result};
-use evdev::{Device, EventType, InputEvent, Key, RelativeAxisType};
+use evdev::{AbsoluteAxisType, Device, EventType, InputEvent, Key, PropType, RelativeAxisType};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -20,7 +20,61 @@ pub struct MouseHook {
     on_event: Arc<dyn Fn(MouseHookEvent) + Send + Sync + 'static>,
 }
 
-pub fn find_logitech_mouse() -> Option<String> {
+pub fn is_hookable_mouse(dev: &Device) -> bool {
+    // Exclude virtual devices we created (Mouser Virtual Keyboard)
+    if let Some(name) = dev.name() {
+        if name.starts_with("Mouser ") {
+            return false;
+        }
+    }
+
+    // A mouse clicks and moves relatively; nothing else qualifies.
+    let has_rel = dev
+        .supported_relative_axes()
+        .map(|axes| {
+            axes.contains(RelativeAxisType::REL_X)
+                && axes.contains(RelativeAxisType::REL_Y)
+        })
+        .unwrap_or(false);
+
+    let has_left = dev
+        .supported_keys()
+        .map(|keys| keys.contains(Key::BTN_LEFT))
+        .unwrap_or(false);
+
+    if !has_rel || !has_left {
+        return false;
+    }
+
+    // Exclude touchpads, trackpads, touchscreens
+    let touches = dev
+        .supported_keys()
+        .map(|keys| {
+            keys.contains(Key::BTN_TOUCH) || keys.contains(Key::BTN_TOOL_FINGER)
+        })
+        .unwrap_or(false)
+        || dev
+            .supported_absolute_axes()
+            .map(|axes| axes.contains(AbsoluteAxisType::ABS_MT_POSITION_X))
+            .unwrap_or(false)
+        || dev.properties().contains(PropType::BUTTONPAD)
+        || dev.properties().contains(PropType::SEMI_MT)
+        || dev.properties().contains(PropType::DIRECT);
+
+    if touches {
+        return false;
+    }
+
+    // Exclude pointing sticks (TrackPoints)
+    if dev.properties().contains(PropType::POINTING_STICK) {
+        return false;
+    }
+
+    true
+}
+
+pub fn find_logitech_mice() -> Vec<String> {
+    let mut mice = Vec::new();
     if let Ok(entries) = std::fs::read_dir("/dev/input") {
         for entry in entries.flatten() {
             let path = entry.path();
@@ -29,28 +83,8 @@ pub fn find_logitech_mouse() -> Option<String> {
                     if let Ok(dev) = Device::open(&path) {
                         let id = dev.input_id();
                         if id.vendor() == 0x046D {
-                            // Check if it supports relative axes REL_X and REL_Y
-                            let has_rel = dev
-                                .supported_relative_axes()
-                                .map(|axes| {
-                                    axes.contains(RelativeAxisType::REL_X)
-                                        && axes.contains(RelativeAxisType::REL_Y)
-                                })
-                                .unwrap_or(false);
-
-                            // Check if it supports BTN_LEFT
-                            let has_left = dev
-                                .supported_keys()
-                                .map(|keys| keys.contains(Key::BTN_LEFT))
-                                .unwrap_or(false);
-
-                            if has_rel && has_left {
-                                log::info!(
-                                    "[MouseHook] Found Logitech mouse: {} ({})",
-                                    dev.name().unwrap_or("Unknown"),
-                                    path.to_string_lossy()
-                                );
-                                return Some(path.to_string_lossy().to_string());
+                            if is_hookable_mouse(&dev) {
+                                mice.push(path.to_string_lossy().to_string());
                             }
                         }
                     }
@@ -58,7 +92,11 @@ pub fn find_logitech_mouse() -> Option<String> {
             }
         }
     }
-    None
+    mice
+}
+
+pub fn find_logitech_mouse() -> Option<String> {
+    find_logitech_mice().first().cloned()
 }
 
 impl MouseHook {
@@ -74,8 +112,13 @@ impl MouseHook {
         }
     }
 
+    pub fn device_path(&self) -> Option<&str> {
+        self.device_path.as_deref()
+    }
+
     pub fn start(
         &mut self,
+        dev_path: String,
         blocked_buttons: Arc<std::sync::Mutex<Vec<Key>>>,
         invert_vscroll: Arc<AtomicBool>,
         invert_hscroll: Arc<AtomicBool>,
@@ -87,8 +130,6 @@ impl MouseHook {
             return Ok(());
         }
 
-        let dev_path = find_logitech_mouse()
-            .ok_or_else(|| anyhow!("Logitech physical mouse event node not found"))?;
         self.device_path = Some(dev_path.clone());
 
         let mut dev =
@@ -133,6 +174,14 @@ impl MouseHook {
                 let mut pressed_keys = std::collections::HashSet::new();
                 let mut pending_dx = 0i32;
                 let mut pending_dy = 0i32;
+
+                let hires_scroll = dev
+                    .supported_relative_axes()
+                    .map(|axes| {
+                        axes.contains(RelativeAxisType::REL_WHEEL_HI_RES)
+                    })
+                    .unwrap_or(false);
+                let mut hscroll_accum = 0.0f32;
 
                 while running.load(Ordering::Acquire) {
                     let timeout = PollTimeout::try_from(Duration::from_millis(200)).unwrap_or(PollTimeout::NONE);
@@ -266,36 +315,58 @@ impl MouseHook {
                                                         on_event(MouseHookEvent::Relative { dx, dy });
                                                         should_forward = false;
                                                     }
+                                                } else if code == RelativeAxisType::REL_WHEEL_HI_RES {
+                                                    if hires_scroll {
+                                                        let mut val = value;
+                                                        if invert_vscroll.load(Ordering::Relaxed) {
+                                                            val = -val;
+                                                        }
+                                                        if let Some(uinput_lock) = uinput_device.lock_safe().as_mut() {
+                                                            let evs = [
+                                                                InputEvent::new(EventType::RELATIVE, code.0, val),
+                                                                InputEvent::new(EventType::SYNCHRONIZATION, 0, 0),
+                                                            ];
+                                                            let _ = uinput_lock.emit(&evs);
+                                                        }
+                                                        should_forward = false;
+                                                    }
+                                                } else if code == RelativeAxisType::REL_HWHEEL_HI_RES {
+                                                    if hires_scroll {
+                                                        let mut val = value;
+                                                        if invert_hscroll.load(Ordering::Relaxed) {
+                                                            val = -val;
+                                                        }
+                                                        if !block_hscroll.load(Ordering::Relaxed) {
+                                                            if let Some(uinput_lock) = uinput_device.lock_safe().as_mut() {
+                                                                let evs = [
+                                                                    InputEvent::new(EventType::RELATIVE, code.0, val),
+                                                                    InputEvent::new(EventType::SYNCHRONIZATION, 0, 0),
+                                                                ];
+                                                                let _ = uinput_lock.emit(&evs);
+                                                            }
+                                                        }
+                                                        hscroll_accum += val as f32 / 120.0;
+                                                        let ticks = hscroll_accum.trunc() as i32;
+                                                        if ticks != 0 {
+                                                            hscroll_accum -= ticks as f32;
+                                                            on_event(MouseHookEvent::Scroll {
+                                                                horizontal: true,
+                                                                delta: ticks,
+                                                            });
+                                                        }
+                                                        should_forward = false;
+                                                    }
                                                 } else if code == RelativeAxisType::REL_WHEEL {
-                                                    if invert_vscroll.load(Ordering::Relaxed) {
-                                                        value = -value;
-                                                    }
-                                                    on_event(MouseHookEvent::Scroll {
-                                                        horizontal: false,
-                                                        delta: value,
-                                                    });
-                                                    // Write directly to uinput with inverted value
-                                                    if let Some(uinput_lock) = uinput_device.lock_safe().as_mut() {
-                                                        let evs = [
-                                                            InputEvent::new(EventType::RELATIVE, code.0, value),
-                                                            InputEvent::new(EventType::SYNCHRONIZATION, 0, 0),
-                                                        ];
-                                                        let _ = uinput_lock.emit(&evs);
-                                                    }
-                                                    should_forward = false;
-                                                } else if code == RelativeAxisType::REL_HWHEEL {
-                                                    if invert_hscroll.load(Ordering::Relaxed) {
-                                                        value = -value;
-                                                    }
-                                                    on_event(MouseHookEvent::Scroll {
-                                                        horizontal: true,
-                                                        delta: value,
-                                                    });
-                                                    // Only forward raw REL_HWHEEL to uinput when no engine action is
-                                                    // mapped for hscroll. When block_hscroll=true, the engine handles
-                                                    // the scroll via handle_hscroll_event and raw forwarding is
-                                                    // suppressed to prevent double-firing (§3.1).
-                                                    if !block_hscroll.load(Ordering::Relaxed) {
+                                                    if hires_scroll {
+                                                        should_forward = false;
+                                                    } else {
+                                                        if invert_vscroll.load(Ordering::Relaxed) {
+                                                            value = -value;
+                                                        }
+                                                        on_event(MouseHookEvent::Scroll {
+                                                            horizontal: false,
+                                                            delta: value,
+                                                        });
                                                         if let Some(uinput_lock) = uinput_device.lock_safe().as_mut() {
                                                             let evs = [
                                                                 InputEvent::new(EventType::RELATIVE, code.0, value),
@@ -303,8 +374,30 @@ impl MouseHook {
                                                             ];
                                                             let _ = uinput_lock.emit(&evs);
                                                         }
+                                                        should_forward = false;
                                                     }
-                                                    should_forward = false;
+                                                } else if code == RelativeAxisType::REL_HWHEEL {
+                                                    if hires_scroll {
+                                                        should_forward = false;
+                                                    } else {
+                                                        if invert_hscroll.load(Ordering::Relaxed) {
+                                                            value = -value;
+                                                        }
+                                                        on_event(MouseHookEvent::Scroll {
+                                                            horizontal: true,
+                                                            delta: value,
+                                                        });
+                                                        if !block_hscroll.load(Ordering::Relaxed) {
+                                                            if let Some(uinput_lock) = uinput_device.lock_safe().as_mut() {
+                                                                let evs = [
+                                                                    InputEvent::new(EventType::RELATIVE, code.0, value),
+                                                                    InputEvent::new(EventType::SYNCHRONIZATION, 0, 0),
+                                                                ];
+                                                                let _ = uinput_lock.emit(&evs);
+                                                            }
+                                                        }
+                                                        should_forward = false;
+                                                    }
                                                 }
                                             }
                                             _ => {}

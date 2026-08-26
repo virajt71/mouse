@@ -42,44 +42,51 @@ impl Engine {
 
     fn check_mouse_hook(
         &self,
-        last_mouse_attempt_path: &mut Option<String>,
-        last_mouse_attempt_time: &mut Option<Instant>,
+        failed_mice: &mut std::collections::HashMap<String, Instant>,
     ) {
         let inner = &self.inner;
-        let is_hook_running = {
-            let hook_lock = inner.mouse_hook.lock_safe();
-            if let Some(hook) = &*hook_lock {
-                hook.is_running()
+        let mouse_paths = crate::input::find_logitech_mice();
+        let mut mouse_hooks = inner.mouse_hooks.lock_safe();
+
+        // 1. Remove hooks that are no longer physically connected
+        mouse_hooks.retain(|hook| {
+            if let Some(path) = hook.device_path() {
+                if mouse_paths.contains(&path.to_string()) {
+                    true
+                } else {
+                    log::info!("[Engine] Mouse {} disconnected - stopping hook.", path);
+                    false
+                }
             } else {
                 false
             }
-        };
+        });
 
-        if !is_hook_running {
+        if mouse_hooks.is_empty() {
             crate::flow::FLOW_MANAGER.set_active_peer(None);
-            let hook_is_none = inner.mouse_hook.lock_safe().is_none();
+        }
 
-            if let Some(mouse_path) = crate::input::find_logitech_mouse() {
-                let should_attempt =
-                    match (last_mouse_attempt_path.as_ref(), *last_mouse_attempt_time) {
-                        (Some(last_path), Some(last_time)) if *last_path == mouse_path => {
-                            last_time.elapsed() >= Duration::from_secs(2)
-                        }
-                        _ => true,
-                    };
+        // 2. Restart/Start hooks for all detected Logitech mice, with 2s cooldown
+        for path in &mouse_paths {
+            let has_running_hook = mouse_hooks
+                .iter()
+                .any(|h| h.device_path() == Some(path) && h.is_running());
+
+            if !has_running_hook {
+                let should_attempt = match failed_mice.get(path) {
+                    Some(last_time) => last_time.elapsed() >= Duration::from_secs(2),
+                    None => true,
+                };
 
                 if should_attempt {
-                    *last_mouse_attempt_path = Some(mouse_path.clone());
-                    *last_mouse_attempt_time = Some(Instant::now());
-
+                    failed_mice.insert(path.clone(), Instant::now());
                     log::info!(
-                        "[Engine] Mouse hook not running but mouse detected — attempting to {}start...",
-                        if hook_is_none { "" } else { "re" }
+                        "[Engine] Mouse hook not running for {} — attempting to start...",
+                        path
                     );
 
-                    if let Some(mut hook) = inner.mouse_hook.lock_safe().take() {
-                        hook.stop();
-                    }
+                    // Remove any existing dead hook for this path
+                    mouse_hooks.retain(|h| h.device_path() != Some(path));
 
                     let engine = self.clone();
                     let mut hook = MouseHook::new(move |event| {
@@ -87,6 +94,7 @@ impl Engine {
                     });
 
                     match hook.start(
+                        path.clone(),
                         inner.blocked_buttons_arc.clone(),
                         inner.invert_vscroll_arc.clone(),
                         inner.invert_hscroll_arc.clone(),
@@ -95,17 +103,26 @@ impl Engine {
                         inner.key_simulator.device(),
                     ) {
                         Ok(()) => {
-                            log::info!("[Engine] Mouse hook started successfully.");
-                            *inner.mouse_hook.lock_safe() = Some(hook);
-                            *last_mouse_attempt_path = None;
-                            *last_mouse_attempt_time = None;
+                            log::info!("[Engine] Mouse hook started successfully for {}.", path);
+                            mouse_hooks.push(hook);
+                            failed_mice.remove(path);
                         }
                         Err(e) => {
-                            log::warn!(
-                                "[Engine] Mouse hook start failed for {}: {}",
-                                mouse_path,
-                                e
-                            );
+                            let error_str = e.to_string();
+                            if error_str.contains("No such file")
+                                || error_str.contains("No such device")
+                            {
+                                log::info!(
+                                    "[Engine] Mouse hook start bypassed for {} (device disconnected/disconnecting)",
+                                    path
+                                );
+                            } else {
+                                log::warn!(
+                                    "[Engine] Mouse hook start failed for {}: {}",
+                                    path,
+                                    e
+                                );
+                            }
                         }
                     }
                 }
@@ -322,16 +339,15 @@ impl Engine {
             .spawn(move || {
                 let mut last_reconnect = Instant::now() - Duration::from_secs(5);
                 let mut last_mouse_check = Instant::now() - Duration::from_secs(5);
-                let mut last_mouse_attempt_path: Option<String> = None;
-                let mut last_mouse_attempt_time: Option<Instant> = Some(Instant::now());
+                let mut failed_mice: std::collections::HashMap<String, Instant> =
+                    std::collections::HashMap::new();
                 let mut failed_keyboards: std::collections::HashMap<String, Instant> =
                     std::collections::HashMap::new();
                 while inner.running.load(Ordering::Acquire) {
                     if last_mouse_check.elapsed() >= Duration::from_millis(500) {
                         last_mouse_check = Instant::now();
                         engine_clone.check_mouse_hook(
-                            &mut last_mouse_attempt_path,
-                            &mut last_mouse_attempt_time,
+                            &mut failed_mice,
                         );
                         engine_clone.check_keyboard_hooks(&mut failed_keyboards);
                     }

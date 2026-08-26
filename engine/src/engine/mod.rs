@@ -17,7 +17,7 @@ use std::time::Instant;
 
 use crate::config::Config;
 use crate::detection::AppDetector;
-use crate::input::{KeySimulator, MouseHook};
+use crate::input::KeySimulator;
 
 pub use self::inner::{EngineInner, GestureState};
 pub use self::modifier_state::ModifierState;
@@ -45,7 +45,7 @@ impl Engine {
         {
             key_simulator.set_keyboard_layout(layout);
         }
-        let current_profile = config.active_app_profile.clone();
+        let current_profile = "global".to_string();
 
         let invert_vscroll = config.settings.invert_vscroll;
         let invert_hscroll = config.settings.invert_hscroll;
@@ -61,7 +61,7 @@ impl Engine {
             config_generation: AtomicU64::new(1),
             key_simulator,
             app_detector: Mutex::new(None),
-            mouse_hook: Mutex::new(None),
+            mouse_hooks: Mutex::new(Vec::new()),
             keyboard_hooks: Mutex::new(Vec::new()),
             hid_api: Mutex::new(hidapi::HidApi::new().ok()),
             hid_clients: Mutex::new(Vec::new()),
@@ -126,31 +126,7 @@ impl Engine {
 
         let _ = self.restart_keyboard_hooks();
 
-        {
-            let mut hook_lock = self.inner.mouse_hook.lock_safe();
-            if hook_lock.is_none() {
-                let engine = self.clone();
-                let mut hook = MouseHook::new(move |event| {
-                    engine.handle_mouse_hook_event(event);
-                });
 
-                match hook.start(
-                    self.inner.blocked_buttons_arc.clone(),
-                    self.inner.invert_vscroll_arc.clone(),
-                    self.inner.invert_hscroll_arc.clone(),
-                    self.inner.block_hscroll_arc.clone(),
-                    self.inner.gesture_active_arc.clone(),
-                    self.inner.key_simulator.device(),
-                ) {
-                    Ok(()) => {
-                        *hook_lock = Some(hook);
-                    }
-                    Err(e) => {
-                        log::warn!("[Engine] Mouse hook not started at launch ({}). Will retry when device is connected.", e);
-                    }
-                }
-            }
-        }
 
         let mut app_det_lock = self.inner.app_detector.lock_safe();
         if app_det_lock.is_none() {
@@ -178,7 +154,8 @@ impl Engine {
             app_det.stop();
         }
 
-        if let Some(mut hook) = self.inner.mouse_hook.lock_safe().take() {
+        let mut mouse_hooks = self.inner.mouse_hooks.lock_safe();
+        for mut hook in mouse_hooks.drain(..) {
             hook.stop();
         }
 

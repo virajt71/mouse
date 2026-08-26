@@ -35,7 +35,7 @@ pub struct EngineInner {
     pub config_generation: AtomicU64,
     pub key_simulator: KeySimulator,
     pub app_detector: Mutex<Option<AppDetector>>,
-    pub mouse_hook: Mutex<Option<MouseHook>>,
+    pub mouse_hooks: Mutex<Vec<MouseHook>>,
     pub keyboard_hooks: Mutex<Vec<KeyboardHook>>,
     pub hid_api: Mutex<Option<hidapi::HidApi>>,
     pub hid_clients: Mutex<Vec<HidppClient>>,

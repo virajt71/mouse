@@ -16,5 +16,10 @@ dirs = "6.0.0"
 arboard = "3.4.1"
 sha2 = "0.10"
 image = { version = "0.25", default-features = false, features = ["png"] }
+libc = "0.2"
+wayland-client = "0.31"
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+zbus = "5"
 
 smallvec = "1"
+

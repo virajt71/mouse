@@ -55,7 +55,7 @@ impl MouserApp {
                 }
                 "mx_mechanical" | "mx_mechanical_mini" => {
                     include_bytes!(
-                        "../../../assets/images/logitech-keyboards/mx_mechanical/mx-mechanical-top-view-graphite-deu.webp"
+                        "../../../assets/images/logitech-keyboards/mx_mechanical/front.png"
                     )
                 }
                 _ => include_bytes!("../../../assets/images/mouse.png"),

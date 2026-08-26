@@ -173,6 +173,26 @@ pub fn draw_record_shortcut_ui(
             parts.push("meta".to_string());
         }
 
+        // Direct query for copy/cut/paste keys when modifier is active,
+        // bypasses egui event swallowing when clipboard fails.
+        if mods.ctrl || mods.mac_cmd {
+            let is_copy_pressed = i.key_pressed(egui::Key::C);
+            let is_cut_pressed = i.key_pressed(egui::Key::X);
+            let is_paste_pressed = i.key_pressed(egui::Key::V);
+            if is_copy_pressed || is_cut_pressed || is_paste_pressed {
+                let mut event_parts = parts.clone();
+                let key_str = if is_copy_pressed {
+                    "c"
+                } else if is_cut_pressed {
+                    "x"
+                } else {
+                    "v"
+                };
+                event_parts.push(key_str.to_string());
+                new_keys_recorded = Some(event_parts.join("+"));
+            }
+        }
+
         for event in &i.events {
             let mut event_parts = parts.clone();
             let detected_key = match event {

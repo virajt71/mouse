@@ -73,6 +73,8 @@ impl KeySimulator {
         relative_axes.insert(RelativeAxisType::REL_Y);
         relative_axes.insert(RelativeAxisType::REL_WHEEL);
         relative_axes.insert(RelativeAxisType::REL_HWHEEL);
+        relative_axes.insert(RelativeAxisType::REL_WHEEL_HI_RES);
+        relative_axes.insert(RelativeAxisType::REL_HWHEEL_HI_RES);
 
         match VirtualDeviceBuilder::new()
             .ok()?
