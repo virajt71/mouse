@@ -223,27 +223,56 @@ pub fn scan_running_processes() -> Vec<DesktopApp> {
     apps
 }
 
+/// Strip release-channel suffixes distros commonly append to the real exec
+/// name (e.g. `brave-browser-stable` vs the `brave` binary /proc resolves
+/// to), so both sides normalize to the same token.
+fn normalize_exec(exec: &str) -> String {
+    let lower = exec.to_lowercase();
+    for suffix in ["-stable", "-beta", "-dev", "-nightly", "-unstable", "-esr"] {
+        if let Some(stripped) = lower.strip_suffix(suffix) {
+            return stripped.to_string();
+        }
+    }
+    lower
+}
+
+/// True if two exec names likely refer to the same application. Desktop
+/// files and `/proc/*/exe` frequently disagree on the exact binary name
+/// (wrapper script vs real executable, version-tagged package name, etc.),
+/// so exact string equality alone under-deduplicates.
+fn execs_match(a: &str, b: &str) -> bool {
+    let na = normalize_exec(a);
+    let nb = normalize_exec(b);
+    if na.is_empty() || nb.is_empty() {
+        return false;
+    }
+    na == nb || na.contains(&nb) || nb.contains(&na)
+}
+
 pub fn scan_all_applications() -> Vec<DesktopApp> {
     let installed = scan_desktop_applications();
     let running = scan_running_processes();
 
     let mut combined: Vec<DesktopApp> = Vec::new();
-    let mut seen_execs = HashSet::new();
 
-    // 1. Add all installed applications first
+    // 1. Add all installed applications first: these carry real icons, so
+    // they always win the identity when both sources describe the same app.
     for app in installed {
-        let exec_lower = app.exec.to_lowercase();
-        if !exec_lower.is_empty() && !seen_execs.contains(&exec_lower) {
-            seen_execs.insert(exec_lower);
+        if !app.exec.is_empty()
+            && !combined.iter().any(|existing| execs_match(&existing.exec, &app.exec))
+        {
             combined.push(app);
         }
     }
 
-    // 2. Add running applications whose executable isn't already seen
+    // 2. Add running applications only if no installed app already matches
+    // them (fuzzy, not exact) — otherwise a wrapper/binary name mismatch
+    // (e.g. brave-browser-stable vs brave) creates a second, icon-less
+    // duplicate entry for the same application.
     for app in running {
-        let exec_lower = app.exec.to_lowercase();
-        if !exec_lower.is_empty() && !seen_execs.contains(&exec_lower) {
-            seen_execs.insert(exec_lower);
+        if !app.exec.is_empty()
+            && !combined.iter().any(|existing| execs_match(&existing.exec, &app.exec))
+        {
             combined.push(app);
         }
     }
@@ -272,6 +301,50 @@ mod tests {
             clean_exec_command("\"/opt/My App/bin/myapp\" --some-arg"),
             "myapp"
         );
+    }
+
+    #[test]
+    fn test_execs_match_handles_channel_suffix_and_wrapper_mismatch() {
+        // .desktop Exec vs the real /proc/*/exe basename for the same app.
+        assert!(execs_match("brave-browser-stable", "brave"));
+        assert!(execs_match("brave", "brave-browser-stable"));
+        assert!(!execs_match("brave", "firefox"));
+        assert!(!execs_match("", "brave"));
+    }
+
+    #[test]
+    fn test_scan_all_applications_dedupes_desktop_and_process_variants() {
+        let installed = vec![DesktopApp {
+            name: "Brave Web Browser".into(),
+            exec: "brave-browser-stable".into(),
+            icon: "brave-browser".into(),
+            path: "/usr/share/applications/brave-browser.desktop".into(),
+        }];
+        let running = vec![DesktopApp {
+            name: "brave".into(),
+            exec: "brave".into(),
+            icon: String::new(),
+            path: String::new(),
+        }];
+
+        let mut combined: Vec<DesktopApp> = Vec::new();
+        for app in installed {
+            if !app.exec.is_empty()
+                && !combined.iter().any(|e: &DesktopApp| execs_match(&e.exec, &app.exec))
+            {
+                combined.push(app);
+            }
+        }
+        for app in running {
+            if !app.exec.is_empty()
+                && !combined.iter().any(|e: &DesktopApp| execs_match(&e.exec, &app.exec))
+            {
+                combined.push(app);
+            }
+        }
+
+        assert_eq!(combined.len(), 1, "Brave should appear once, with its real icon kept");
+        assert_eq!(combined[0].icon, "brave-browser");
     }
 
     #[test]
