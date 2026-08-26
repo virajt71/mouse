@@ -352,6 +352,7 @@ impl EngineClient {
                         bluetooth_available: item.bluetooth_available,
                         paired_devices: std::sync::Arc::new(paired),
                         battery_pct: item.battery_pct,
+                        battery_status: item.battery_status,
                         has_active_hidpp_battery: item.has_active_hidpp_battery,
                         active_profile: String::new(), // filled by daemon stream context
                     };

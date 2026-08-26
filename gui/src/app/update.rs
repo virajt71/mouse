@@ -45,6 +45,7 @@ impl eframe::App for MouserApp {
             self.bluetooth_available = update.bluetooth_available;
             self.paired_devices = update.paired_devices;
             self.battery_pct = update.battery_pct;
+            self.battery_status = update.battery_status;
             self.has_active_hidpp_battery = Some(update.has_active_hidpp_battery);
         }
 
@@ -293,6 +294,7 @@ impl eframe::App for MouserApp {
                                     &mut self.customization_tab,
                                     conn_type,
                                     &battery_pct,
+                                    &self.battery_status,
                                     is_customizing_connected,
                                     &customizing_device_name,
                                 );

@@ -1,6 +1,6 @@
 use super::protocol::{
-    FEAT_ADJ_DPI, FEAT_BACKLIGHT2, FEAT_CHANGE_HOST, FEAT_REPROG_V4, FEAT_SMART_SHIFT,
-    FEAT_SMART_SHIFT_ENHANCED, LOGI_VID,
+    FEAT_ADJ_DPI, FEAT_BACKLIGHT2, FEAT_BATTERY_STATUS, FEAT_BATTERY_VOLTAGE, FEAT_CHANGE_HOST,
+    FEAT_REPROG_V4, FEAT_SMART_SHIFT, FEAT_SMART_SHIFT_ENHANCED, FEAT_UNIFIED_BATTERY, LOGI_VID,
 };
 use super::HidppClient;
 use anyhow::{anyhow, Result};
@@ -133,6 +133,22 @@ impl HidppClient {
             log::info!("[HID++] Found BACKLIGHT2 (0x1982) at index 0x{:02X}", bl_fi);
         }
 
+        // Battery features — probe in priority order per OpenLogi's pattern
+        self.battery_idx = self.find_feature(FEAT_UNIFIED_BATTERY);
+        if self.battery_idx.is_some() {
+            log::info!("[HID++] Found UNIFIED_BATTERY (0x1004)");
+        } else {
+            self.battery_legacy_idx = self.find_feature(FEAT_BATTERY_STATUS);
+            if self.battery_legacy_idx.is_some() {
+                log::info!("[HID++] Found BATTERY_STATUS (0x1000)");
+            } else {
+                self.battery_voltage_idx = self.find_feature(FEAT_BATTERY_VOLTAGE);
+                if self.battery_voltage_idx.is_some() {
+                    log::info!("[HID++] Found BATTERY_VOLTAGE (0x1001)");
+                }
+            }
+        }
+
         // Program button diversion (only for non-keyboards/devices with gesture support)
         self.held = false;
         self.mode_shift_held = false;
@@ -151,6 +167,70 @@ impl HidppClient {
         }
 
         get_layout_key_from_name(&self.device_name)
+    }
+
+    /// Open the first reachable HID++ device and probe only the battery
+    /// features — no REPROG_V4 requirement, no gesture diversion. Used by the
+    /// background worker for battery polling so it never disturbs installed
+    /// gesture diversion on the GUI's device handle.
+    pub fn open_for_battery(&mut self) -> Result<()> {
+        let api = HidApi::new()?;
+        let info = self
+            .list_hidpp_devices(&api)
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow!("No Logitech HID++ device found"))?;
+        let product_id = info.product_id();
+        self.device_name = info
+            .product_string()
+            .unwrap_or("Unknown")
+            .to_string();
+        self.layout_from_pid = match product_id {
+            0x4082 => Some("mx_master_3"),
+            0x4091 => Some("mx_master_3s"),
+            0x406B => Some("mx_anywhere_2s"),
+            0x4090 => Some("mx_anywhere_3"),
+            0x40A3 => Some("mx_anywhere_3s"),
+            0x408A => Some("mx_vertical"),
+            0x4069 => Some("mx_ergo"),
+            0x4072 => Some("mx_keys"),
+            0x4093 => Some("mx_keys_s"),
+            0x408D => Some("mx_keys_mini"),
+            0x408E => Some("mx_mechanical"),
+            0x408F => Some("mx_mechanical_mini"),
+            _ => None,
+        };
+        self.device = Some(api.open_path(info.path())?);
+        self.device_path = info.path().to_string_lossy().to_string();
+
+        // Probe battery features across direct + receiver slots, like
+        // `open_device`. Keep the existing feature indices if already known.
+        let mut found = false;
+        for idx in [0xFF, 1, 2, 3, 4, 5, 6] {
+            self.dev_idx = idx;
+            if let Some(fi) = self.find_feature(FEAT_UNIFIED_BATTERY) {
+                self.battery_idx = Some(fi);
+                found = true;
+                break;
+            }
+            if let Some(fi) = self.find_feature(FEAT_BATTERY_STATUS) {
+                self.battery_legacy_idx = Some(fi);
+                found = true;
+                break;
+            }
+            if let Some(fi) = self.find_feature(FEAT_BATTERY_VOLTAGE) {
+                self.battery_voltage_idx = Some(fi);
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            self.device = None;
+            return Err(anyhow!(
+                "No battery feature (0x1004/0x1000/0x1001) found on this device"
+            ));
+        }
+        Ok(())
     }
 }
 

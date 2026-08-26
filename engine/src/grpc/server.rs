@@ -433,6 +433,7 @@ pub fn broadcast_device_state(update: &crate::worker::DeviceStateUpdate, tx: &De
         battery_pct: update.battery_pct.clone(),
         has_active_hidpp_battery: update.has_active_hidpp_battery,
         paired_devices_json: paired_json,
+        battery_status: update.battery_status.clone(),
     };
     let _ = tx.0.send(msg);
 }

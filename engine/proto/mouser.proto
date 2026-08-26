@@ -64,6 +64,8 @@ message DeviceStateResponse {
   bool   has_active_hidpp_battery    = 5;
   /// JSON array of [mac: string, name: string, is_connected: bool] triples
   string paired_devices_json         = 6;
+  /// HID++ battery status label: "discharging", "charging", "full", etc.
+  string battery_status              = 7;
 }
 
 // ─── Flow (pass-through query helpers) ────────────────────────────────────────

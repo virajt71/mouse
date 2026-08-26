@@ -9,6 +9,7 @@ pub struct DeviceStateUpdate {
     pub bluetooth_available: bool,
     pub paired_devices: std::sync::Arc<Vec<(String, String, bool)>>, // (mac, name, is_connected)
     pub battery_pct: String,
+    pub battery_status: String,
     pub has_active_hidpp_battery: bool,
     pub active_profile: String,
 }
@@ -122,14 +123,22 @@ pub fn spawn_background_worker(
                     }
                 }
 
-                // Query battery level only if there's any active connection or active hidpp battery
+                // Query battery first over direct HID++ (OpenLogi approach — richer
+                // status), falling back to sysfs when no device is reachable
+                // from this thread.
                 let has_active_hidpp = crate::battery::has_active_hidpp_battery();
-                let battery_pct = if paired_devices.iter().any(|(_, _, c)| *c) || has_active_hidpp {
-                    crate::battery::get_mouse_battery()
-                        .map(|(_, pct)| pct)
-                        .unwrap_or_else(|| "80".to_string())
+                let (battery_pct, battery_status) = if paired_devices.iter().any(|(_, _, c)| *c)
+                    || has_active_hidpp
+                {
+                    match crate::battery::get_mouse_battery_hidpp() {
+                        Some((pct, status)) => (pct, status),
+                        None => match crate::battery::get_mouse_battery() {
+                            Some((_, pct)) => (pct, String::new()),
+                            None => ("80".to_string(), String::new()),
+                        },
+                    }
                 } else {
-                    "0".to_string()
+                    ("0".to_string(), String::new())
                 };
 
                 let active_profile = active_profile_ref.lock_safe().clone();
@@ -139,6 +148,7 @@ pub fn spawn_background_worker(
                     bluetooth_available: bt_up,
                     paired_devices: std::sync::Arc::new(paired_devices.clone()),
                     battery_pct,
+                    battery_status,
                     has_active_hidpp_battery: has_active_hidpp,
                     active_profile,
                 };

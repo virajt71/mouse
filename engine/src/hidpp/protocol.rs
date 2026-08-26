@@ -15,6 +15,9 @@ pub const FEAT_SMART_SHIFT: u16 = 0x2110;
 pub const FEAT_SMART_SHIFT_ENHANCED: u16 = 0x2111;
 pub const FEAT_CHANGE_HOST: u16 = 0x1814;
 pub const FEAT_BACKLIGHT2: u16 = 0x1982;
+pub const FEAT_UNIFIED_BATTERY: u16 = 0x1004;
+pub const FEAT_BATTERY_STATUS: u16 = 0x1000;
+pub const FEAT_BATTERY_VOLTAGE: u16 = 0x1001;
 
 impl HidppClient {
     pub fn tx(&self, feat: u8, func: u8, params: &[u8]) -> Result<()> {
@@ -111,5 +114,43 @@ impl HidppClient {
             }
         }
         None
+    }
+}
+
+/// Decode a unified-battery (0x1004) response &[percentage, level, status].
+/// Mirrors OpenLogi's `decode` for this feature.
+pub fn parse_unified_battery(payload: &[u8]) -> (u8, String) {
+    let percentage = payload[0].min(100);
+    let status = unified_battery_status_label(payload.get(2).copied().unwrap_or(0));
+    (percentage, status)
+}
+
+/// Charge-status label for the unified battery feature's status byte.
+pub fn unified_battery_status_label(status: u8) -> String {
+    match status {
+        0 => "discharging".into(),
+        1 => "charging".into(),
+        2 => "charging_nearly_full".into(),
+        3 => "full".into(),
+        4 => "charging_slow".into(),
+        5 => "invalid_battery".into(),
+        6 => "thermal_error".into(),
+        7 => "charging_error".into(),
+        _ => "unknown".into(),
+    }
+}
+
+/// Charge-status label for the legacy battery feature's (0x1000) status byte.
+pub fn legacy_status_label(status: u8) -> String {
+    match status {
+        0 => "discharging".into(),
+        1 => "recharging".into(),
+        2 => "almost_full".into(),
+        3 => "full".into(),
+        4 => "slow_recharge".into(),
+        5 => "invalid_battery".into(),
+        6 => "thermal_error".into(),
+        7 => "other".into(),
+        _ => "unknown".into(),
     }
 }

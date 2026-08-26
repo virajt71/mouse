@@ -8,6 +8,7 @@ pub fn draw_status_pill(
     status_rect: Rect,
     is_connected: bool,
     battery_pct: &str,
+    battery_status: &str,
     conn_type: &str,
     lang: &str,
     is_sidebar: bool,
@@ -16,7 +17,11 @@ pub fn draw_status_pill(
     let id = ui.make_persistent_id(format!("status_pill_{:?}", status_rect.min));
     let status_res = ui.interact(status_rect, id, egui::Sense::hover());
     let status_res = if is_connected {
-        status_res.on_hover_text(format!("{}%", battery_pct))
+        if battery_status.is_empty() {
+            status_res.on_hover_text(format!("{}%", battery_pct))
+        } else {
+            status_res.on_hover_text(format!("{}% · {}", battery_pct, battery_status))
+        }
     } else {
         status_res
     };
@@ -70,6 +75,24 @@ pub fn draw_status_pill(
             )
         };
         draw_battery_widget(painter, batt_rect, level);
+
+        // Charging bolt when the HID++ status says so
+        let is_charging = battery_status.contains("charging") || battery_status.contains("recharging");
+        if is_charging && battery_status != "charging_error" {
+            let bolt_color = if level <= 0.20 {
+                theme::COLOR_DOT_RED
+            } else {
+                theme::COLOR_ACCENT
+            };
+            let bolt_center = pos2(batt_rect.max.x + 5.0, cy);
+            painter.text(
+                bolt_center,
+                egui::Align2::CENTER_CENTER,
+                "⚡",
+                egui::FontId::proportional(10.0),
+                bolt_color,
+            );
+        }
 
         // Thin vertical divider
         let div_x = cx;

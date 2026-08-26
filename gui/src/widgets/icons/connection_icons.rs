@@ -69,37 +69,7 @@ pub fn draw_bolt_icon(ui: &egui::Ui, center: egui::Pos2) {
 pub fn draw_bluetooth_icon(ui: &egui::Ui, center: egui::Pos2) {
     let painter = ui.painter();
 
-    // Blue background circle
+    // Blue background circle + white bluetooth rune
     painter.circle_filled(center, 12.0, egui::Color32::from_rgb(0x00, 0x7a, 0xff));
-
-    // White Bluetooth rune symbol
-    let stroke = egui::Stroke::new(1.5, egui::Color32::WHITE);
-    let cx = center.x;
-    let cy = center.y;
-
-    // Vertical line
-    painter.line_segment([egui::pos2(cx, cy - 7.0), egui::pos2(cx, cy + 7.0)], stroke);
-
-    // Diagonals
-    // Upper loop
-    painter.line_segment([egui::pos2(cx, cy), egui::pos2(cx + 3.5, cy - 3.5)], stroke);
-    painter.line_segment(
-        [egui::pos2(cx + 3.5, cy - 3.5), egui::pos2(cx, cy - 7.0)],
-        stroke,
-    );
-    // Lower loop
-    painter.line_segment([egui::pos2(cx, cy), egui::pos2(cx + 3.5, cy + 3.5)], stroke);
-    painter.line_segment(
-        [egui::pos2(cx + 3.5, cy + 3.5), egui::pos2(cx, cy + 7.0)],
-        stroke,
-    );
-    // Left wings / ears
-    painter.line_segment(
-        [egui::pos2(cx, cy - 3.5), egui::pos2(cx - 3.5, cy - 7.0)],
-        stroke,
-    );
-    painter.line_segment(
-        [egui::pos2(cx, cy + 3.5), egui::pos2(cx - 3.5, cy + 7.0)],
-        stroke,
-    );
+    crate::widgets::draw_bluetooth_rune(painter, center, 12.0, egui::Color32::WHITE);
 }

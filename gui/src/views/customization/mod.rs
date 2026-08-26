@@ -35,6 +35,7 @@ pub fn show(
     customization_tab: &mut SidebarTab,
     conn_type: &str,
     battery_pct: &str,
+    battery_status: &str,
     is_connected: bool,
     customizing_device_name: &str,
 ) {
@@ -441,6 +442,7 @@ pub fn show(
         status_rect,
         is_connected,
         battery_pct,
+        battery_status,
         conn_type,
         &config.settings.language,
         true,

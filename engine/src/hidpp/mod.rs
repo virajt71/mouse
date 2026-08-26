@@ -5,7 +5,7 @@ pub mod protocol;
 use anyhow::{anyhow, Result};
 use hidapi::HidDevice;
 
-use self::protocol::{LONG_ID, MY_SW, SHORT_ID};
+use self::protocol::{legacy_status_label, parse_unified_battery, LONG_ID, MY_SW, SHORT_ID};
 
 pub enum HidppEvent {
     GestureDown,
@@ -15,6 +15,7 @@ pub enum HidppEvent {
     ModeShiftUp,
     BacklightChanged { enabled: bool, effect_id: u8 },
     HostChannelChanged(u8),
+    BatteryChanged(BatteryReading),
 }
 
 pub struct HidppClient {
@@ -29,12 +30,22 @@ pub struct HidppClient {
     pub(crate) current_host_channel: Option<u8>,
     pub(crate) backlight_feat_idx: Option<u8>,
     pub(crate) gesture_cid: u16,
+    pub(crate) battery_idx: Option<u8>,
+    pub(crate) battery_legacy_idx: Option<u8>,
+    pub(crate) battery_voltage_idx: Option<u8>,
     pub layout_from_pid: Option<&'static str>,
     pub(crate) rawxy_enabled: bool,
     pub(crate) held: bool,
     pub(crate) mode_shift_held: bool,
     pub device_name: String,
     pub device_path: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct BatteryReading {
+    pub percentage: u8,
+    pub status: String,
+    pub level: String,
 }
 
 impl Default for HidppClient {
@@ -69,6 +80,9 @@ impl HidppClient {
             current_host_channel: None,
             backlight_feat_idx: None,
             gesture_cid: 0x00C3,
+            battery_idx: None,
+            battery_legacy_idx: None,
+            battery_voltage_idx: None,
             layout_from_pid: None,
             rawxy_enabled: false,
             held: false,
@@ -100,6 +114,9 @@ impl HidppClient {
         self.active_host_channel = None;
         self.current_host_channel = None;
         self.backlight_feat_idx = None;
+        self.battery_idx = None;
+        self.battery_legacy_idx = None;
+        self.battery_voltage_idx = None;
         self.layout_from_pid = None;
     }
 
@@ -131,6 +148,48 @@ impl HidppClient {
         } else {
             Err(anyhow!("Invalid DPI response size"))
         }
+    }
+
+    /// Read the device's battery charge, probing the unified (0x1004) then
+    /// legacy (0x1000) then voltage (0x1001) HID++ features in priority order,
+    /// mirroring OpenLogi's battery probe. Returns percentage plus a
+    /// human-readable status/level label.
+    pub fn read_battery(&self) -> Option<BatteryReading> {
+        // 1. UnifiedBattery (0x1004): getBatteryInfo → [percentage, level, status]
+        if let Some(idx) = self.battery_idx {
+            if let Ok(Some(resp)) = self.request(idx, 1, &[0; 3], 1000) {
+                if resp.len() >= 3 {
+                    let (percentage, status) = parse_unified_battery(&resp);
+                    return Some(BatteryReading {
+                        percentage,
+                        status,
+                        level: String::new(),
+                    });
+                }
+            }
+            log::warn!("[HID++] UnifiedBattery read failed, falling back to legacy");
+        }
+
+        // 2. BatteryStatus (0x1000): getBatteryLevelStatus → [discharge_level, next_level, status]
+        if let Some(idx) = self.battery_legacy_idx.or(self.battery_idx) {
+            if let Ok(Some(resp)) = self.request(idx, 0, &[0; 3], 1000) {
+                if !resp.is_empty() {
+                    let percentage = resp[0];
+                    let status = if resp.len() >= 3 {
+                        legacy_status_label(resp[2])
+                    } else {
+                        String::new()
+                    };
+                    return Some(BatteryReading {
+                        percentage,
+                        status,
+                        level: String::new(),
+                    });
+                }
+            }
+        }
+
+        None
     }
 
     pub fn set_smart_shift(&self, mode: &str, enabled: bool, threshold: u8) -> Result<()> {
@@ -369,6 +428,22 @@ impl HidppClient {
                         let effect_id = r_params.get(2).copied().unwrap_or(0);
                         events.push(HidppEvent::BacklightChanged { enabled, effect_id });
                     }
+                }
+
+                // HID++ unified battery (0x1004) info broadcast — sub-id 0,
+                // payload [percentage, level, status]. Skip our own request echoes
+                // just like the backlight handler does.
+                if Some(r_feat) == self.battery_idx
+                    && r_func == 0
+                    && r_params.len() >= 3
+                    && (r_fsw & 0x0F) != MY_SW
+                {
+                    let (percentage, status) = parse_unified_battery(r_params);
+                    events.push(HidppEvent::BatteryChanged(BatteryReading {
+                        percentage,
+                        status,
+                        level: String::new(),
+                    }));
                 }
 
                 // HID++ CHANGE_HOST (0x1814) host switched notification

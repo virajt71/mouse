@@ -52,32 +52,10 @@ pub fn draw_bluetooth_icon_clean(
     center: egui::Pos2,
     _color: egui::Color32,
 ) {
-    // Draw filled blue circle background
+    // Blue circle background + the shared white bluetooth rune
     let circle_color = egui::Color32::from_rgb(0, 122, 255); // Solid vibrant blue
     painter.circle_filled(center, 11.0, circle_color);
-
-    // Draw white bluetooth icon on top
-    let stroke = egui::Stroke::new(1.5, egui::Color32::WHITE);
-    let (cx, cy) = (center.x, center.y);
-    painter.line_segment([egui::pos2(cx, cy - 5.0), egui::pos2(cx, cy + 5.0)], stroke);
-    painter.line_segment([egui::pos2(cx, cy), egui::pos2(cx + 2.5, cy - 2.5)], stroke);
-    painter.line_segment(
-        [egui::pos2(cx + 2.5, cy - 2.5), egui::pos2(cx, cy - 5.0)],
-        stroke,
-    );
-    painter.line_segment([egui::pos2(cx, cy), egui::pos2(cx + 2.5, cy + 2.5)], stroke);
-    painter.line_segment(
-        [egui::pos2(cx + 2.5, cy + 2.5), egui::pos2(cx, cy + 5.0)],
-        stroke,
-    );
-    painter.line_segment(
-        [egui::pos2(cx, cy - 2.5), egui::pos2(cx - 2.5, cy - 5.0)],
-        stroke,
-    );
-    painter.line_segment(
-        [egui::pos2(cx, cy + 2.5), egui::pos2(cx - 2.5, cy + 5.0)],
-        stroke,
-    );
+    crate::widgets::draw_bluetooth_rune(painter, center, 11.0, egui::Color32::WHITE);
 }
 
 pub fn draw_unifying_icon_clean(

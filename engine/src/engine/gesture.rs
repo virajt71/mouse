@@ -275,6 +275,9 @@ impl Engine {
                 }
                 self.update_cached_device_state();
             }
+            HidppEvent::BatteryChanged(b) => {
+                log::info!("[HID++] Battery reading: {}% ({})", b.percentage, b.status);
+            }
         }
     }
 

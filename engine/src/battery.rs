@@ -1,3 +1,15 @@
+use crate::hidpp::HidppClient;
+
+/// Poll battery directly over HID++ (OpenLogi approach): open the device,
+/// probe unified (0x1004) → legacy (0x1000) → voltage (0x1001) in priority
+/// order, read the percentage + a status label. Returns None when no HID++
+/// device is reachable.
+pub fn get_mouse_battery_hidpp() -> Option<(String, String)> {
+    let mut client = HidppClient::default();
+    client.open_for_battery().ok()?;
+    client.read_battery().map(|b| (b.percentage.to_string(), b.status))
+}
+
 pub fn get_mouse_battery() -> Option<(String, String)> {
     #[cfg(target_os = "linux")]
     {

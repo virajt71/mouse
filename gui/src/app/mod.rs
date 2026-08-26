@@ -66,6 +66,7 @@ pub struct MouserApp {
     // Hardware polling channel — filled by the gRPC WatchDeviceState stream
     pub(crate) rx: std::sync::mpsc::Receiver<mouser_engine::worker::DeviceStateUpdate>,
     pub(crate) battery_pct: String,
+    pub(crate) battery_status: String,
     pub(crate) has_active_hidpp_battery: Option<bool>,
 
     // Background image decode channel — None once both images have been received
@@ -155,6 +156,7 @@ impl MouserApp {
             config_rx,
             rx,
             battery_pct: "0".to_string(),
+            battery_status: String::new(),
             has_active_hidpp_battery: None,
             img_rx: Some(img_rx),
             preloaded_mouse_image: None,
