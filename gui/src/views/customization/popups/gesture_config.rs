@@ -7,7 +7,7 @@ use crate::views::customization::mappings::{
 use eframe::egui;
 use egui::{pos2, vec2, Color32, Rect, RichText, Stroke};
 use mouser_engine::config::Config;
-use mouser_engine::Engine;
+use mouser_engine::client::EngineClient as Engine;
 
 pub fn draw_gesture_config_ui(
     ui: &mut egui::Ui,
@@ -56,7 +56,10 @@ pub fn draw_gesture_config_ui(
         Color32::from_rgb(0, 245, 198), // Teal `#00f5c6`
     );
 
-    let profile = config.get_profile(&config.active_app_profile).unwrap();
+    let profile = match config.get_profile(&config.active_app_profile) {
+        Some(p) => p,
+        None => return clicked_away,
+    };
     let (_, _, up_key, down_key, left_key, right_key) = get_button_keys(btn);
     let click_key = get_button_keys(btn).0;
 
@@ -210,11 +213,7 @@ pub fn draw_gesture_config_ui(
         mps.insert(up_key.to_string(), preset.up.to_string());
         mps.insert(down_key.to_string(), preset.down.to_string());
         mps.insert(click_key.to_string(), preset.click.to_string());
-        let engine_bg = engine.clone();
-        let profile_bg = config.active_app_profile.clone();
-        std::thread::spawn(move || {
-            engine_bg.update_profile_mappings(&profile_bg, mps);
-        });
+        engine.update_profile_mappings(&config.active_app_profile, mps);
     }
 
     content_ui.add_space(8.0);
@@ -407,11 +406,7 @@ pub fn draw_gesture_config_ui(
                 let resolved = resolve_generic_slot_action(&act_val, dir);
                 let mut mps = profile.mappings.clone();
                 mps.insert(key_str.to_string(), resolved);
-                let engine_bg = engine.clone();
-                let profile_bg = config.active_app_profile.clone();
-                std::thread::spawn(move || {
-                    engine_bg.update_profile_mappings(&profile_bg, mps);
-                });
+                engine.update_profile_mappings(&config.active_app_profile, mps);
             }
         }
     }

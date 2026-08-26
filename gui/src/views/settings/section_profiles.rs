@@ -4,7 +4,7 @@ use crate::widgets::draw_profiles_icon_settings;
 use eframe::egui;
 use egui::{vec2, RichText};
 use mouser_engine::config::Config;
-use mouser_engine::Engine;
+use mouser_engine::client::EngineClient as Engine;
 
 thread_local! {
     pub static SELECTED_EDIT_GROUP: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };

@@ -1,7 +1,7 @@
 use crate::theme;
 use eframe::egui;
 use egui::{pos2, vec2, Color32, Rect, RichText, Stroke};
-use mouser_engine::Engine;
+use mouser_engine::client::EngineClient as Engine;
 
 thread_local! {
     pub static SHOW_ADD_APP_MODAL: std::cell::RefCell<bool> = const { std::cell::RefCell::new(false) };
@@ -255,8 +255,10 @@ pub fn draw_add_app_modal(
                                             engine.set_profile_icon(&app.name, &app.icon);
                                             // 4. Switch to it as the active profile
                                             engine.select_profile(&app.name);
+                                            // 5. Instantly refresh local config state from daemon
+                                            *config = engine.get_config();
                                             config.active_app_profile = app.name.clone();
-                                            // 5. Hide modal
+                                            // 6. Hide modal
                                             SHOW_ADD_APP_MODAL.with(|s| *s.borrow_mut() = false);
                                         }
                                     }

@@ -8,7 +8,7 @@ use crate::{theme, ActiveView};
 use eframe::egui;
 use egui::{pos2, vec2, Color32, Rect, RichText, Stroke};
 use mouser_engine::config::Config;
-use mouser_engine::Engine;
+use mouser_engine::client::EngineClient as Engine;
 
 use mappings::{egui_key_to_string, get_button_keys, is_valid_combo, CustomizingButton};
 pub use popups::{
@@ -637,11 +637,7 @@ pub fn show(
                                     mappings.insert(key_to_update.to_string(), action_str);
                                 }
                             }
-                            let engine_bg = engine.clone();
-                            let profile_name_bg = profile_name.clone();
-                            std::thread::spawn(move || {
-                                engine_bg.update_profile_mappings(&profile_name_bg, mappings);
-                            });
+                            engine.update_profile_mappings(profile_name, mappings);
                         }
                     }
                     RECORDING_TARGET.with(|r| *r.borrow_mut() = None);

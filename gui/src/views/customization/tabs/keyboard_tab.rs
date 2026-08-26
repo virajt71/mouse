@@ -8,7 +8,7 @@ use crate::views::customization::popups::{
 use eframe::egui;
 use egui::{pos2, vec2, Color32, Rect, RichText, Stroke};
 use mouser_engine::config::Config;
-use mouser_engine::Engine;
+use mouser_engine::client::EngineClient as Engine;
 
 pub fn show_keyboard_keys_tab(
     ui: &mut egui::Ui,
@@ -253,11 +253,7 @@ pub fn show_keyboard_keys_tab(
                             });
                         } else {
                             save_button_option(btn, opt, &mut mappings);
-                            let engine_bg = engine.clone();
-                            let profile_bg = config.active_app_profile.clone();
-                            std::thread::spawn(move || {
-                                engine_bg.update_profile_mappings(&profile_bg, mappings);
-                            });
+                            engine.update_profile_mappings(&config.active_app_profile, mappings);
                             *customizing_button = None;
                         }
                     }
@@ -582,11 +578,7 @@ pub fn show_keyboard_backlighting_tab(
         mappings.insert("backlight_enabled".to_string(), enabled.to_string());
         mappings.insert("backlight_effect".to_string(), selected_effect);
 
-        let engine_bg = engine.clone();
-        let profile_bg = config.active_app_profile.clone();
-        std::thread::spawn(move || {
-            engine_bg.update_profile_mappings(&profile_bg, mappings);
-        });
+        engine.update_profile_mappings(&config.active_app_profile, mappings);
     }
 }
 

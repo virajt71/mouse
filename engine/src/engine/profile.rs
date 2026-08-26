@@ -10,7 +10,8 @@ impl Engine {
     pub fn refresh_active_profile(&self) {
         let (profile_name, mappings) = {
             let cfg = self.inner.config.lock_safe();
-            let target = self.inner.current_profile.lock_safe().clone();
+            let last_exe = self.inner.last_detected_exe.lock_safe().clone();
+            let target = cfg.get_profile_for_app(&last_exe);
             let mappings = cfg.get_resolved_mappings(&target);
             self.inner.cached_gesture_threshold.store(
                 cfg.settings.gesture_threshold.max(0) as u32,
@@ -54,14 +55,13 @@ impl Engine {
     }
 
     pub fn select_profile(&self, name: &str) {
-        log::info!("[Engine] Selecting active app profile: {}", name);
+        log::info!("[Engine] Selecting GUI active app profile: {}", name);
         {
             let mut cfg = self.inner.config.lock_safe();
             cfg.active_app_profile = name.to_string();
             let _ = cfg.save();
             self.increment_config_generation(&cfg);
         }
-        self.refresh_active_profile();
     }
 
     pub fn add_profile(&self, name: &str) {

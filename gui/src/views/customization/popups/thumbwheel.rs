@@ -4,7 +4,7 @@ use crate::views::customization::mappings::CustomizingButton;
 use eframe::egui;
 use egui::{pos2, vec2, Color32, Rect, RichText, Stroke};
 use mouser_engine::config::Config;
-use mouser_engine::Engine;
+use mouser_engine::client::EngineClient as Engine;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ThumbwheelOption {
@@ -172,7 +172,10 @@ pub fn draw_thumbwheel_action_popup(
         .rect_stroke(rect, 2.0, Stroke::new(1.0, border));
     theme::draw_tech_corners(ui.painter(), rect, theme::accent_color(ui.ctx()), 6.0);
 
-    let profile = config.get_profile(&config.active_app_profile).unwrap();
+    let profile = match config.get_profile(&config.active_app_profile) {
+        Some(p) => p,
+        None => return clicked_away,
+    };
     let current_opt = get_thumbwheel_option(&profile.mappings);
 
     let mut click_occurred = false;

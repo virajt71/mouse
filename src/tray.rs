@@ -1,5 +1,5 @@
 use eframe::egui;
-use engine::Engine;
+use engine::client::EngineClient as Engine;
 
 pub fn setup_tray(ctx: egui::Context, engine: Engine) -> Option<gui::app::MouserTray> {
     #[cfg(target_os = "linux")]
@@ -43,7 +43,7 @@ pub fn setup_tray(ctx: egui::Context, engine: Engine) -> Option<gui::app::Mouser
                 });
 
                 // Spawn menu event listener thread
-                let engine_q = engine_clone.clone();
+                let _engine_q = engine_clone.clone();
                 std::thread::spawn(move || {
                     let menu_channel = tray_icon::menu::MenuEvent::receiver();
                     loop {
@@ -55,7 +55,6 @@ pub fn setup_tray(ctx: egui::Context, engine: Engine) -> Option<gui::app::Mouser
                                     gui::theme::center_window(&ctx, monitor);
                                 }
                             } else if event.id == quit_id {
-                                engine_q.stop();
                                 std::process::exit(0);
                             }
                         }
@@ -92,7 +91,7 @@ pub fn setup_tray(ctx: egui::Context, engine: Engine) -> Option<gui::app::Mouser
             .build()
             .unwrap();
 
-        let engine_q = engine.clone();
+        let _engine_q = engine.clone();
         std::thread::spawn({
             let ctx = ctx.clone();
             move || {
@@ -106,7 +105,6 @@ pub fn setup_tray(ctx: egui::Context, engine: Engine) -> Option<gui::app::Mouser
                                 gui::theme::center_window(&ctx, monitor);
                             }
                         } else if event.id == quit_id {
-                            engine_q.stop();
                             std::process::exit(0);
                         }
                     }

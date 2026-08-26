@@ -1,5 +1,4 @@
 // engine and gui are external library crates in the workspace
-use std::io::Read;
 use std::thread;
 use std::time::Duration;
 
@@ -65,37 +64,92 @@ fn main() -> Result<(), eframe::Error> {
 
     signal::setup_signal_handlers();
 
-    let listener = match single_instance::setup_single_instance(daemon_mode) {
-        Some(l) => l,
-        None => return Ok(()),
-    };
-
-    let engine = engine::Engine::new();
-    if let Err(e) = engine.start() {
-        log::error!("Failed to start Mouser engine: {}", e);
-        if daemon_mode {
-            let _ = std::fs::remove_file(single_instance::get_socket_path());
-            return Ok(());
-        }
-    }
+    let grpc_socket_path = engine::config::get_grpc_socket_path();
 
     if daemon_mode {
-        // Spawn a thread to consume UDS socket connections
-        let socket_path_clone = single_instance::get_socket_path();
+        log::info!("Running in headless daemon mode...");
+        let engine = engine::Engine::new();
+        if let Err(e) = engine.start() {
+            log::error!("Failed to start Mouser engine: {}", e);
+            return Ok(());
+        }
+
+        let (config_bc, device_state_bc) = match engine::grpc::start_grpc_server(engine.clone(), &grpc_socket_path) {
+            Ok(res) => res,
+            Err(e) => {
+                log::error!("Failed to start gRPC server: {}", e);
+                engine.stop();
+                return Ok(());
+            }
+        };
+
+        // Broadcast config changes over gRPC
+        let engine_cfg = engine.clone();
+        let config_bc_clone = config_bc.clone();
+        engine.set_config_change_listener(move || {
+            engine::grpc::broadcast_config(&engine_cfg, &config_bc_clone);
+        });
+
+        // Broadcast device state changes over gRPC
+        let dev_bc_clone = device_state_bc.clone();
+        let (_worker_tx, worker_rx) = engine::worker::spawn_background_worker(
+            move || {},
+            engine.active_profile_shared(),
+        );
         std::thread::spawn(move || {
-            for mut stream in listener.incoming().flatten() {
-                let mut buf = [0; 64];
-                let _ = stream.read(&mut buf);
+            while let Ok(update) = worker_rx.recv() {
+                engine::grpc::broadcast_device_state(&update, &dev_bc_clone);
             }
         });
+
+        log::info!("Mouser daemon successfully started and listening for gRPC clients.");
 
         while signal::is_running() {
             thread::sleep(Duration::from_millis(100));
         }
+
+        log::info!("Shutting down Mouser daemon...");
         engine.stop();
-        let _ = std::fs::remove_file(socket_path_clone);
+        let _ = std::fs::remove_file(&grpc_socket_path);
         Ok(())
     } else {
-        gui::run_gui(engine, listener)
+        // Single instance check for GUI app
+        let listener = match single_instance::setup_single_instance(false) {
+            Some(l) => l,
+            None => return Ok(()),
+        };
+
+        // Try connecting to existing daemon via gRPC
+        let mut client = engine::client::EngineClient::connect(&grpc_socket_path).ok();
+
+        // If daemon is not running, spawn it in background automatically
+        if client.is_none() {
+            log::info!("Daemon not running. Auto-starting Mouser daemon...");
+            if let Ok(exe) = std::env::current_exe() {
+                let _ = std::process::Command::new(exe)
+                    .arg("--daemon")
+                    .spawn();
+            }
+
+            // Retry connecting to daemon with backoff
+            for attempt in 1..=30 {
+                thread::sleep(Duration::from_millis(100));
+                if let Ok(c) = engine::client::EngineClient::connect(&grpc_socket_path) {
+                    log::info!("Connected to Mouser daemon after attempt {}", attempt);
+                    client = Some(c);
+                    break;
+                }
+            }
+        }
+
+        let client = match client {
+            Some(c) => c,
+            None => {
+                log::error!("Failed to connect to Mouser daemon socket: {:?}", grpc_socket_path);
+                return Ok(());
+            }
+        };
+
+        gui::run_gui(client, listener)
     }
 }

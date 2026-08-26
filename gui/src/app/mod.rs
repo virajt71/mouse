@@ -52,7 +52,8 @@ pub struct MouserApp {
     pub(crate) bluetooth_available: bool,
     pub(crate) window_initialized: bool,
     pub config: mouser_engine::config::Config,
-    pub engine: mouser_engine::Engine,
+    /// gRPC client — the GUI's sole connection to the daemon.
+    pub engine: mouser_engine::client::EngineClient,
     pub updater: Updater,
     pub customizing_button: Option<crate::views::customization::mappings::CustomizingButton>,
     pub customization_tab: crate::views::customization::SidebarTab,
@@ -60,9 +61,10 @@ pub struct MouserApp {
     pub(crate) last_config_generation: u64,
     pub(crate) config_changed_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
 
-    // Hardware polling channel
+    // Config stream channel
+    pub(crate) config_rx: std::sync::mpsc::Receiver<mouser_engine::config::Config>,
+    // Hardware polling channel — filled by the gRPC WatchDeviceState stream
     pub(crate) rx: std::sync::mpsc::Receiver<mouser_engine::worker::DeviceStateUpdate>,
-    pub(crate) tx: std::sync::mpsc::Sender<mouser_engine::worker::BackgroundTxCmd>,
     pub(crate) battery_pct: String,
     pub(crate) has_active_hidpp_battery: Option<bool>,
 
@@ -80,7 +82,7 @@ impl MouserApp {
     pub fn new(
         ctx: egui::Context,
         tray_icon: Option<MouserTray>,
-        engine: mouser_engine::Engine,
+        engine: mouser_engine::client::EngineClient,
     ) -> Self {
         let cached = mouser_engine::cache::load_device_cache();
         let config = engine.get_config();
@@ -112,20 +114,22 @@ impl MouserApp {
             }
         });
 
-        let repaint_ctx = ctx.clone();
-        let (tx, rx) = mouser_engine::worker::spawn_background_worker(
-            move || {
-                repaint_ctx.request_repaint();
-            },
-            engine.active_profile_shared(),
-        );
-
+        // Subscribe to config changes via the gRPC WatchConfig stream.
+        // Updates are pushed into config_changed_flag + config_rx + repaint trigger.
         let config_changed_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
-        let config_changed_flag_clone = config_changed_flag.clone();
+        let (config_tx, config_rx) = std::sync::mpsc::channel::<mouser_engine::config::Config>();
+        let flag_clone = config_changed_flag.clone();
         let repaint_ctx_config = ctx.clone();
-        engine.set_config_change_listener(move || {
-            config_changed_flag_clone.store(true, std::sync::atomic::Ordering::Relaxed);
+        std::sync::Arc::new(engine.clone()).subscribe_config(config_tx, move || {
+            flag_clone.store(true, std::sync::atomic::Ordering::Relaxed);
             repaint_ctx_config.request_repaint();
+        });
+
+        // Subscribe to device-state updates via the gRPC WatchDeviceState stream.
+        let (device_tx, rx) = std::sync::mpsc::channel::<mouser_engine::worker::DeviceStateUpdate>();
+        let repaint_ctx_device = ctx.clone();
+        std::sync::Arc::new(engine.clone()).subscribe_device_state(device_tx, move || {
+            repaint_ctx_device.request_repaint();
         });
 
         Self {
@@ -148,8 +152,8 @@ impl MouserApp {
             customizing_device_name: None,
             last_config_generation: config_gen,
             config_changed_flag,
+            config_rx,
             rx,
-            tx,
             battery_pct: "0".to_string(),
             has_active_hidpp_battery: None,
             img_rx: Some(img_rx),
@@ -162,7 +166,16 @@ impl MouserApp {
     }
 
     pub fn reload_config(&mut self) {
-        if self
+        let mut got_update = false;
+        while let Ok(fresh) = self.config_rx.try_recv() {
+            self.config = fresh;
+            got_update = true;
+        }
+
+        if got_update {
+            self.last_config_generation = self.engine.config_generation();
+            self.config_changed_flag.store(false, std::sync::atomic::Ordering::Relaxed);
+        } else if self
             .config_changed_flag
             .swap(false, std::sync::atomic::Ordering::Relaxed)
         {

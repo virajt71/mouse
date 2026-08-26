@@ -2,6 +2,7 @@
 name = "mouser_engine"
 version = "0.1.0"
 edition = "2021"
+build = "build.rs"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
@@ -20,6 +21,20 @@ libc = "0.2"
 wayland-client = "0.31"
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 zbus = "5"
-
 smallvec = "1"
 
+# gRPC
+tonic = { version = "0.12", features = ["transport"] }
+prost = "0.13"
+tokio = { version = "1", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+tower = { version = "0.4", features = ["util"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+async-stream = "0.3"
+futures-util = "0.3"
+
+[build-dependencies]
+tonic-build = "0.12"
+protoc-bin-vendored = "3.0"
+[dev-dependencies]
+tempfile = "3"

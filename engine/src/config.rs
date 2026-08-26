@@ -242,6 +242,17 @@ pub fn get_log_dir() -> PathBuf {
     path
 }
 
+pub fn get_grpc_socket_path() -> PathBuf {
+    let mut path = dirs::config_dir().unwrap_or_else(|| {
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+        PathBuf::from(home).join(".config")
+    });
+    path.push("Mouser");
+    let _ = std::fs::create_dir_all(&path);
+    path.push("mouser_daemon.sock");
+    path
+}
+
 impl Config {
     fn try_migrate_v11(content: &str) -> Option<Self> {
         #[derive(serde::Deserialize)]

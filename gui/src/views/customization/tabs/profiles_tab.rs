@@ -2,7 +2,7 @@ use crate::theme;
 use eframe::egui;
 use egui::{Color32, RichText};
 use mouser_engine::config::Config;
-use mouser_engine::Engine;
+use mouser_engine::client::EngineClient as Engine;
 
 pub fn show_profiles_settings_tab(
     ui: &mut egui::Ui,

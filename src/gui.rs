@@ -1,11 +1,11 @@
 use crate::single_instance::get_socket_path;
 use crate::tray::setup_tray;
 use eframe::egui;
-use engine::Engine;
+use engine::client::EngineClient;
 use std::io::Read;
 use std::os::unix::net::UnixListener;
 
-pub fn run_gui(engine: Engine, listener: UnixListener) -> Result<(), eframe::Error> {
+pub fn run_gui(engine: EngineClient, listener: UnixListener) -> Result<(), eframe::Error> {
     // Under WSL2, Mesa's hardware acceleration can fail with Zink driver/EGL errors.
     // Force software rendering fallback if running inside WSL to ensure out-of-the-box compatibility.
     #[cfg(target_os = "linux")]
@@ -29,7 +29,6 @@ pub fn run_gui(engine: Engine, listener: UnixListener) -> Result<(), eframe::Err
         ..Default::default()
     };
 
-    let engine_for_close = engine.clone();
     eframe::run_native(
         "Mouser-rs",
         native_options,
@@ -70,7 +69,6 @@ pub fn run_gui(engine: Engine, listener: UnixListener) -> Result<(), eframe::Err
         }),
     )
     .map(|_| {
-        engine_for_close.stop();
         let _ = std::fs::remove_file(get_socket_path());
     })
 }

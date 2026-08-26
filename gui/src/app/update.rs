@@ -8,15 +8,6 @@ impl eframe::App for MouserApp {
         // Keep in sync with the engine's config state periodically
         self.reload_config();
 
-        // Clear the network searching flag if flow tab is not active
-        let is_searching_active = self.active_view == ActiveView::Customization
-            && self.customization_tab == crate::views::customization::SidebarTab::Flow;
-
-        if !is_searching_active {
-            mouser_engine::flow::network::IS_SEARCHING
-                .store(false, std::sync::atomic::Ordering::Relaxed);
-        }
-
         // ── Startup centering / update check ────────────────────────────────
         if !self.window_initialized {
             if let Some(monitor) = ctx.input(|i| i.viewport().monitor_size) {
@@ -206,11 +197,7 @@ impl eframe::App for MouserApp {
                                         if let Some((mac, action)) = action_to_take {
                                             match action {
                                                 crate::views::empty_state::DeviceCardAction::Unpair => {
-                                                    let _ = self.tx.send(
-                                                        mouser_engine::worker::BackgroundTxCmd::Unpair(
-                                                            mac.clone(),
-                                                        ),
-                                                    );
+                                                    self.engine.unpair_device(&mac);
                                                      let mut devices = (*self.paired_devices).clone();
                                                      devices.retain(|(m, _, _)| m != &mac);
                                                      self.paired_devices = std::sync::Arc::new(devices);

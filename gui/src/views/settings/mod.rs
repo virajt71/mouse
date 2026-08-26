@@ -9,7 +9,7 @@ use crate::updater::Updater;
 use eframe::egui;
 use egui::{Color32, Stroke};
 use mouser_engine::config::Config;
-use mouser_engine::Engine;
+use mouser_engine::client::EngineClient as Engine;
 
 pub use section_language::render_section_language;
 pub use section_profiles::render_section_profiles;

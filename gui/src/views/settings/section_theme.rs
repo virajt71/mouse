@@ -5,7 +5,7 @@ use crate::widgets::draw_rgb_palette_icon;
 use eframe::egui;
 use egui::{pos2, vec2, Color32, Rect, Stroke};
 use mouser_engine::config::Config;
-use mouser_engine::Engine;
+use mouser_engine::client::EngineClient as Engine;
 
 pub fn render_section_theme(
     ui: &mut egui::Ui,

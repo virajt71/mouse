@@ -3,10 +3,12 @@
 pub mod battery;
 pub mod bluetooth;
 pub mod cache;
+pub mod client;
 pub mod config;
 pub mod detection;
 pub mod engine;
 pub mod flow;
+pub mod grpc;
 pub mod hidpp;
 pub mod input;
 pub mod lock_ext;

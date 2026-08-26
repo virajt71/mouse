@@ -6,7 +6,7 @@ use crate::views::customization::mappings::{
 use eframe::egui;
 use egui::{pos2, vec2, Color32, Rect, RichText, Stroke};
 use mouser_engine::config::Config;
-use mouser_engine::Engine;
+use mouser_engine::client::EngineClient as Engine;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RecordingTarget {
@@ -299,11 +299,7 @@ pub fn draw_record_shortcut_ui(
                     }
                 }
 
-                let engine_bg = engine.clone();
-                let profile_name_bg = profile_name.clone();
-                std::thread::spawn(move || {
-                    engine_bg.update_profile_mappings(&profile_name_bg, mappings);
-                });
+                engine.update_profile_mappings(profile_name, mappings);
             }
         }
         let next_view = if target_key.contains("_gesture_") || target_key.starts_with("gesture_") {

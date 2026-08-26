@@ -2,7 +2,7 @@ use crate::theme;
 use eframe::egui;
 use egui::{pos2, vec2, Color32, Rect, RichText, Stroke, Pos2};
 use mouser_engine::config::{Config, FlowPeer};
-use mouser_engine::Engine;
+use mouser_engine::client::EngineClient as Engine;
 
 
 
