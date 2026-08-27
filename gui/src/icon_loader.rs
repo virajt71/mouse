@@ -35,8 +35,17 @@ fn icon_theme_roots() -> Vec<PathBuf> {
 
 fn load_svg(path: &Path, icon: &str, ctx: &egui::Context) -> Option<TextureHandle> {
     let svg_data = std::fs::read(path).ok()?;
-    let tree =
-        resvg::usvg::Tree::from_data(&svg_data, &resvg::usvg::Options::default()).ok()?;
+    render_svg_bytes(&svg_data, &format!("app_icon_{}", icon), ctx)
+}
+
+/// Rasterize SVG bytes via resvg into an egui texture. Shared by disk-loaded
+/// app icons and compiled-in bundled glyphs.
+fn render_svg_bytes(
+    svg_data: &[u8],
+    texture_key: &str,
+    ctx: &egui::Context,
+) -> Option<TextureHandle> {
+    let tree = resvg::usvg::Tree::from_data(svg_data, &resvg::usvg::Options::default()).ok()?;
     let tree_size = tree.size();
     let scale = (256.0 / tree_size.width().max(tree_size.height())).min(1.0);
     let w = (tree_size.width() * scale) as u32;
@@ -48,12 +57,32 @@ fn load_svg(path: &Path, icon: &str, ctx: &egui::Context) -> Option<TextureHandl
         [pixmap.width() as usize, pixmap.height() as usize],
         pixmap.data(),
     );
-    let tex = ctx.load_texture(
-        format!("app_icon_{}", icon),
+    Some(ctx.load_texture(
+        texture_key,
         color_img,
         egui::TextureOptions::default(),
-    );
-    Some(tex)
+    ))
+}
+
+thread_local! {
+    static BUNDLED_ICON_CACHE: RefCell<HashMap<&'static str, Option<TextureHandle>>> =
+        RefCell::new(HashMap::new());
+}
+
+/// Render a compiled-in SVG asset once and cache it, keyed by name. Mirrors
+/// the app-icon texture cache; bundled glyphs stay crisp at any display size
+/// instead of being hand-drawn lines.
+pub fn get_bundled_icon_texture(
+    ctx: &egui::Context,
+    key: &'static str,
+    svg_bytes: &'static [u8],
+) -> Option<TextureHandle> {
+    if let Some(cached) = BUNDLED_ICON_CACHE.with(|c| c.borrow().get(key).cloned()) {
+        return cached;
+    }
+    let tex = render_svg_bytes(svg_bytes, key, ctx);
+    BUNDLED_ICON_CACHE.with(|c| c.borrow_mut().insert(key, tex.clone()));
+    tex
 }
 
 pub fn resolve_icon_path(icon: &str) -> Option<PathBuf> {

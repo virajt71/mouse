@@ -1,7 +1,0 @@
-{
-  "timestamp": "2026-08-26T19:30:24Z",
-  "changed_file": "gui/src/widgets/connection_icon.rs",
-  "test_command": "cargo test",
-  "related_test": "",
-  "recommendation": "テストの実行を推奨します"
-}

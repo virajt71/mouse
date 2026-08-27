@@ -1,71 +1,64 @@
 # Mouser-RS
 
-> A native Linux daemon and GUI for Logitech HID++ mice: button remapping, gesture control, DPI tuning, SmartShift, and more. Written in Rust.
+> A native Linux daemon, CLI, and GUI for Logitech HID++ devices. Supports button remapping, multi-button gestures, DPI tuning, SmartShift, keyboard backlighting, application-based auto-switching, and cross-computer control (Logitech Flow). Written in Rust.
 
 ---
 
 ## Features
 
-- **Button Remapping** - Map any mouse button to keyboard shortcuts, media keys, browser actions, or custom key sequences. Features an interactive recording UI supporting arbitrary key combinations (with fallback injection for system copy/cut/paste events).
-- **Multi-Button Gesture Control** - Hold a button and swipe in a direction (up / down / left / right) to trigger configurable actions. Gestures are supported on the physical gesture button, Middle Click (`middle`), Side Button 1 / Back (`xbutton1`), and Side Button 2 / Forward (`xbutton2`). Includes configurable threshold, deadzone, timeout, and cooldown.
-- **Logitech Flow (Cross-Computer Control)** - Seamlessly control multiple computers with a single mouse and keyboard over your local network.
-  - **Visual Monitor Arrangement** - Configure machine layout in a 3x3 grid (Left, Right, Top, Bottom relative to local computer) via a visual arrangement editor.
-  - **Subnet Auto-Discovery** - Automatically discovers other running instances on the local subnet via UDP broadcast with secure TLS pairing.
-  - **Software or Hardware Switching** - Choose between instant software redirection (simulating virtual inputs on peer machines) or hardware-level channel switching for supported devices.
-  - **Clipboard & File Sync** - Copy text, files, and images on one computer and paste them on another.
-  - **Transition Guarding** - Set a custom hold key (`Ctrl`, `Alt`, `Shift` or `None`) that must be held to transition across screens, preventing accidental switches.
-  - **Wayland Compatibility** - Built-in coordinate mapping settings supporting Wayland screen resolution accumulation.
-- **Application Profiles** - Custom profiles matching specific applications with automatic process-based switching.
-  - **Strict Unique Mappings** - Mappings are defined per unique process executable name to prevent collision or double activation. Real-time validation alerts you if an executable is already mapped.
-  - **Auto-Switching** - Automatically detects the active foreground app window. Supports native X11 plus compositor/shell-specific fallbacks for GNOME Shell (via D-Bus `gdbus`), KDE Plasma & LXQt (via `kdotool`), Sway (via `swaymsg`), Hyprland (via `hyprctl`), i3 (via `i3-msg`), and legacy/general desktop environments (via `xdotool`).
-  - **In-App Application Selector** - Scans installed applications (from `.desktop` files in `/usr/share/applications` and `~/.local/share/applications`) and active processes (via `/proc`) with an interactive list. Already-mapped applications are visually distinguished and disabled to avoid duplicates.
-  - **Quick Select** - Dropdown selector in the profiles settings panel lists all detected applications for fast association.
-  - **Toast Notifications** - Displays modern, animated, and fading toast alerts at the bottom-right corner of the screen when the active profile changes.
-- **DPI Control** - Set and persist DPI directly via the HID++ protocol.
-- **Keyboard Backlight Control** - Configure backlight enabled state and apply effects (Static, Contrast, Breathing, Waves, Reaction, Random) for supported keyboards (including MX Keys and MX Mechanical series). Accurately applies active profile backlight settings upon device connection and profile switches.
-- **SmartShift** - Toggle and tune Logitech's SmartShift (free-spin ↔ ratchet scroll wheel) threshold.
-- **Horizontal Scroll** - Map horizontal scroll tilt to browser Back / Forward or any key combo. Configurable threshold and inversion.
-- **Vertical Scroll Inversion** - Optionally invert the scroll wheel direction.
-- **Battery Monitor** - Real-time battery level display in the GUI for wireless mice.
-- **Bluetooth & USB Receiver** - Supports devices connected via a Logitech Unifying / Bolt receiver or directly over Bluetooth. Features sleep/wake reconnection stabilization to ensure reliability when the system resumes.
-- **Persistent Device Cache** - Paired devices are remembered across Bluetooth disconnections. Connection state updates live; devices never disappear from the GUI just because BT is off.
-- **System Tray** - Minimize to system tray; restore or quit from the tray menu.
-- **Single Instance** - Launching a second instance brings the existing window to front instead of starting a duplicate process.
-- **Auto-updater** - Built-in update checker with optional automatic install.
-- **Multi-language UI** - Translation system with per-locale string files.
-- **WSL2 Compatible** - Automatically falls back to software rendering when running under WSL2.
+- **Daemon & gRPC Architecture**: Headless daemon (`mouser-rs --daemon`) running a background gRPC server over Unix domain sockets (`~/.config/Mouser/mouser_daemon.sock`). The GUI connects as a client and auto-spawns the daemon on launch if inactive.
+- **Built-in CLI**: Scriptable subcommands (`status`, `profile`, `dpi`, `reload`) to query and control the daemon without opening the GUI.
+- **Button Remapping & Gestures**: Map any mouse button to key combinations, media keys, or browser actions. Hold a button and swipe (Up / Down / Left / Right) for gesture actions. Supported on Physical Gesture button, Middle Click, Back (`xbutton1`), and Forward (`xbutton2`).
+- **Logitech Flow (Cross-Computer Control)**:
+  - Multi-machine control over LAN with UDP subnet discovery and TLS pairing.
+  - Visual 3x3 grid screen arrangement.
+  - Clipboard & file synchronization across systems.
+  - Software virtual input emulation or hardware-level channel switching.
+  - Guard key support (`Ctrl`, `Alt`, `Shift`) to prevent accidental screen transitions.
+- **App-Specific Profiles**:
+  - Automatic profile switching based on foreground window detection.
+  - Compatible with X11, GNOME (`gdbus`), KDE (`kdotool`), Sway (`swaymsg`), Hyprland (`hyprctl`), i3 (`i3-msg`), and `xdotool` fallback.
+  - Executable normalization (`-stable`, `-beta`, `-dev`) matching `/proc/*/exe` basenames with desktop app entries.
+  - Built-in toast notifications on profile change.
+- **Device Control**:
+  - **DPI**: On-the-fly adjustment and persistence via HID++.
+  - **SmartShift**: Toggle ratchet vs. free-spin scroll modes and threshold tuning.
+  - **Backlight**: Control intensity and lighting patterns (Static, Breathing, Waves, Reaction, Random) for supported keyboards (e.g. MX Keys / MX Mechanical).
+  - **Horizontal Scroll**: Tilt wheel remapping with configurable threshold and inversion.
+- **System Integration**:
+  - Wireless receiver (Unifying / Bolt) and direct Bluetooth support (via BlueZ).
+  - System tray icon with restore/quit options.
+  - Single-instance enforcement (second launch focuses existing window).
+  - Automatic fallback to software rendering on WSL2.
 
 ---
 
 ## Architecture
 
-### High-Level Overview
+### High-Level Architecture
 
 ![Mouser-RS Software Architecture](diagrams/architecture.png)
 
-The project is a Cargo workspace with three crates: the `mouser-rs` binary (entry point, tray, single-instance guard), the `mouser_engine` backend library (HID++, evdev hooks, uinput simulator, gesture engine, AppDetector), and the `mouser_gui` egui frontend.
-
 ```mermaid
 graph TD
-    %% Styling
     classDef bin fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#0d47a1;
     classDef gui fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b5e20;
     classDef engine fill:#fff3e0,stroke:#ef6c00,stroke-width:2px,color:#e65100;
     classDef os fill:#fafafa,stroke:#9e9e9e,stroke-dasharray: 5 5,color:#424242;
 
-    %% Nodes
-    subgraph App ["mouser-rs (Binary)"]
-        Main["main.rs (CLI / Socket Guard / Tray)"]
+    subgraph App ["mouser-rs (Binary & CLI)"]
+        Main["main.rs (CLI / Socket Guard / Daemon Launcher / Tray)"]
+        CLI["cli.rs (CLI Parser & gRPC Stub Invoker)"]
     end
-    class Main bin;
+    class Main,CLI bin;
 
-    subgraph GUI ["mouser_gui (egui frontend)"]
+    subgraph GUI ["mouser_gui (egui Frontend)"]
         MouserApp["MouserApp (Root View)"]
-        Theme["Theme / Styles"]
-        Views["Views (Customization, Settings, Empty State, Top Bar)"]
-        Widgets["Widgets (Battery, Status, Connection & misc Icons)"]
-        DesktopApps["DesktopApps (Desktop/Proc Scanner)"]
-        Trans["Translation / i18n"]
+        Theme["Theme & Styling"]
+        Views["Views (Customization, Settings, Empty State)"]
+        Widgets["Widgets (Battery, Status, Icons)"]
+        DesktopApps["DesktopApps (Scanner & Icon Loader)"]
+        Trans["Translation System (i18n)"]
         
         MouserApp --> Theme
         MouserApp --> Views
@@ -75,244 +68,159 @@ graph TD
     end
     class MouserApp,Theme,Views,Widgets,DesktopApps,Trans gui;
 
-    subgraph Engine ["mouser_engine (HID++ backend)"]
-        Core["Engine Orchestration (State, Gesture, HScroll, Action)"]
-        Config["Config (JSON Persistence)"]
-        HIDPP["HID++ Client (Protocol, Device lookup, Diversion)"]
-        BT["BlueZ Bluetooth Helper"]
-        Receiver["Unifying/Bolt USB Receiver"]
-        Input["Input layer (Mouse/Keyboard Hooks & uinput Simulator)"]
-        AppDetect["AppDetector (X11 / KDE / GNOME / Sway / Hyprland / i3)"]
+    subgraph Engine ["mouser_engine (HID++ Backend & gRPC Server)"]
+        Core["Engine Orchestrator (State, Gestures, Actions)"]
+        Config["Config (JSON Persistence & Migrations)"]
+        GRPC["gRPC Server & Tonic IPC Engine"]
+        HIDPP["HID++ Client (Protocol, Queries, Button Diversion)"]
+        BT["BlueZ Bluetooth Client"]
+        Receiver["Unifying / Bolt Receiver Handler"]
+        Input["Input Hook (evdev Interception & uinput Injection)"]
+        AppDetect["AppDetector (X11 / Compositor Window Detectors)"]
+        Flow["Logitech Flow Network Engine"]
 
         Core --> Config
+        Core --> GRPC
         Core --> HIDPP
         Core --> BT
         Core --> Receiver
         Core --> Input
         Core --> AppDetect
+        Core --> Flow
     end
-    class Core,Config,HIDPP,BT,Receiver,Input,AppDetect engine;
+    class Core,Config,GRPC,HIDPP,BT,Receiver,Input,AppDetect,Flow engine;
 
-    subgraph OS ["Linux OS / Hardware Interfaces"]
-        DevHID["/dev/hidraw* (Logitech Mice)"]
-        DevInput["/dev/input/event* (evdev inputs)"]
-        UInput["/dev/uinput (virtual inputs)"]
+    subgraph OS ["Linux System Interfaces"]
+        DevHID["/dev/hidraw* (Logitech Raw HID)"]
+        DevInput["/dev/input/event* (evdev)"]
+        UInput["/dev/uinput (Virtual Input Node)"]
         BlueZ["BlueZ D-Bus Daemon"]
-        WindowSys["Windowing System (X11/Wayland/Compositors)"]
+        WindowSys["Windowing System (X11 / Wayland Compositors)"]
+        UNIXSock["~/.config/Mouser/mouser_daemon.sock"]
     end
-    class DevHID,DevInput,UInput,BlueZ,WindowSys os;
+    class DevHID,DevInput,UInput,BlueZ,WindowSys,UNIXSock os;
 
-    %% Connections
-    Main -->|Initializes & Starts| Core
+    Main -->|Starts --daemon or connects to| GRPC
+    CLI -->|gRPC Calls| GRPC
     Main -->|Launches egui| MouserApp
-    MouserApp -->|Reads state & commands| Core
+    MouserApp -->|Connects via EngineClient| GRPC
     
-    %% Core/Engine to OS/HW Connections
     HIDPP <-->|Read/Write HID++| DevHID
     Receiver <-->|Register Devices| DevHID
     BT <-->|D-Bus API| BlueZ
-    Input <-->|evdev interception & uinput emulation| DevInput
+    Input <-->|evdev capture & uinput simulation| DevInput
     Input -->|Inject keystrokes| UInput
-    AppDetect -->|Active Window API/IPC| WindowSys
+    AppDetect -->|Active Window Queries| WindowSys
+    GRPC <-->|Unix Domain Socket| UNIXSock
 ```
 
 ---
 
-### Engine Module Map
+### Component Overview
 
-![mouser_engine Module Dependency Map](diagrams/engine_modules.png)
-
-The `mouser_engine` crate is split into four module groups:
-
-- **`engine/`** — Core orchestration: `EngineInner`, profile management, gesture state machine, horizontal scroll accumulator, action dispatcher, hotplug loop, and app-change monitor.
-- **`hidpp/`** — HID++ wire protocol: raw request/response, device path lookup, feature detection, and button diversion control.
-- **`input/`** — evdev interception (mouse hook, keyboard hook) and uinput-based key/click/scroll emulation (simulator + key map).
-- **`detection/`** — Per-compositor active window detection: `thread.rs` worker + dedicated backends for X11, GNOME, KDE/LXQt, Sway, Hyprland, i3, and generic xdotool fallback.
-
----
-
-### GUI Module Map
-
-![mouser_gui Module Hierarchy](diagrams/gui_modules.png)
-
-The `mouser_gui` crate is organized as:
-
-- **`app/`** — `MouserApp` struct, eframe update loop, texture cache, and toast notification engine.
-- **`views/`** — All rendered panels:
-  - `customization/` — Button remapping tabs, gesture config popups, action list, shortcut recorder, thumbwheel popup, and button/gesture/key mapping helpers.
-  - `settings/` — Language, theme, profile, and update settings panels.
-  - `empty_state/` — Connection prompt and device card when no mouse is detected.
-- **`widgets/`** — Reusable draw primitives: battery indicator, status pill, connection icon, tech-corner decoration, and icon sets.
-- **`theme.rs`** / **`translation.rs`** / **`desktop_apps.rs`** / **`updater.rs`** — Shared services used across all views.
+- **`mouser-rs` (`src/`)**: Binary entry point, argument parsing, single-instance socket lock, system tray, and CLI runner.
+- **`mouser_engine` (`engine/`)**: Core logic crate housing:
+  - `engine/`: Profile matching, gesture state evaluation, action dispatching, and hotplug monitoring.
+  - `hidpp/`: Raw HID++ 1.0/2.0+ protocol implementation and device feature enumeration.
+  - `input/`: Kernel `evdev` interception and `uinput` virtual input emulation.
+  - `detection/`: Window active process resolution for X11, GNOME, KDE, Sway, Hyprland, and i3.
+  - `flow.rs`: Cross-computer input redirection and clipboard synchronization protocol.
+  - `grpc.rs`: Tonic gRPC service server handling IPC from GUI and CLI clients.
+- **`mouser_gui` (`gui/`)**: Immediate-mode UI built with `egui` and `eframe`:
+  - Visual layout configuration for mouse buttons, gesture directions, scroll behavior, and profile bindings.
+  - Desktop application scanning (`.desktop` files) and icon texture caching.
+  - Theme customization and localization engine.
 
 ---
 
-### Runtime Event Flow
+### Runtime Event Pipeline
 
-![Event Flow — Mouse press to desktop action](diagrams/event_flow.png)
+![Event Flow Diagram](diagrams/event_flow.png)
 
-How a physical mouse button press becomes a desktop action:
-
-1. **Physical button press** → captured by the **evdev Mouse Hook**
-2. → **GestureState / HScrollAccumulator** — determines if this is a gesture, scroll, or plain click
-3. → **AppDetector** — resolves the active application window and selects the matching profile from `config.json`
-4. → **Action Dispatcher** — looks up the mapped action for the button in the active profile
-5. → **Key Simulator (uinput emit)** — injects the corresponding key combo or mouse event into the OS
-6. → **Desktop action executed** ✓
-
-A parallel path handles DPI / SmartShift changes: `Action Dispatcher` → **HID++ Client** → Logitech device over `/dev/hidraw*`.
+1. **Hardware Press**: Mouse button press intercepted by **evdev Mouse Hook**.
+2. **Gesture & Scroll Check**: **GestureState** and **HScrollAccumulator** evaluate whether event is a click, scroll, or swipe.
+3. **App Context**: **AppDetector** identifies current active window and fetches matching profile.
+4. **Action Resolution**: **Action Dispatcher** looks up configured action mapping for current profile.
+5. **Key Injection**: **Key Simulator** emits virtual key or button events via `/dev/uinput`.
+6. **Device Control (Parallel)**: DPI / SmartShift / Backlight actions send HID++ frames directly to `/dev/hidraw*`.
 
 ---
 
-### Codebase Tree
+### Codebase Structure
 
 ```
-mouse/                                       // Project root
-├── src/                                     // Binary entry point and daemon runner
-│   ├── main.rs                              // CLI parsing, engine initialization, GUI launching
-│   ├── gui.rs                               // Bridge interface for GUI execution
-│   ├── signal.rs                            // OS interrupt signals (SIGINT/SIGTERM) handler
-│   ├── single_instance.rs                   // Unix socket guard to enforce single running instance
-│   └── tray.rs                              // Desktop system tray integration and menu management
-├── engine/                                  // mouser_engine - HID++ client & input event orchestrator
+mouse/
+├── src/                                 # Binary entry point & CLI parser
+│   ├── main.rs                          # Entry point, CLI dispatcher, GUI launcher
+│   ├── cli.rs                           # CLI subcommand handlers
+│   ├── gui.rs                           # GUI execution runner
+│   ├── signal.rs                        # Unix signal handling (SIGINT/SIGTERM)
+│   ├── single_instance.rs               # Single-instance socket guard
+│   └── tray.rs                          # System tray menu integration
+├── engine/                              # mouser_engine backend library
 │   └── src/
-│       ├── lib.rs                           // Module declarations and public API re-exports
-│       ├── battery.rs                       // HID++ battery status polling
-│       ├── bluetooth.rs                     // BlueZ D-Bus API client for Bluetooth discovery
-│       ├── cache.rs                         // Paired device database (survives disconnection/off state)
-│       ├── config.rs                        // Application settings, profiles, and key mappings serializer
-│       ├── receiver.rs                      // Logitech Bolt and Unifying receiver enumeration
-│       ├── worker.rs                        // Background task executor and state updates broadcaster
-│       ├── engine/                          // Core state coordinator
-│       │   ├── mod.rs                       // Engine runtime, hotplug loops, and profiles loader
-│       │   ├── action.rs                    // Mapping evaluation and desktop key injections
-│       │   ├── app_change.rs                // Listeners for foreground application changes
-│       │   ├── gesture.rs                   // Gesture processor and swipe angle/threshold calculator
-│       │   ├── hotplug.rs                   // Raw device and Bluetooth connection detectors
-│       │   ├── hscroll.rs                   // Horizontal wheel acceleration and tilt scroll accumulator
-│       │   ├── inner.rs                     // Thread-safe central engine state
-│       │   └── profile.rs                   // Active application profile matching rules
-│       ├── hidpp/                           // Logitech HID++ protocol implementation
-│       │   ├── mod.rs                       // Feature/feature-index mappings and capabilities detection
-│       │   ├── device.rs                    // HID raw query runner and event read/write handles
-│       │   ├── diversion.rs                 // Button routing diversion toggling (HID++ ↔ evdev)
-│       │   └── protocol.rs                  // HID++ packet structures, headers, and parsing
-│       ├── input/                           // Hardware input event hooks
-│       │   ├── mod.rs                       // Input layer entry point
-│       │   ├── keyboard_hook.rs             // System keyboard interceptor (modifier keys state tracker)
-│       │   ├── mouse_hook.rs                // Mouse hook intercepting physical buttons (evdev)
-│       │   └── simulator/                   // Virtual keyboard/mouse injection via uinput
-│       │       ├── mod.rs                   // Uinput device builder and descriptor writer
-│       │       ├── actions.rs               // Native action emulation (keystrokes and scroll wheel)
-│       │       ├── emit.rs                  // Low-level uinput file-descriptor writer
-│       │       ├── key_map.rs               // Mapping database between key identifiers and keycodes
-│       │       └── mouse_map.rs             // Mapping database for mouse buttons to virtual buttons
-│       └── detection/                       // Active window/process trackers per compositor
-│           ├── mod.rs                       // Orchestrator tracking window Focus change events
-│           ├── thread.rs                    // Poll worker querying active environment window
-│           ├── fallbacks.rs                 // Fallback compositor detection rules
-│           ├── x11.rs                       // X11/Xlib active window query client
-│           ├── gnome.rs                     // D-Bus client for GNOME Shell active window path
-│           ├── kde.rs                       // KDE Plasma query using kdotool
-│           ├── sway.rs                      // Sway window tracker using swaymsg
-│           ├── hyprland.rs                  // Hyprland client using hyprctl
-│           ├── i3.rs                        // i3 window query using i3-msg
-│           └── xdotool.rs                   // Legacy desktop/window manager fallback client
-├── gui/                                     // mouser_gui - egui client for profile and device editing
+│       ├── battery.rs                   # HID++ battery status reader
+│       ├── bluetooth.rs                 # BlueZ D-Bus Bluetooth client
+│       ├── cache.rs                     # Paired device cache on disk
+│       ├── client.rs                    # gRPC client client stub
+│       ├── config.rs                    # JSON configuration parser & serializer
+│       ├── flow.rs                      # Logitech Flow network & clipboard engine
+│       ├── grpc.rs                      # Tonic gRPC IPC server
+│       ├── receiver.rs                  # Unifying & Bolt receiver handler
+│       ├── worker.rs                    # Async task executor
+│       ├── engine/                      # State coordinator & dispatch loop
+│       ├── hidpp/                       # HID++ protocol driver & diversion
+│       ├── input/                       # evdev interception & uinput simulator
+│       └── detection/                   # Per-compositor window detectors
+├── gui/                                 # mouser_gui egui frontend
 │   └── src/
-│       ├── lib.rs                           // UI application config and crate entry point
-│       ├── desktop_apps.rs                  // Desktop files scanner and running process inspector
-│       ├── theme.rs                         // Design tokens (harmonies, typography, borders, glassmorphism)
-│       ├── translation.rs                   // Translation catalogues and string lookups (i18n)
-│       ├── updater.rs                       // Update client (GitHub releases checking/downloader)
-│       ├── app/                             // Application state loops and system callbacks
-│       │   ├── mod.rs                       // Eframe app wrapper, textures cache, toast notifications
-│       │   ├── texture.rs                   // UI images and icons loader
-│       │   ├── toast.rs                     // Bottom-right animated alert cards
-│       │   └── update.rs                    // Layout renderer (menus, active tab views, connection bars)
-│       ├── views/                           // Settings panels layouts
-│       │   ├── mod.rs                       // Layout selectors
-│       │   ├── select_connection.rs         // Landing state and connection setup page
-│       │   ├── top_bar.rs                   // Header actions, device choice dropdown, profiles menu
-│       │   ├── empty_state/                 // Zero-state placeholders
-│       │   │   ├── mod.rs                   // Empty views container
-│       │   │   └── device_card.rs           // Card showing connected mouse attributes/specs
-│       │   ├── settings/                    // General application parameters
-│       │   │   ├── mod.rs                   // Settings categories navigation
-│       │   │   ├── section_language.rs      // Localization preferences UI
-│       │   │   ├── section_profiles.rs      // Profile management options
-│       │   │   ├── section_theme.rs         // Theme colors and accent configurations
-│       │   │   └── section_updates.rs       // Auto-update options UI
-│       │   └── customization/               // Detailed button/gesture customization
-│       │       ├── mod.rs                   // Mouse layout visual editor wrapper
-│       │       ├── sidebar.rs               // Customizer categories sidebar
-│       │       ├── mappings/                // Keys mapping controls
-│       │       │   ├── mod.rs               // Mappings collection
-│       │       │   ├── button_keys.rs       // Visual button configuration grid
-│       │       │   ├── button_options.rs    // Bindable action choice widgets
-│       │       │   └── gesture_presets.rs   // Swipe presets template gallery
-│       │       ├── popups/                  // Modals and configuration sheets
-│       │       │   ├── mod.rs               // Modals manager
-│       │       │   ├── action_list.rs       // Searchable list of all triggerable actions
-│       │       │   ├── add_app_modal.rs     // Profile creation application launcher list
-│       │       │   ├── gesture_config.rs    // Swipe actions configuration dashboard
-│       │       │   ├── record_shortcut.rs   // Keyboard record event-capture canvas
-│       │       │   └── thumbwheel.rs        // Scroll resolution settings panel
-│       │       └── tabs/                    // Customizer tabs
-│       │           ├── mod.rs               // Tabs wrapper
-│       │           ├── buttons_tab.rs       // Mouse buttons mapping selector
-│       │           ├── flow_tab.rs          // Workflows/gestures control panel
-│       │           ├── point_scroll_tab.rs  // DPI settings & wheel configurations
-│       │           └── profiles_tab.rs      // Process triggers mapping interface
-│       └── widgets/                         // Custom styled drawing primitives
-│           ├── mod.rs                       // Core widgets exports
-│           ├── battery.rs                   // Smart battery charge percentage pill
-│           ├── connection_icon.rs           // Bluetooth / wireless dongle status symbol
-│           ├── status_pill.rs               // Colored label indicators (active, idle, scanning)
-│           ├── tech_corners.rs              // Stylized neon aesthetic corners
-│           └── icons/                       // Vector-based graphics draw instructions
-│               ├── mod.rs                   // Icons index
-│               ├── connection_icons.rs      // BLE and USB connection logos
-│               ├── misc_icons.rs            // Navigational and control icons
-│               ├── settings_icons.rs        // Preferences menu graphics
-│               └── sidebar_icons.rs         // Sidebar tabs indicators
-└── packaging/                               // Package distribution resources
+│       ├── desktop_apps.rs              # System application & process scanner
+│       ├── icon_loader.rs               # .desktop icon extractor & texture cache
+│       ├── theme.rs                     # Design tokens & color harmonies
+│       ├── translation.rs               # i18n localization support
+│       ├── app/                         # Main eframe application & views framework
+│       ├── views/                       # Button, gesture, setting, & landing views
+│       └── widgets/                     # Battery gauge, status pills, custom icons
+└── packaging/                           # Linux distribution & udev rules
     └── linux/
-        ├── 69-mouser-logitech.rules         // Udev configuration for mouse and uinput access
-        └── install-linux-permissions.sh     // Rules setup and loading helper script
+        ├── 69-mouser-logitech.rules     # Udev rules for /dev/hidraw and /dev/uinput access
+        ├── install-linux-permissions.sh # Permission setup script
+        └── build-deb.sh                 # Debian package (.deb) builder script
 ```
 
-### Key design decisions
+---
 
-| Concern | Approach |
+## Technical Specifications
+
+| System Area | Implementation Strategy |
 |---|---|
-| Backend / GUI isolation | `mouser_engine` is a plain library; `mouser_gui` depends on it but never the reverse. |
-| Thread safety & responsiveness | `Engine` wraps `Arc<EngineInner>`. Mutable state lives in `Mutex` or atomic registers. Locks are aggressively dropped before invoking external commands or executing blocking actions. |
-| Config hot-reload | `Engine::reload_config()` picks up a freshly-written `config.json` without restart. |
-| Device persistence | `cache.rs` writes paired devices to disk; GUI reads from cache, not from live BT query. |
-| Single instance | Unix domain socket at `~/.config/Mouser/mouser.sock`; second launch sends `SHOW` and exits. |
-| App detection & caching | `AppDetector` queries X11 or compositor/shell-specific fallbacks (GNOME, KDE/LXQt, Sway, Hyprland, i3, or general X11). Missing CLI dependencies (e.g. `gdbus`, `kdotool`, `swaymsg`, `hyprctl`, `i3-msg`, `xdotool`) are cached as disabled upon first failure to eliminate overhead and log spam. |
-| Deadlock-free gestures | Multi-button gestures use a single `GestureState` mutex with lock-free atomic hot-paths and explicit mutex release blocks prior to executing mapped actions. |
-| Non-blocking keyboard hook | Interceptors for Logitech keyboards use `poll` on event file descriptors with timeouts instead of spinning/would-block loops, drastically reducing CPU usage. |
-| Clipboard shortcut recording | System copy, cut, and paste events intercepted by egui are mapped back to their corresponding keys, with platform-specific modifiers (`ctrl` or `meta`) auto-injected if missing to bypass OS-level event stripping. |
+| **IPC Protocol** | Tonic gRPC over Unix Domain Sockets (`~/.config/Mouser/mouser_daemon.sock`) |
+| **CLI Dispatch** | Light std::env parsing matching commands against gRPC client stubs |
+| **Input Synthesis** | Linux `uinput` virtual device driver |
+| **Hardware Hooks** | Exclusive `evdev` grabbing (`/dev/input/event*`) with fallback handling |
+| **Device Access** | Raw `/dev/hidraw*` via `hidapi` crate using Logitech HID++ 1.0 & 2.0+ packets |
+| **App Detection** | Composite polling engine (X11 Xlib, GNOME D-Bus, KDE `kdotool`, Sway `swaymsg`, Hyprland `hyprctl`, i3 `i3-msg`) |
+| **Concurrency** | Lock-free hot paths, `Arc<Mutex<T>>` guarded state with aggressive lock dropping prior to IO |
 
-
-
+---
 
 ## Requirements
 
-| Dependency | Notes |
-|---|---|
-| Linux (X11 / XWayland) | Wayland dynamic window hiding not supported by winit; XWayland is used automatically. |
-| Rust ≥ 1.75 | Stable toolchain |
-| `libhidapi-dev` | HID++ communication |
-| `libudev-dev` | evdev / uinput |
-| `libgtk-3-dev` | System tray support |
-| `pkgconf` / `pkg-config` | Build-time dependency resolution |
+### System Dependencies
 
-Install build dependencies on Debian/Ubuntu:
+| Dependency | Purpose |
+|---|---|
+| **Linux OS** | Kernel supporting `evdev` and `uinput` |
+| **Rust ≥ 1.75** | Toolchain for compiling Cargo workspace |
+| `libhidapi-dev` | HID++ communication over `/dev/hidraw*` |
+| `libudev-dev` | Hardware device enumeration |
+| `libgtk-3-dev` / `libglib2.0-dev` | System tray & GTK event integration |
+| `pkg-config` | Build-time dependency resolver |
+
+Install required packages on Debian / Ubuntu:
 
 ```sh
+sudo apt update
 sudo apt install libhidapi-dev libudev-dev libgtk-3-dev libglib2.0-dev pkg-config build-essential
 ```
 
@@ -320,64 +228,97 @@ sudo apt install libhidapi-dev libudev-dev libgtk-3-dev libglib2.0-dev pkg-confi
 
 ## Linux Permissions Setup
 
-Mouser-RS reads HID raw devices and synthesises input events via `uinput`. Without the correct udev rules these nodes are only accessible as root.
-
-Run the bundled installer **once** (after building) to install the rules without needing to run the app as root:
+Mouser-RS requires access to `/dev/hidraw*` and `/dev/uinput`. To run without root privileges:
 
 ```sh
 cd packaging/linux
 sudo sh install-linux-permissions.sh
 ```
 
-This copies `69-mouser-logitech.rules` to `/etc/udev/rules.d/`, reloads udev, and loads the `uinput` kernel module. Reconnect your mouse after the script completes.
+This installs `/etc/udev/rules.d/69-mouser-logitech.rules`, reloads udev rules, loads the `uinput` kernel module, and grants permissions to the `input` and `plugdev` user groups. Reconnect your mouse after installation.
 
 ---
 
-## Building
+## Building & Installation
+
+### Cargo Build
 
 ```sh
 # Development build
 cargo build
 
-# Optimised release build (LTO, strip, abort-on-panic)
+# Optimized release build (LTO enabled, stripped binary)
 cargo build --release
 ```
 
-The binary is placed at `target/release/mouser-rs`.
+The output binary is produced at `target/release/mouser-rs`.
+
+### Building Debian Package (.deb)
+
+```sh
+cd packaging/linux
+./build-deb.sh
+```
+
+Generates `mouser-rs_0.1.0_amd64.deb` in the project root. Install using `dpkg`:
+
+```sh
+sudo dpkg -i mouser-rs_0.1.0_amd64.deb
+```
 
 ---
 
-## Running
+## Usage & CLI Reference
+
+### Running the Application
 
 ```sh
-# Launch GUI (default)
-./target/release/mouser-rs
+# Launch GUI (starts daemon automatically if not running)
+mouser-rs
 
-# Enable verbose debug logging
-./target/release/mouser-rs --debug
+# Launch headless daemon mode
+mouser-rs --daemon
 
-# Headless daemon mode (no GUI, no tray)
-./target/release/mouser-rs --daemon
-
-# Show help
-./target/release/mouser-rs --help
+# Enable debug logging
+mouser-rs --debug
 ```
 
-Launching a second instance while one is already running will bring the existing window to the foreground instead of opening a duplicate.
+### CLI Subcommands
+
+```sh
+mouser-rs status            # Print daemon status, device specs, active profile, DPI
+mouser-rs profile list      # List all profiles in the active group
+mouser-rs profile get       # Display currently active profile
+mouser-rs profile set <name># Switch to target profile (e.g. 'global' or 'Brave Web Browser')
+mouser-rs dpi get           # Display configured DPI value
+mouser-rs dpi set <value>   # Set DPI (e.g. 800, 1000, 1600, 3200)
+mouser-rs reload            # Force daemon to reload ~/.config/Mouser/config.json
+mouser-rs help              # Show CLI help documentation
+```
 
 ---
 
 ## Configuration
 
-Settings are persisted to:
+Configuration is saved at:
 
 ```
 ~/.config/Mouser/config.json
 ```
 
-Logs are written to the platform log directory (typically `~/.local/share/Mouser/` or `~/.config/Mouser/`) and rotated at 5 MB, keeping the five most recent files.
+Daemon Unix domain socket:
 
-### Config structure overview
+```
+~/.config/Mouser/mouser_daemon.sock
+```
+
+Logs are written to:
+
+```
+~/.config/Mouser/logs/
+```
+
+### Minimal Config Example
 
 ```jsonc
 {
@@ -391,78 +332,23 @@ Logs are written to the platform log directory (typically `~/.local/share/Mouser
           "label": "Default (All Apps)",
           "apps": [],
           "mappings": {
-            "middle": "none",
-            "middle_gesture_enabled": "true",
-            "middle_gesture_left": "none",
-            "middle_gesture_right": "none",
-            "middle_gesture_up": "none",
-            "middle_gesture_down": "none",
-            "gesture": "none",
-            "gesture_enabled": "true",
-            "gesture_left": "none",
-            "gesture_right": "none",
-            "gesture_up": "none",
-            "gesture_down": "none",
             "xbutton1": "alt_tab",
-            "xbutton1_gesture_enabled": "true",
-            "xbutton1_gesture_left": "none",
-            "xbutton1_gesture_right": "none",
-            "xbutton1_gesture_up": "none",
-            "xbutton1_gesture_down": "none",
-            "xbutton2": "alt_tab",
-            "xbutton2_gesture_enabled": "true",
-            "xbutton2_gesture_left": "none",
-            "xbutton2_gesture_right": "none",
-            "xbutton2_gesture_up": "none",
-            "xbutton2_gesture_down": "none",
+            "xbutton2": "browser_back",
             "hscroll_left": "browser_back",
-            "hscroll_right": "browser_forward",
-            "mode_shift": "switch_scroll_mode"
+            "hscroll_right": "browser_forward"
           }
         }
       }
     }
   },
   "settings": {
-    "start_minimized": true,
-    "start_at_login": false,
-    "hscroll_threshold": 1,
-    "invert_hscroll": false,
-    "invert_vscroll": false,
     "dpi": 1000,
+    "smart_shift_enabled": true,
     "smart_shift_mode": "ratchet",
-    "smart_shift_enabled": false,
     "smart_shift_threshold": 25,
     "gesture_threshold": 50,
     "gesture_deadzone": 40,
-    "gesture_timeout_ms": 3000,
-    "gesture_cooldown_ms": 500,
-    "appearance_mode": "system",
-    "debug_mode": false,
-    "device_layout_overrides": {},
-    "language": "en",
-    "ignore_trackpad": true,
-    "accent_color": "#8b5cf6",
-    "install_updates": true,
-    "flow_enabled": false,
-    "flow_local_name": "Computer 1",
-    "flow_peers": [
-      {
-        "name": "Computer 2",
-        "ip": "192.168.1.50",
-        "port": 50520,
-        "layout_x": 1,
-        "layout_y": 0,
-        "paired": true,
-        "fingerprint": "a1b2c3d4...",
-        "auto_reconnect": true
-      }
-    ],
-    "flow_screen_width": 1920,
-    "flow_screen_height": 1080,
-    "flow_hold_key": "none",
-    "flow_mouse_mode": "software",
-    "flow_keyboard_linking": true
+    "language": "en"
   }
 }
 ```
@@ -471,23 +357,19 @@ Logs are written to the platform log directory (typically `~/.local/share/Mouser
 
 ## Troubleshooting
 
-### HID++ /dev/hidraw* Permission Issues
-If Mouser-RS does not detect your Logitech device, or fails to send DPI/backlight commands, check that the `/dev/hidraw*` files are accessible.
-Ensure you have run the Linux permissions setup:
-```sh
-cd packaging/linux
-sudo sh install-linux-permissions.sh
-```
-This script adds the correct udev rules allowing the `input` group to access the raw HID devices. After installing, make sure your user is in the `input` group (and `plugdev` group on some distros) and reconnect the device.
+### Device Detection / HID++ Failures
+- Ensure `69-mouser-logitech.rules` is installed and active.
+- Verify user membership in `input` and `plugdev` groups:
+  ```sh
+  sudo usermod -aG input,plugdev $USER
+  ```
+- Unplug and reconnect the USB receiver or toggle Bluetooth.
 
-### Keyboard Hook Conflicts
-Mouser-RS grabs the keyboard exclusively via `evdev` to capture media keys and intercept shortcuts. If you run multiple input mapping tools (like Solaar, Kmonad, or Keyd) simultaneously, they might conflict over exclusive grabs on the same keyboard input event device.
-If the keyboard is not responding or keyboard grabs fail:
-1. Ensure no other key remapping tool has exclusively grabbed the physical keyboard device.
-2. Check the logs at `~/.config/Mouser/logs/` to see which event path failed to grab.
+### Keyboard / Input Interception Conflicts
+- `mouser-rs` grabs keyboard input nodes via `evdev` to process custom remappings. If running alongside tools like `Keyd`, `Kmonad`, or `Solaar`, conflicts over exclusive grabs may arise. Ensure only one tool grabs the specific input node.
 
 ---
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Distributed under the MIT License. See [LICENSE](LICENSE) for details.

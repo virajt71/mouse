@@ -1,0 +1,12 @@
+# Mouser Logitech HID++ /dev/hidraw and /dev/uinput permissions rule
+# Allows the 'input' and 'plugdev' groups to read/write HID++ nodes without root.
+
+# Logitech HID++ Unifying Receiver
+KERNEL=="hidraw*", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c52b", MODE="0660", GROUP="input"
+# Logitech HID++ Bolt Receiver
+KERNEL=="hidraw*", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c548", MODE="0660", GROUP="input"
+# Logitech Bluetooth Mice / Keyboards (Logitech Vendor ID 046d)
+KERNEL=="hidraw*", ATTRS{idVendor}=="046d", MODE="0660", GROUP="input"
+
+# Access to /dev/uinput for virtual keyboard and mouse input injection
+KERNEL=="uinput", MODE="0660", GROUP="input"

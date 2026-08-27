@@ -2,6 +2,7 @@
 use std::thread;
 use std::time::Duration;
 
+mod cli;
 mod gui;
 mod signal;
 mod single_instance;
@@ -11,20 +12,32 @@ fn main() -> Result<(), eframe::Error> {
     let args: Vec<String> = std::env::args().collect();
     let mut debug = false;
     let mut daemon_mode = false;
+    
+    // Check for daemon or debug flags
     for arg in &args[1..] {
         if arg == "--debug" || arg == "-d" {
             debug = true;
         } else if arg == "--daemon" {
             daemon_mode = true;
-        } else if arg == "--help" || arg == "-h" {
-            println!(
-                "Mouser Rust Linux Daemon\n\
-                 Usage: mouser-rs [options]\n\
-                 Options:\n\
-                   -d, --debug    Enable debug level logging\n\
-                   --daemon       Run headless in background mode (no GUI)\n\
-                   -h, --help     Show this help message"
-            );
+        }
+    }
+
+    // If subcommands are provided and not in daemon mode, execute CLI
+    if !daemon_mode && args.len() > 1 {
+        let first_arg = args[1].as_str();
+        if matches!(
+            first_arg,
+            "status" | "info" | "profile" | "dpi" | "reload" | "cli" | "help" | "--help" | "-h"
+        ) {
+            let cli_args = if first_arg == "cli" {
+                &args[2..]
+            } else {
+                &args[1..]
+            };
+            if let Err(err) = cli::run_cli(cli_args) {
+                eprintln!("{}", err);
+                std::process::exit(1);
+            }
             return Ok(());
         }
     }

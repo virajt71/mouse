@@ -1,0 +1,25 @@
+# Maintainer: Mouser Team <dev@mouser.local>
+pkgname=mouser-rs
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Native Linux daemon and GUI for Logitech HID++ mice and keyboards"
+arch=('x86_64')
+url="https://github.com/virajt71/mouse"
+license=('MIT')
+depends=('hidapi' 'systemd-libs' 'gtk3')
+makedepends=('cargo' 'pkg-config')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+  cd "$srcdir/$pkgname-$pkgver"
+  cargo build --release --locked
+}
+
+package() {
+  cd "$srcdir/$pkgname-$pkgver"
+  install -Dm755 "target/release/mouser-rs" "$pkgdir/usr/bin/mouser-rs"
+  install -Dm644 "packaging/common/69-mouser-logitech.rules" "$pkgdir/usr/lib/udev/rules.d/69-mouser-logitech.rules"
+  install -Dm644 "packaging/common/io.github.mouser.desktop" "$pkgdir/usr/share/applications/io.github.mouser.desktop"
+  install -Dm644 "packaging/common/mouser.service" "$pkgdir/usr/lib/systemd/user/mouser.service"
+}

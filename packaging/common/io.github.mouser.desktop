@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Mouser-RS
+Comment=Logitech HID++ Mouse & Keyboard Configuration Daemon and GUI
+Exec=mouser-rs
+Icon=mouser
+Terminal=false
+Type=Application
+Categories=Utility;HardwareSettings;Settings;
+Keywords=Logitech;HID++;Mouse;DPI;SmartShift;Gestures;Flow;
+StartupNotify=true

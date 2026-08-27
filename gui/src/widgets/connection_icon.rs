@@ -1,10 +1,39 @@
 use eframe::egui;
 
-/// Draw the canonical Lucide "bluetooth" glyph (OpenLogi ships the same SVG)
-/// as a single stroked polyline, scaled to radius `r`. The path
-/// `m7 7 10 10-5 5V2l5 5L7 17` is a 24×24 viewBox hexagon — one continuous
-/// stroke, round joins/caps like the source.
+const BLUETOOTH_SVG: &[u8] = include_bytes!("../../../assets/icons/bluetooth.svg");
+
+/// Draw the canonical Bluetooth glyph (same Lucide SVG OpenLogi ships) by
+/// rasterizing the bundled asset via resvg — proper round joins/caps,
+/// anti-aliased, crisp at any size. Falls back to a hand-stroked polyline
+/// only if the bundled SVG somehow fails to decode at runtime.
 pub fn draw_bluetooth_rune(
+    painter: &egui::Painter,
+    center: egui::Pos2,
+    r: f32,
+    color: egui::Color32,
+) {
+    if let Some(tex) = crate::icon_loader::get_bundled_icon_texture(
+        painter.ctx(),
+        "bluetooth_rune",
+        BLUETOOTH_SVG,
+    ) {
+        // Glyph fills most of a 24x24 viewBox with a little margin; ~1.7R
+        // keeps it inside the badge circle like the line version did.
+        let size = r * 1.7;
+        let rect = egui::Rect::from_center_size(center, egui::vec2(size, size));
+        painter.image(
+            tex.id(),
+            rect,
+            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            color,
+        );
+        return;
+    }
+
+    draw_bluetooth_rune_fallback(painter, center, r, color);
+}
+
+fn draw_bluetooth_rune_fallback(
     painter: &egui::Painter,
     center: egui::Pos2,
     r: f32,
@@ -20,7 +49,7 @@ pub fn draw_bluetooth_rune(
         (-5.0, 5.0),  // L7 17
     ];
     // Glyph reaches ~±10 units vertically in a 24-unit viewBox; scale so it
-    // spans ~1.6R, and mirror the SVG's stroke-width of 2/24.
+    // spans ~1.6R.
     let s = r / 7.5;
     let stroke_w = (r / 12.0).max(1.6);
     let points: Vec<egui::Pos2> = PTS

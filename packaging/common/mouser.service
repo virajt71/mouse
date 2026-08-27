@@ -1,0 +1,13 @@
+[Unit]
+Description=Mouser-RS Logitech HID++ Daemon
+Documentation=https://github.com/virajt71/mouse
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/mouser-rs --daemon
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=default.target
