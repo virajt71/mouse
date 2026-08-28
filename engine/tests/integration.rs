@@ -1,5 +1,5 @@
-use mouser_engine::lock_ext::MutexExt;
 use mouser_engine::config::{Config, Profile, ProfileGroup};
+use mouser_engine::lock_ext::MutexExt;
 use mouser_engine::Engine;
 use std::collections::HashMap;
 
@@ -71,7 +71,7 @@ fn test_profile_matching_logic() {
 #[test]
 fn test_gesture_state_transitions() {
     let engine = Engine::new();
-    assert_eq!(engine.device_connected(), false);
+    assert!(!engine.device_connected());
 
     let state = engine.inner.gesture_state.lock_safe();
     assert_eq!(state.delta_x, 0.0);

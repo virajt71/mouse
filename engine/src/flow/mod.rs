@@ -1,16 +1,16 @@
+pub mod channel_switch;
 pub mod clipboard;
+pub mod edge;
+pub mod handoff;
 pub mod network;
 pub mod switching;
-pub mod edge;
 pub mod topology;
-pub mod handoff;
-pub mod channel_switch;
 
-use crate::lock_ext::MutexExt;
 use crate::config::Config;
-use std::sync::atomic::{AtomicBool, Ordering, AtomicU8, AtomicI32, AtomicU64};
-use std::sync::{Arc, Mutex, RwLock};
+use crate::lock_ext::MutexExt;
 use edge::EdgeEvent;
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, AtomicU8, Ordering};
+use std::sync::{Arc, Mutex, RwLock};
 
 #[allow(non_upper_case_globals)]
 pub static FLOW_MANAGER: std::sync::LazyLock<Arc<FlowManager>> =
@@ -164,8 +164,10 @@ impl FlowManager {
         self.flow_enabled
             .store(cfg.settings.flow_enabled, Ordering::Relaxed);
         *self.flow_mouse_mode.write().unwrap() = cfg.settings.flow_mouse_mode.clone();
-        self.flow_mouse_mode_hardware
-            .store(cfg.settings.flow_mouse_mode == "hardware", Ordering::Relaxed);
+        self.flow_mouse_mode_hardware.store(
+            cfg.settings.flow_mouse_mode == "hardware",
+            Ordering::Relaxed,
+        );
         *self.flow_hold_key.write().unwrap() = cfg.settings.flow_hold_key.clone();
         *self.flow_peers.write().unwrap() = cfg.settings.flow_peers.clone();
         *self.flow_local_name.write().unwrap() = cfg.settings.flow_local_name.clone();
@@ -209,13 +211,17 @@ impl FlowManager {
     pub fn get_active_hardware_peer_name(&self) -> Option<String> {
         let engine_opt = self.engine_inner.lock_safe();
         let engine_inner = engine_opt.as_ref()?;
-        
-        let current_active_channel = engine_inner.cached_device_state.lock_safe().active_host_channel;
+
+        let current_active_channel = engine_inner
+            .cached_device_state
+            .lock_safe()
+            .active_host_channel;
 
         let ch = current_active_channel?;
 
         let peers = self.flow_peers.read().unwrap();
-        peers.iter()
+        peers
+            .iter()
             .find(|p| p.paired && p.channel_index == ch)
             .map(|p| p.name.clone())
     }

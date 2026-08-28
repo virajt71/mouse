@@ -24,7 +24,6 @@ pub fn get_active_app_pid_fallbacks(x11_queried: bool) -> Option<u32> {
             .map(|v| !v.is_empty())
             .unwrap_or(false);
 
-
     // 2. kdotool — KDE Wayland native apps
     if is_kde && is_wayland {
         if let Some(pid) = get_pid_from_kdotool() {

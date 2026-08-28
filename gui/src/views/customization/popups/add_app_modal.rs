@@ -122,9 +122,11 @@ pub fn draw_add_app_modal(
                             ui.vertical_centered(|ui| {
                                 ui.add_space(40.0);
                                 ui.label(
-                                    RichText::new("No applications found. Try a different search term.")
-                                        .color(theme::muted_text(ctx))
-                                        .size(12.0),
+                                    RichText::new(
+                                        "No applications found. Try a different search term.",
+                                    )
+                                    .color(theme::muted_text(ctx))
+                                    .size(12.0),
                                 );
                             });
                         } else {

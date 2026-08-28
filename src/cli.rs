@@ -2,7 +2,7 @@ use engine::client::EngineClient;
 use engine::config::get_grpc_socket_path;
 use std::error::Error;
 
-// ponytail: Basic CLI argument parsing via std::env::args matcher. 
+// ponytail: Basic CLI argument parsing via std::env::args matcher.
 // Known ceiling: No complex flag combinations or autocompletion.
 // Upgrade path: Migrate to `clap` crate if flag complexity increases.
 
@@ -53,7 +53,10 @@ pub fn run_cli(args: &[String]) -> Result<(), Box<dyn Error>> {
                     handle_profile_set(&args[2])
                 }
                 sub => {
-                    println!("Unknown profile subcommand '{}'. Use 'list', 'get', or 'set'.", sub);
+                    println!(
+                        "Unknown profile subcommand '{}'. Use 'list', 'get', or 'set'.",
+                        sub
+                    );
                     Ok(())
                 }
             }
@@ -73,7 +76,10 @@ pub fn run_cli(args: &[String]) -> Result<(), Box<dyn Error>> {
                     if let Ok(dpi_val) = args[2].parse::<i32>() {
                         handle_dpi_set(dpi_val)
                     } else {
-                        println!("Error: Invalid DPI value '{}'. Must be an integer.", args[2]);
+                        println!(
+                            "Error: Invalid DPI value '{}'. Must be an integer.",
+                            args[2]
+                        );
                         Ok(())
                     }
                 }
@@ -85,7 +91,10 @@ pub fn run_cli(args: &[String]) -> Result<(), Box<dyn Error>> {
         }
         "reload" => handle_reload(),
         unknown => {
-            println!("Unknown command '{}'. Run 'mouser-rs help' for available commands.", unknown);
+            println!(
+                "Unknown command '{}'. Run 'mouser-rs help' for available commands.",
+                unknown
+            );
             Ok(())
         }
     }
@@ -112,16 +121,36 @@ fn handle_status() -> Result<(), Box<dyn Error>> {
 
     println!("=== Mouser-RS System Status ===");
     println!("Daemon Status  : Connected (gRPC)");
-    println!("Device Status  : {}", if connected { "Connected" } else { "Disconnected / Standby" });
+    println!(
+        "Device Status  : {}",
+        if connected {
+            "Connected"
+        } else {
+            "Disconnected / Standby"
+        }
+    );
     println!("Device Name    : {}", dev_name);
     println!("Active Group   : {}", config.active_group);
     println!("Active Profile : {}", config.active_app_profile);
     println!("DPI Setting    : {}", config.settings.dpi);
-    println!("SmartShift     : {} (Mode: {}, Threshold: {})", 
-             if config.settings.smart_shift_enabled { "Enabled" } else { "Disabled" },
-             config.settings.smart_shift_mode,
-             config.settings.smart_shift_threshold);
-    println!("Flow Network   : {}", if config.settings.flow_enabled { "Enabled" } else { "Disabled" });
+    println!(
+        "SmartShift     : {} (Mode: {}, Threshold: {})",
+        if config.settings.smart_shift_enabled {
+            "Enabled"
+        } else {
+            "Disabled"
+        },
+        config.settings.smart_shift_mode,
+        config.settings.smart_shift_threshold
+    );
+    println!(
+        "Flow Network   : {}",
+        if config.settings.flow_enabled {
+            "Enabled"
+        } else {
+            "Disabled"
+        }
+    );
     Ok(())
 }
 
@@ -132,7 +161,11 @@ fn handle_profile_list() -> Result<(), Box<dyn Error>> {
     if let Some(group) = config.profile_groups.get(&config.active_group) {
         println!("Profiles in group '{}':", config.active_group);
         for (pname, pdata) in &group.profiles {
-            let active_marker = if pname == &config.active_app_profile { " (active)" } else { "" };
+            let active_marker = if pname == &config.active_app_profile {
+                " (active)"
+            } else {
+                ""
+            };
             let apps_str = if pdata.apps.is_empty() {
                 "All Applications".to_string()
             } else {
@@ -142,7 +175,10 @@ fn handle_profile_list() -> Result<(), Box<dyn Error>> {
             println!("    Label: {}{}", pdata.label, active_marker);
         }
     } else {
-        println!("No profiles found in active group '{}'.", config.active_group);
+        println!(
+            "No profiles found in active group '{}'.",
+            config.active_group
+        );
     }
     Ok(())
 }
@@ -160,7 +196,10 @@ fn handle_profile_set(name: &str) -> Result<(), Box<dyn Error>> {
 
     if let Some(group) = config.profile_groups.get(&config.active_group) {
         if !group.profiles.contains_key(name) {
-            println!("Warning: Profile '{}' does not exist in group '{}'. Setting anyway.", name, config.active_group);
+            println!(
+                "Warning: Profile '{}' does not exist in group '{}'. Setting anyway.",
+                name, config.active_group
+            );
         }
     }
 

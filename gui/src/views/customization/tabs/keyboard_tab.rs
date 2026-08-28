@@ -7,8 +7,8 @@ use crate::views::customization::popups::{
 };
 use eframe::egui;
 use egui::{pos2, vec2, Color32, Rect, RichText, Stroke};
-use mouser_engine::config::Config;
 use mouser_engine::client::EngineClient as Engine;
+use mouser_engine::config::Config;
 
 pub fn show_keyboard_keys_tab(
     ui: &mut egui::Ui,
@@ -581,4 +581,3 @@ pub fn show_keyboard_backlighting_tab(
         engine.update_profile_mappings(&config.active_app_profile, mappings);
     }
 }
-

@@ -1,5 +1,5 @@
-use crate::lock_ext::MutexExt;
 use super::FLOW_MANAGER;
+use crate::lock_ext::MutexExt;
 use std::sync::Arc;
 use std::time::Duration;
 use x11rb::connection::Connection;

@@ -1,7 +1,13 @@
 use anyhow::{anyhow, Result};
 use std::time::{Duration, Instant};
 
-fn tx_raw(device: &hidapi::HidDevice, dev_idx: u8, feat: u8, func: u8, params: &[u8]) -> Result<()> {
+fn tx_raw(
+    device: &hidapi::HidDevice,
+    dev_idx: u8,
+    feat: u8,
+    func: u8,
+    params: &[u8],
+) -> Result<()> {
     let mut buf = [0u8; 21]; // LONG_LEN + 1
     buf[1] = 0x11; // LONG_ID (0x11)
     buf[2] = dev_idx;
@@ -105,7 +111,8 @@ pub fn change_host(device: &hidapi::HidDevice, target_channel: u8) -> Result<()>
     }
 
     let dev_idx = dev_idx_opt.ok_or_else(|| anyhow!("Failed to locate active dev_idx"))?;
-    let change_host_idx = change_host_idx_opt.ok_or_else(|| anyhow!("CHANGE_HOST feature (0x1814) not found on device"))?;
+    let change_host_idx = change_host_idx_opt
+        .ok_or_else(|| anyhow!("CHANGE_HOST feature (0x1814) not found on device"))?;
 
     log::info!(
         "[HID++ Channel Switch] Found CHANGE_HOST feature at index 0x{:02X} for dev_idx 0x{:02X}",

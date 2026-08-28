@@ -1,5 +1,5 @@
-use crate::lock_ext::MutexExt;
 use super::Engine;
+use crate::lock_ext::MutexExt;
 use evdev::Key;
 use std::sync::atomic::Ordering;
 

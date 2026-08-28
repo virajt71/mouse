@@ -1,6 +1,6 @@
-use crate::lock_ext::MutexExt;
 use super::network::{send_event_to_peer, FlowEvent};
 use super::FLOW_MANAGER;
+use crate::lock_ext::MutexExt;
 use arboard::{Clipboard, ImageData};
 use std::fs;
 use std::path::Path;
@@ -11,8 +11,7 @@ static LAST_TEXT: std::sync::LazyLock<Mutex<String>> =
     std::sync::LazyLock::new(|| Mutex::new(String::new()));
 static LAST_IMG_HASH: std::sync::LazyLock<Mutex<String>> =
     std::sync::LazyLock::new(|| Mutex::new(String::new()));
-static LAST_IMG_SIG: std::sync::LazyLock<Mutex<u64>> =
-    std::sync::LazyLock::new(|| Mutex::new(0));
+static LAST_IMG_SIG: std::sync::LazyLock<Mutex<u64>> = std::sync::LazyLock::new(|| Mutex::new(0));
 
 fn fast_image_sig(img: &ImageData) -> u64 {
     let head: &[u8] = &img.bytes[..64.min(img.bytes.len())];

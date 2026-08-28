@@ -589,15 +589,15 @@ mod tests {
         let parsed: Config = serde_json::from_str(incomplete_json).unwrap();
 
         // Check that specified fields are parsed correctly
-        assert_eq!(parsed.settings.start_minimized, true);
+        assert!(parsed.settings.start_minimized);
         assert_eq!(parsed.settings.dpi, 1000);
 
         // Check that missing fields got their default values
-        assert_eq!(parsed.settings.start_at_login, false);
+        assert!(!parsed.settings.start_at_login);
         assert_eq!(parsed.settings.language, "en");
         assert_eq!(parsed.settings.accent_color, "#8b5cf6");
-        assert_eq!(parsed.settings.flow_enabled, false);
-        assert_eq!(parsed.settings.flow_keyboard_linking, true);
+        assert!(!parsed.settings.flow_enabled);
+        assert!(parsed.settings.flow_keyboard_linking);
 
         // Check profiles missing apps list got empty vec
         let group = parsed.profile_groups.get("default").unwrap();

@@ -118,15 +118,15 @@ impl Engine {
 
         self.inner.key_simulator.ensure_device();
 
-        self.inner.gesture_active_arc.store(false, Ordering::Relaxed);
+        self.inner
+            .gesture_active_arc
+            .store(false, Ordering::Relaxed);
         self.inner.gesture_tracking.store(false, Ordering::Relaxed);
         self.inner.gesture_triggered.store(false, Ordering::Relaxed);
 
         self.refresh_active_profile();
 
         let _ = self.restart_keyboard_hooks();
-
-
 
         let mut app_det_lock = self.inner.app_detector.lock_safe();
         if app_det_lock.is_none() {
@@ -219,14 +219,15 @@ impl Engine {
         let device_connected = !clients.is_empty();
         let device_names: Vec<String> = clients.iter().map(|c| c.device_name.clone()).collect();
 
-        let (selected_device_name, selected_device_layout, active_host_channel) = if let Some(c) = clients.get(idx) {
-            let name = c.device_name.clone();
-            let layout = c.get_layout_key();
-            let channel = c.active_host_channel();
-            (name, layout, channel)
-        } else {
-            ("None".to_string(), "generic".to_string(), None)
-        };
+        let (selected_device_name, selected_device_layout, active_host_channel) =
+            if let Some(c) = clients.get(idx) {
+                let name = c.device_name.clone();
+                let layout = c.get_layout_key();
+                let channel = c.active_host_channel();
+                (name, layout, channel)
+            } else {
+                ("None".to_string(), "generic".to_string(), None)
+            };
 
         let mut cached = self.inner.cached_device_state.lock_safe();
         cached.device_connected = device_connected;
@@ -241,19 +242,34 @@ impl Engine {
     }
 
     pub fn device_names(&self) -> Vec<String> {
-        self.inner.cached_device_state.lock_safe().device_names.clone()
+        self.inner
+            .cached_device_state
+            .lock_safe()
+            .device_names
+            .clone()
     }
 
     pub fn selected_device_name(&self) -> String {
-        self.inner.cached_device_state.lock_safe().selected_device_name.clone()
+        self.inner
+            .cached_device_state
+            .lock_safe()
+            .selected_device_name
+            .clone()
     }
 
     pub fn active_host_channel(&self) -> Option<u8> {
-        self.inner.cached_device_state.lock_safe().active_host_channel
+        self.inner
+            .cached_device_state
+            .lock_safe()
+            .active_host_channel
     }
 
     pub fn selected_device_layout(&self) -> String {
-        self.inner.cached_device_state.lock_safe().selected_device_layout.clone()
+        self.inner
+            .cached_device_state
+            .lock_safe()
+            .selected_device_layout
+            .clone()
     }
 
     pub fn set_selected_device(&self, idx: usize) {

@@ -8,6 +8,8 @@
 /.github
 /.agents
 /.claude
+*.deb
+/dist
 
 # Cargo lock is kept for binaries (remove this line if you want to ignore it)
 # Cargo.lock

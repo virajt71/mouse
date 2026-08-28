@@ -181,10 +181,7 @@ impl HidppClient {
             .next()
             .ok_or_else(|| anyhow!("No Logitech HID++ device found"))?;
         let product_id = info.product_id();
-        self.device_name = info
-            .product_string()
-            .unwrap_or("Unknown")
-            .to_string();
+        self.device_name = info.product_string().unwrap_or("Unknown").to_string();
         self.layout_from_pid = match product_id {
             0x4082 => Some("mx_master_3"),
             0x4091 => Some("mx_master_3s"),
@@ -296,18 +293,20 @@ impl HidppClient {
         let resp = self
             .request(idx, 0, &[], 1000)?
             .ok_or_else(|| anyhow!("Failed to read active host channel"))?;
-        log::info!("[HID++] Raw getHostCount/getHostInfo response: {:02X?}", resp);
+        log::info!(
+            "[HID++] Raw getHostCount/getHostInfo response: {:02X?}",
+            resp
+        );
         if resp.len() >= 2 {
-            let active_host = if resp[1] > 2 {
-                resp[0]
-            } else {
-                resp[1]
-            };
+            let active_host = if resp[1] > 2 { resp[0] } else { resp[1] };
             log::info!("[HID++] Determined active host channel: {}", active_host);
             Ok(active_host)
         } else if !resp.is_empty() {
             let active_host = resp[0];
-            log::info!("[HID++] Determined active host channel from byte 0: {}", active_host);
+            log::info!(
+                "[HID++] Determined active host channel from byte 0: {}",
+                active_host
+            );
             Ok(active_host)
         } else {
             Err(anyhow!("Invalid response size for active host channel"))

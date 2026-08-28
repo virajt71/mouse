@@ -1,5 +1,5 @@
-use crate::lock_ext::MutexExt;
 use super::Engine;
+use crate::lock_ext::MutexExt;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 

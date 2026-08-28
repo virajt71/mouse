@@ -32,7 +32,7 @@ if command -v rpmbuild >/dev/null 2>&1; then
     cp "$ROOT_DIR/packaging/fedora/mouser-rs.spec" "$RPM_BUILD_DIR/SPECS/"
     # Create source tarball for rpmbuild
     tar -czf "$RPM_BUILD_DIR/SOURCES/mouser-rs-0.1.0.tar.gz" --transform 's,^\.,mouser-rs-0.1.0,' --exclude='./target' --exclude='./dist' .
-    rpmbuild --define "_topdir $RPM_BUILD_DIR" -ba "$RPM_BUILD_DIR/SPECS/mouser-rs.spec" || true
+    rpmbuild --define "_topdir $RPM_BUILD_DIR" -ba "$RPM_BUILD_DIR/SPECS/mouser-rs.spec" || true    
     cp "$RPM_BUILD_DIR"/RPMS/*/*.rpm "$DIST_DIR/" 2>/dev/null || true
 else
     echo "[Notice] rpmbuild not installed. Skipping direct RPM build. (Spec available at packaging/fedora/mouser-rs.spec)"

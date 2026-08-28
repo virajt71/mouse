@@ -1,4 +1,3 @@
-use mouser_engine::lock_ext::MutexExt;
 use super::{render_spaced_header, section_card};
 use crate::theme;
 use crate::translation::tr;
@@ -6,8 +5,9 @@ use crate::updater::{UpdateStatus, Updater};
 use crate::widgets::draw_refresh_icon;
 use eframe::egui;
 use egui::{pos2, vec2, Color32, Rect, RichText, Stroke};
-use mouser_engine::config::Config;
 use mouser_engine::client::EngineClient as Engine;
+use mouser_engine::config::Config;
+use mouser_engine::lock_ext::MutexExt;
 
 pub fn render_section_updates(
     ui: &mut egui::Ui,

@@ -127,19 +127,18 @@ pub fn spawn_background_worker(
                 // status), falling back to sysfs when no device is reachable
                 // from this thread.
                 let has_active_hidpp = crate::battery::has_active_hidpp_battery();
-                let (battery_pct, battery_status) = if paired_devices.iter().any(|(_, _, c)| *c)
-                    || has_active_hidpp
-                {
-                    match crate::battery::get_mouse_battery_hidpp() {
-                        Some((pct, status)) => (pct, status),
-                        None => match crate::battery::get_mouse_battery() {
-                            Some((_, pct)) => (pct, String::new()),
-                            None => ("80".to_string(), String::new()),
-                        },
-                    }
-                } else {
-                    ("0".to_string(), String::new())
-                };
+                let (battery_pct, battery_status) =
+                    if paired_devices.iter().any(|(_, _, c)| *c) || has_active_hidpp {
+                        match crate::battery::get_mouse_battery_hidpp() {
+                            Some((pct, status)) => (pct, status),
+                            None => match crate::battery::get_mouse_battery() {
+                                Some((_, pct)) => (pct, String::new()),
+                                None => ("80".to_string(), String::new()),
+                            },
+                        }
+                    } else {
+                        ("0".to_string(), String::new())
+                    };
 
                 let active_profile = active_profile_ref.lock_safe().clone();
                 let update = DeviceStateUpdate {

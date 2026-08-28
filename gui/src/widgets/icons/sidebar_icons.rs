@@ -143,7 +143,6 @@ pub fn draw_backlighting_icon(ui: &egui::Ui, center: egui::Pos2, color: Color32)
     }
 }
 
-
 pub fn draw_settings_slider_icon(ui: &egui::Ui, center: egui::Pos2, color: Color32) {
     let painter = ui.painter();
     let stroke = Stroke::new(1.2, color);

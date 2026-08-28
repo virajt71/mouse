@@ -12,7 +12,7 @@ fn main() -> Result<(), eframe::Error> {
     let args: Vec<String> = std::env::args().collect();
     let mut debug = false;
     let mut daemon_mode = false;
-    
+
     // Check for daemon or debug flags
     for arg in &args[1..] {
         if arg == "--debug" || arg == "-d" {
@@ -87,14 +87,15 @@ fn main() -> Result<(), eframe::Error> {
             return Ok(());
         }
 
-        let (config_bc, device_state_bc) = match engine::grpc::start_grpc_server(engine.clone(), &grpc_socket_path) {
-            Ok(res) => res,
-            Err(e) => {
-                log::error!("Failed to start gRPC server: {}", e);
-                engine.stop();
-                return Ok(());
-            }
-        };
+        let (config_bc, device_state_bc) =
+            match engine::grpc::start_grpc_server(engine.clone(), &grpc_socket_path) {
+                Ok(res) => res,
+                Err(e) => {
+                    log::error!("Failed to start gRPC server: {}", e);
+                    engine.stop();
+                    return Ok(());
+                }
+            };
 
         // Broadcast config changes over gRPC
         let config_bc_clone = config_bc.clone();
@@ -104,10 +105,8 @@ fn main() -> Result<(), eframe::Error> {
 
         // Broadcast device state changes over gRPC
         let dev_bc_clone = device_state_bc.clone();
-        let (_worker_tx, worker_rx) = engine::worker::spawn_background_worker(
-            move || {},
-            engine.active_profile_shared(),
-        );
+        let (_worker_tx, worker_rx) =
+            engine::worker::spawn_background_worker(move || {}, engine.active_profile_shared());
         std::thread::spawn(move || {
             while let Ok(update) = worker_rx.recv() {
                 engine::grpc::broadcast_device_state(&update, &dev_bc_clone);
@@ -138,9 +137,7 @@ fn main() -> Result<(), eframe::Error> {
         if client.is_none() {
             log::info!("Daemon not running. Auto-starting Mouser daemon...");
             if let Ok(exe) = std::env::current_exe() {
-                let _ = std::process::Command::new(exe)
-                    .arg("--daemon")
-                    .spawn();
+                let _ = std::process::Command::new(exe).arg("--daemon").spawn();
             }
 
             // Retry connecting to daemon with backoff
@@ -157,7 +154,10 @@ fn main() -> Result<(), eframe::Error> {
         let client = match client {
             Some(c) => c,
             None => {
-                log::error!("Failed to connect to Mouser daemon socket: {:?}", grpc_socket_path);
+                log::error!(
+                    "Failed to connect to Mouser daemon socket: {:?}",
+                    grpc_socket_path
+                );
                 return Ok(());
             }
         };

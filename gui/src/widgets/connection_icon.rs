@@ -12,11 +12,9 @@ pub fn draw_bluetooth_rune(
     r: f32,
     color: egui::Color32,
 ) {
-    if let Some(tex) = crate::icon_loader::get_bundled_icon_texture(
-        painter.ctx(),
-        "bluetooth_rune",
-        BLUETOOTH_SVG,
-    ) {
+    if let Some(tex) =
+        crate::icon_loader::get_bundled_icon_texture(painter.ctx(), "bluetooth_rune", BLUETOOTH_SVG)
+    {
         // Glyph fills most of a 24x24 viewBox with a little margin; ~1.7R
         // keeps it inside the badge circle like the line version did.
         let size = r * 1.7;
@@ -56,7 +54,10 @@ fn draw_bluetooth_rune_fallback(
         .iter()
         .map(|(x, y)| center + egui::vec2(x * s, y * s))
         .collect();
-    painter.add(egui::Shape::line(points, egui::Stroke::new(stroke_w, color)));
+    painter.add(egui::Shape::line(
+        points,
+        egui::Stroke::new(stroke_w, color),
+    ));
 }
 
 pub fn draw_connection_icon_mini(painter: &egui::Painter, center: egui::Pos2, conn_type: &str) {

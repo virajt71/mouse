@@ -1,9 +1,9 @@
+use crate::flow::FLOW_MANAGER;
+use crate::lock_ext::MutexExt;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::time::Duration;
-use crate::flow::FLOW_MANAGER;
-use crate::lock_ext::MutexExt;
 use x11rb::connection::Connection;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -79,7 +79,9 @@ pub fn run_x11_edge_polling(engine_inner: Arc<crate::engine::inner::EngineInner>
                                         *FLOW_MANAGER.screen_width.write().unwrap() = sw;
                                         *FLOW_MANAGER.screen_height.write().unwrap() = sh;
 
-                                        let threshold = FLOW_MANAGER.flow_edge_threshold.load(Ordering::Relaxed);
+                                        let threshold = FLOW_MANAGER
+                                            .flow_edge_threshold
+                                            .load(Ordering::Relaxed);
                                         let mut edge = None;
 
                                         if rx <= threshold {
@@ -93,24 +95,36 @@ pub fn run_x11_edge_polling(engine_inner: Arc<crate::engine::inner::EngineInner>
                                         }
 
                                         if let Some(ev) = edge {
-                                            let hold_key = FLOW_MANAGER.flow_hold_key.read().unwrap().clone();
-                                            let ctrl_only = FLOW_MANAGER.flow_hold_ctrl_only.load(Ordering::Relaxed);
-                                            
-                                            let mut satisfied = super::switching::is_hold_key_satisfied(&hold_key);
+                                            let hold_key =
+                                                FLOW_MANAGER.flow_hold_key.read().unwrap().clone();
+                                            let ctrl_only = FLOW_MANAGER
+                                                .flow_hold_ctrl_only
+                                                .load(Ordering::Relaxed);
+
+                                            let mut satisfied =
+                                                super::switching::is_hold_key_satisfied(&hold_key);
                                             if ctrl_only {
                                                 satisfied = satisfied && is_ctrl_held();
                                             }
 
                                             if satisfied {
-                                                let mode = FLOW_MANAGER.flow_mouse_mode.read().unwrap().clone();
+                                                let mode = FLOW_MANAGER
+                                                    .flow_mouse_mode
+                                                    .read()
+                                                    .unwrap()
+                                                    .clone();
                                                 if mode == "hardware" {
                                                     emit_edge_event(ev);
                                                 } else {
                                                     // Software mode legacy/existing transition logic
-                                                    if let Some(peer) = super::topology::resolve_peer(ev) {
+                                                    if let Some(peer) =
+                                                        super::topology::resolve_peer(ev)
+                                                    {
                                                         log::info!("[Flow Edge] Software mode edge crossed: transitioning to peer '{}'", peer.peer_id);
-                                                        FLOW_MANAGER.set_active_peer(Some(peer.peer_id.clone()));
-                                                        
+                                                        FLOW_MANAGER.set_active_peer(Some(
+                                                            peer.peer_id.clone(),
+                                                        ));
+
                                                         // Reset virtual coords/pointer slightly away to prevent loop bouncing
                                                         let rx_target = match ev {
                                                             EdgeEvent::Left => 100,
@@ -145,7 +159,10 @@ pub fn run_x11_edge_polling(engine_inner: Arc<crate::engine::inner::EngineInner>
                                 }
                             }
                             Err(e) => {
-                                log::warn!("[Flow Edge] X11 query pointer error: {}. Reconnecting...", e);
+                                log::warn!(
+                                    "[Flow Edge] X11 query pointer error: {}. Reconnecting...",
+                                    e
+                                );
                                 break;
                             }
                         }
@@ -155,7 +172,10 @@ pub fn run_x11_edge_polling(engine_inner: Arc<crate::engine::inner::EngineInner>
                 }
             }
             Err(e) => {
-                log::debug!("[Flow Edge] X11 connection failed: {}. Retrying in 5s...", e);
+                log::debug!(
+                    "[Flow Edge] X11 connection failed: {}. Retrying in 5s...",
+                    e
+                );
                 std::thread::sleep(Duration::from_secs(5));
             }
         }

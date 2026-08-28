@@ -58,10 +58,10 @@ impl AppDetector {
 
                 while running.load(Ordering::Acquire) {
                     if is_wayland {
-                        if wlr_tracker.is_none() && (retry_counter == 0 || retry_counter % 10 == 0) {
+                        if wlr_tracker.is_none() && (retry_counter == 0 || retry_counter.is_multiple_of(10)) {
                             wlr_tracker = super::wlr_foreign_toplevel::WlrForeignToplevelTracker::connect();
                         }
-                        if wlr_tracker.is_none() && gnome_tracker.is_none() && (retry_counter == 0 || retry_counter % 10 == 0) {
+                        if wlr_tracker.is_none() && gnome_tracker.is_none() && (retry_counter == 0 || retry_counter.is_multiple_of(10)) {
                             gnome_tracker = super::gnome::GnomeDbusTracker::connect();
                         }
                         retry_counter = retry_counter.wrapping_add(1);

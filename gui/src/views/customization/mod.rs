@@ -7,8 +7,8 @@ use crate::widgets::draw_status_pill;
 use crate::{theme, ActiveView};
 use eframe::egui;
 use egui::{pos2, vec2, Color32, Rect, RichText, Stroke};
-use mouser_engine::config::Config;
 use mouser_engine::client::EngineClient as Engine;
+use mouser_engine::config::Config;
 
 use mappings::{egui_key_to_string, get_button_keys, is_valid_combo, CustomizingButton};
 pub use popups::{
@@ -247,7 +247,10 @@ pub fn show(
             // In right-to-left layout, drawing in reverse order preserves left-to-right alphabetical sequence
             for p_name in custom_profiles.iter().rev() {
                 let is_active = config.active_app_profile == *p_name;
-                let profile_icon = config.get_profile(p_name).map(|p| p.icon.as_str()).unwrap_or("");
+                let profile_icon = config
+                    .get_profile(p_name)
+                    .map(|p| p.icon.as_str())
+                    .unwrap_or("");
 
                 let (p_rect, p_res) =
                     ui.allocate_exact_size(vec2(23.0, 23.0), egui::Sense::click());
@@ -282,13 +285,7 @@ pub fn show(
                     } else {
                         Color32::WHITE
                     };
-                    crate::icon_loader::draw_app_icon(
-                        ui,
-                        profile_icon,
-                        pc,
-                        11.5,
-                        fallback_color,
-                    );
+                    crate::icon_loader::draw_app_icon(ui, profile_icon, pc, 11.5, fallback_color);
 
                     // Draw close/delete button overlay (only on active profile hover/interact)
                     let is_profile_hovered = p_res.hovered() || delete_res.hovered();
@@ -328,13 +325,7 @@ pub fn show(
                     } else {
                         Color32::WHITE
                     };
-                    crate::icon_loader::draw_app_icon(
-                        ui,
-                        profile_icon,
-                        pc,
-                        11.5,
-                        fallback_color,
-                    );
+                    crate::icon_loader::draw_app_icon(ui, profile_icon, pc, 11.5, fallback_color);
                 }
 
                 if p_res.clicked() && !delete_clicked {
@@ -689,13 +680,9 @@ pub fn show(
     if let Some(profile) = profile_to_delete {
         let title = format!("Delete \"{}\"?", profile);
         let body = "Its custom mappings won't be recovered.";
-        if let Some(confirmed) = crate::widgets::show_confirm_dialog(
-            ctx,
-            &title,
-            body,
-            "Delete profile",
-            "Cancel",
-        ) {
+        if let Some(confirmed) =
+            crate::widgets::show_confirm_dialog(ctx, &title, body, "Delete profile", "Cancel")
+        {
             if confirmed {
                 engine.delete_profile(&profile);
             }

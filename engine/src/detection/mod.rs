@@ -17,7 +17,7 @@ use self::x11::get_active_app_pid_x11_persistent;
 pub fn normalize_app_id(app_id: &str) -> String {
     let lower = app_id.trim().to_lowercase();
     if lower.contains('.') {
-        if let Some(last) = lower.split('.').last() {
+        if let Some(last) = lower.split('.').next_back() {
             if !last.is_empty() {
                 return last.to_string();
             }
@@ -25,7 +25,6 @@ pub fn normalize_app_id(app_id: &str) -> String {
     }
     lower
 }
-
 
 pub fn get_exe_for_pid(pid: u32) -> Option<String> {
     let path = format!("/proc/{}/exe", pid);

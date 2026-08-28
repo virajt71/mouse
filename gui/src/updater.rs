@@ -1,5 +1,5 @@
-use mouser_engine::lock_ext::MutexExt;
 use eframe::egui;
+use mouser_engine::lock_ext::MutexExt;
 use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};

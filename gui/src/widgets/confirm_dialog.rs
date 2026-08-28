@@ -18,11 +18,8 @@ pub fn show_confirm_dialog(
             // Allocate response to make this Area layer active under pointer and block fallthrough
             ui.allocate_rect(screen_r, egui::Sense::click_and_drag());
             // Dark overlay
-            ui.painter().rect_filled(
-                screen_r,
-                0.0,
-                Color32::from_rgba_unmultiplied(0, 0, 0, 180),
-            );
+            ui.painter()
+                .rect_filled(screen_r, 0.0, Color32::from_rgba_unmultiplied(0, 0, 0, 180));
 
             let card_w = 400.0;
             let card_h = 160.0;

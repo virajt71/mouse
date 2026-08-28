@@ -386,16 +386,18 @@ pub fn create_bluetooth_tray_icon() -> Icon {
 }
 
 pub fn create_mouse_tray_icon() -> Icon {
-    let width = 32u32;
-    let height = 32u32;
+    // HiDPI: render at 64px, tray-icon downscales cleanly on any DPI
+    let width = 64u32;
+    let height = 64u32;
+    let scale = 2.6f32; // 30% larger than the 2.0 baseline; body fills more of the 64px cell
     let mut rgba = vec![0u8; (width * height * 4) as usize];
-    let cx = 15.5f32; // Center offset slightly to align on grid
-    let cy = 15.5f32;
+    let cx = (width as f32) / 2.0 - 0.5;
+    let cy = (height as f32) / 2.0 - 0.5;
 
     for y in 0..height {
         for x in 0..width {
-            let dx = x as f32 - cx;
-            let dy = y as f32 - cy;
+            let dx = (x as f32 - cx) / scale;
+            let dy = (y as f32 - cy) / scale;
             let idx = (((y * width) + x) * 4) as usize;
 
             // Tapered width based on vertical position (narrower top, wider palm)
@@ -416,6 +418,11 @@ pub fn create_mouse_tray_icon() -> Icon {
             } else {
                 ((0.5f32 - edge) * 255.0f32) as u8
             };
+
+            // Vertical gradient: lighter crown -> deeper base for a 3D feel
+            let grad = ((dy + 11.0f32) / 22.0f32).clamp(0.0f32, 1.0f32);
+            let g_body = (201.0f32 + (128.0f32 - 201.0f32) * grad).round() as u8;
+            let b_body = (178.0f32 + (112.0f32 - 178.0f32) * grad).round() as u8;
 
             if alpha > 0 {
                 // Scroll wheel: vertical pill segment from (0.0, -8.0) to (0.0, -3.0)
@@ -463,22 +470,19 @@ pub fn create_mouse_tray_icon() -> Icon {
                 let final_body_alpha = (alpha as f32) * gap_mask * wheel_gap_mask;
 
                 if wheel_alpha > 0.0f32 {
-                    // Blend scroll wheel (White) on top of the mouse body/background
-                    let r_body = 0.0f32;
-                    let g_body = 191.0f32;
-                    let b_body = 165.0f32;
-
+                    // Blend scroll wheel (White) on top of the mouse body
                     let a_wheel = wheel_alpha;
                     let a_body = final_body_alpha / 255.0f32;
 
                     let a_out = a_wheel + a_body * (1.0f32 - a_wheel);
                     if a_out > 0.0f32 {
-                        let r_out =
-                            (255.0f32 * a_wheel + r_body * a_body * (1.0f32 - a_wheel)) / a_out;
-                        let g_out =
-                            (255.0f32 * a_wheel + g_body * a_body * (1.0f32 - a_wheel)) / a_out;
-                        let b_out =
-                            (255.0f32 * a_wheel + b_body * a_body * (1.0f32 - a_wheel)) / a_out;
+                        let r_out = (255.0f32 * a_wheel) / a_out;
+                        let g_out = (255.0f32 * a_wheel
+                            + g_body as f32 * a_body * (1.0f32 - a_wheel))
+                            / a_out;
+                        let b_out = (255.0f32 * a_wheel
+                            + b_body as f32 * a_body * (1.0f32 - a_wheel))
+                            / a_out;
 
                         rgba[idx] = r_out.round() as u8;
                         rgba[idx + 1] = g_out.round() as u8;
@@ -491,10 +495,10 @@ pub fn create_mouse_tray_icon() -> Icon {
                         rgba[idx + 3] = 0;
                     }
                 } else if final_body_alpha > 0.0f32 {
-                    // Draw mouse body (Teal: #00BFA5)
+                    // Draw mouse body with vertical gradient (Teal)
                     rgba[idx] = 0;
-                    rgba[idx + 1] = 191;
-                    rgba[idx + 2] = 165;
+                    rgba[idx + 1] = g_body;
+                    rgba[idx + 2] = b_body;
                     rgba[idx + 3] = final_body_alpha.round() as u8;
                 } else {
                     rgba[idx] = 0;
@@ -503,10 +507,21 @@ pub fn create_mouse_tray_icon() -> Icon {
                     rgba[idx + 3] = 0;
                 }
             } else {
-                rgba[idx] = 0;
-                rgba[idx + 1] = 0;
-                rgba[idx + 2] = 0;
-                rgba[idx + 3] = 0;
+                // Dark outline ring just outside the body: keeps the icon
+                // visible on both light and dark tray backgrounds.
+                let out = val - 1.0f32;
+                if out > 0.0f32 && out < 0.10f32 {
+                    let oa = ((0.10f32 - out) / 0.10f32 * 170.0f32) as u8;
+                    rgba[idx] = 0;
+                    rgba[idx + 1] = 45;
+                    rgba[idx + 2] = 40;
+                    rgba[idx + 3] = oa;
+                } else {
+                    rgba[idx] = 0;
+                    rgba[idx + 1] = 0;
+                    rgba[idx + 2] = 0;
+                    rgba[idx + 3] = 0;
+                }
             }
         }
     }

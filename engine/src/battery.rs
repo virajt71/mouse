@@ -7,7 +7,9 @@ use crate::hidpp::HidppClient;
 pub fn get_mouse_battery_hidpp() -> Option<(String, String)> {
     let mut client = HidppClient::default();
     client.open_for_battery().ok()?;
-    client.read_battery().map(|b| (b.percentage.to_string(), b.status))
+    client
+        .read_battery()
+        .map(|b| (b.percentage.to_string(), b.status))
 }
 
 pub fn get_mouse_battery() -> Option<(String, String)> {

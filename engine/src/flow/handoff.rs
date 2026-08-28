@@ -1,11 +1,11 @@
+use crate::flow::edge::EdgeEvent;
+use crate::flow::network::{send_event_to_peer, FlowEvent};
+use crate::flow::topology::{resolve_peer, FlowPeer};
+use crate::flow::FLOW_MANAGER;
+use crate::lock_ext::MutexExt;
 use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use crate::flow::edge::EdgeEvent;
-use crate::flow::topology::{resolve_peer, FlowPeer};
-use crate::flow::network::{send_event_to_peer, FlowEvent};
-use crate::flow::FLOW_MANAGER;
-use crate::lock_ext::MutexExt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FlowState {
@@ -30,7 +30,11 @@ pub fn get_state() -> FlowState {
 pub fn handle_edge_event(edge: EdgeEvent) {
     let mut state_guard = FLOW_STATE.lock().unwrap();
     if *state_guard != FlowState::Active {
-        log::debug!("[Handoff] Edge event {:?} ignored because state is {:?}", edge, *state_guard);
+        log::debug!(
+            "[Handoff] Edge event {:?} ignored because state is {:?}",
+            edge,
+            *state_guard
+        );
         return;
     }
 
@@ -39,9 +43,9 @@ pub fn handle_edge_event(edge: EdgeEvent) {
     // Resolve topology
     if let Some(peer) = resolve_peer(edge) {
         *state_guard = FlowState::HandoffPending;
-        
+
         let local_name = FLOW_MANAGER.flow_local_name.read().unwrap().clone();
-        
+
         // Read current cursor position from virtual_x and virtual_y
         let cx = *FLOW_MANAGER.virtual_x.lock_safe();
         let cy = *FLOW_MANAGER.virtual_y.lock_safe();
@@ -58,8 +62,11 @@ pub fn handle_edge_event(edge: EdgeEvent) {
             EdgeEvent::Bottom => EdgeEvent::Top,
         };
 
-        log::info!("[Handoff] Transitioning Active -> HandoffPending. Sending request to '{}'", peer.peer_id);
-        
+        log::info!(
+            "[Handoff] Transitioning Active -> HandoffPending. Sending request to '{}'",
+            peer.peer_id
+        );
+
         // Store pending details
         *HANDOFF_PENDING_PEER.lock().unwrap() = Some(peer.clone());
         *HANDOFF_START_TIME.lock().unwrap() = Some(Instant::now());
@@ -89,15 +96,24 @@ pub fn handle_edge_event(edge: EdgeEvent) {
     }
 }
 
-pub fn handle_handoff_request(sender_peer_id: String, entry_edge: EdgeEvent, cursor_pos: (i32, i32), client_name: &str) {
+pub fn handle_handoff_request(
+    sender_peer_id: String,
+    entry_edge: EdgeEvent,
+    cursor_pos: (i32, i32),
+    client_name: &str,
+) {
     log::info!(
         "[Handoff] Handling handoff request from '{}' (client_name='{}'). Entering at {:?}",
-        sender_peer_id, client_name, entry_edge
+        sender_peer_id,
+        client_name,
+        entry_edge
     );
 
     // Send ACK first
     let local_name = FLOW_MANAGER.flow_local_name.read().unwrap().clone();
-    let ack = FlowEvent::FlowHandoffAck { peer_id: local_name };
+    let ack = FlowEvent::FlowHandoffAck {
+        peer_id: local_name,
+    };
     if let Err(e) = send_event_to_peer(client_name, &ack) {
         log::error!("[Handoff] Failed to send handoff ACK: {}", e);
         return;
@@ -129,7 +145,11 @@ pub fn handle_handoff_request(sender_peer_id: String, entry_edge: EdgeEvent, cur
     *FLOW_MANAGER.virtual_x.lock_safe() = target_x;
     *FLOW_MANAGER.virtual_y.lock_safe() = target_y;
 
-    log::info!("[Handoff] Seeding/injecting cursor position to ({}, {})", target_x, target_y);
+    log::info!(
+        "[Handoff] Seeding/injecting cursor position to ({}, {})",
+        target_x,
+        target_y
+    );
 
     // Warp pointer under X11
     if let Ok((conn, screen_num)) = x11rb::rust_connection::RustConnection::connect(None) {
@@ -153,7 +173,11 @@ pub fn handle_handoff_request(sender_peer_id: String, entry_edge: EdgeEvent, cur
 pub fn handle_handoff_ack(sender_peer_id: String) {
     let mut state_guard = FLOW_STATE.lock().unwrap();
     if *state_guard != FlowState::HandoffPending {
-        log::warn!("[Handoff] Received ACK from '{}' but state is {:?}", sender_peer_id, *state_guard);
+        log::warn!(
+            "[Handoff] Received ACK from '{}' but state is {:?}",
+            sender_peer_id,
+            *state_guard
+        );
         return;
     }
 
@@ -161,9 +185,9 @@ pub fn handle_handoff_ack(sender_peer_id: String) {
     if let Some(peer) = pending_peer {
         if peer.peer_id == sender_peer_id {
             log::info!("[Handoff] Received ACK from target '{}'. Transitioning HandoffPending -> Inactive.", sender_peer_id);
-            
+
             *state_guard = FlowState::Inactive;
-            
+
             // Set active peer name so we know who is controlling
             FLOW_MANAGER.set_active_peer(Some(peer.peer_id.clone()));
 
@@ -173,17 +197,29 @@ pub fn handle_handoff_ack(sender_peer_id: String) {
 
             // Trigger physical HID++ channel switch to peer's channel
             let target_channel = peer.channel;
-            log::info!("[Handoff] Triggering local HID++ switch to channel {}", target_channel);
-            
+            log::info!(
+                "[Handoff] Triggering local HID++ switch to channel {}",
+                target_channel
+            );
+
             // Call change_host on all connected mice that support CHANGE_HOST
             if let Some(ref inner) = *FLOW_MANAGER.engine_inner.lock_safe() {
                 let clients = inner.hid_clients.lock_safe();
                 for client in clients.iter() {
                     if client.change_host_idx.is_some() {
                         if let Some(ref dev) = client.device {
-                            log::info!("[Handoff] Performing change_host on device '{}'", client.device_name);
-                            if let Err(e) = crate::flow::channel_switch::change_host(dev, target_channel) {
-                                log::error!("[Handoff] Failed to switch channel on device '{}': {}", client.device_name, e);
+                            log::info!(
+                                "[Handoff] Performing change_host on device '{}'",
+                                client.device_name
+                            );
+                            if let Err(e) =
+                                crate::flow::channel_switch::change_host(dev, target_channel)
+                            {
+                                log::error!(
+                                    "[Handoff] Failed to switch channel on device '{}': {}",
+                                    client.device_name,
+                                    e
+                                );
                             }
                         }
                     }
@@ -192,7 +228,8 @@ pub fn handle_handoff_ack(sender_peer_id: String) {
         } else {
             log::warn!(
                 "[Handoff] Received ACK from '{}' but expected ACK from pending peer '{}'",
-                sender_peer_id, peer.peer_id
+                sender_peer_id,
+                peer.peer_id
             );
         }
     }

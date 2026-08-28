@@ -1,10 +1,8 @@
 use crate::theme;
 use eframe::egui;
-use egui::{pos2, vec2, Color32, Rect, RichText, Stroke, Pos2};
-use mouser_engine::config::{Config, FlowPeer};
+use egui::{pos2, vec2, Color32, Pos2, Rect, RichText, Stroke};
 use mouser_engine::client::EngineClient as Engine;
-
-
+use mouser_engine::config::{Config, FlowPeer};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FlowUiView {
@@ -613,7 +611,8 @@ fn show_flow_setup_wizard(ui: &mut egui::Ui, local_name: &str) -> SetupWizardRes
             .rect_filled(btn_cancel_res.rect, 4.0, fill_color_can);
         ui.painter()
             .rect_stroke(btn_cancel_res.rect, 4.0, Stroke::new(1.2, stroke_color_can));
-        let corners_can = theme::lerp_color(Color32::TRANSPARENT, theme::accent_color(ui.ctx()), t_can);
+        let corners_can =
+            theme::lerp_color(Color32::TRANSPARENT, theme::accent_color(ui.ctx()), t_can);
         theme::draw_tech_corners(ui.painter(), btn_cancel_res.rect, corners_can, 4.0);
         ui.painter().text(
             btn_cancel_res.rect.center(),
@@ -767,7 +766,8 @@ fn show_flow_searching_screen(ui: &mut egui::Ui, local_name: &str) -> bool {
             .rect_filled(btn_cancel_res.rect, 6.0, fill_color_can);
         ui.painter()
             .rect_stroke(btn_cancel_res.rect, 6.0, Stroke::new(1.0, stroke_color_can));
-        let corners_can = theme::lerp_color(Color32::TRANSPARENT, theme::accent_color(ui.ctx()), t_can);
+        let corners_can =
+            theme::lerp_color(Color32::TRANSPARENT, theme::accent_color(ui.ctx()), t_can);
         theme::draw_tech_corners(ui.painter(), btn_cancel_res.rect, corners_can, 5.0);
 
         ui.painter().text(
@@ -1036,7 +1036,12 @@ fn show_flow_not_found_screen(ui: &mut egui::Ui, local_name: &str) -> NotFoundRe
     result
 }
 
-fn draw_vertical_gradient(ui: &mut egui::Ui, rect: Rect, color_top: Color32, color_bottom: Color32) {
+fn draw_vertical_gradient(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    color_top: Color32,
+    color_bottom: Color32,
+) {
     let mut mesh = egui::Mesh::default();
     mesh.colored_vertex(pos2(rect.left(), rect.top()), color_top);
     mesh.colored_vertex(pos2(rect.right(), rect.top()), color_top);
@@ -1068,7 +1073,8 @@ fn show_flow_config_screen(
         map.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
     };
 
-    let active_hardware_peer_name = mouser_engine::flow::FLOW_MANAGER.get_active_hardware_peer_name();
+    let active_hardware_peer_name =
+        mouser_engine::flow::FLOW_MANAGER.get_active_hardware_peer_name();
 
     ui.horizontal(|ui| {
         ui.add_space(20.0);
@@ -1153,10 +1159,10 @@ fn show_flow_config_screen(
                         } else {
                             Color32::from_rgb(0x28, 0x2A, 0x36)
                         };
-                        
+
                         // Path segment
                         ui.painter().line_segment([start, end], Stroke::new(1.8, stroke_color));
-                        
+
                         // Animated pulse dots
                         if is_connected {
                             let time = ui.ctx().input(|i| i.time);
@@ -1164,7 +1170,7 @@ fn show_flow_config_screen(
                             let speed = 48.0; // speed
                             let spacing = 36.0; // gap
                             let offset = (time as f32 * speed) % spacing;
-                            
+
                             let dir = (end - start).normalized();
                             let mut current_dist = offset;
                             while current_dist < dist {
@@ -1177,7 +1183,7 @@ fn show_flow_config_screen(
 
                     // Draw connection lines underneath the monitors
                     if !left_peer.is_empty() {
-                        let peer_pos = grid_center + vec2(-1.0 * (box_w + gap_x), 0.0);
+                        let peer_pos = grid_center + vec2(-(box_w + gap_x), 0.0);
                         let is_connected = active_connections.contains(&left_peer);
                         draw_connection_line(ui, grid_center, peer_pos, is_connected);
                     }
@@ -1187,7 +1193,7 @@ fn show_flow_config_screen(
                         draw_connection_line(ui, grid_center, peer_pos, is_connected);
                     }
                     if !top_peer.is_empty() {
-                        let peer_pos = grid_center + vec2(0.0, -1.0 * (box_h + gap_y));
+                        let peer_pos = grid_center + vec2(0.0, -(box_h + gap_y));
                         let is_connected = active_connections.contains(&top_peer);
                         draw_connection_line(ui, grid_center, peer_pos, is_connected);
                     }
@@ -1224,7 +1230,7 @@ fn show_flow_config_screen(
                                 pos2(center_pos.x + neck_w / 2.0, r.bottom() + neck_h),
                             );
                             ui.painter().rect_filled(neck_rect, 0.0, Color32::from_rgb(0x32, 0x33, 0x3E));
-                            
+
                             // Stand base
                             let base_w = 34.0;
                             let base_h = 3.0;
@@ -1312,7 +1318,7 @@ fn show_flow_config_screen(
                                 hover_t,
                             );
                             ui.painter().rect_filled(screen_rect, 2.0, bg_empty);
-                            
+
                             let dashed_color = theme::lerp_color(
                                 Color32::from_rgb(0x2E, 0x2F, 0x38),
                                 theme::accent_color(ui.ctx()),
@@ -1368,11 +1374,11 @@ fn show_flow_config_screen(
                             if is_connected {
                                 let pill_r = Rect::from_center_size(screen_rect.center() + vec2(0.0, 10.0), vec2(52.0, 12.0));
                                 ui.painter().rect_filled(pill_r, 2.0, Color32::from_rgba_unmultiplied(0, 227, 197, 40));
-                                
+
                                 let time = ui.ctx().input(|i| i.time);
                                 let dot_alpha = (100.0 + 155.0 * (time * 5.0).sin().abs()) as u8;
                                 let dot_color = Color32::from_rgba_unmultiplied(0, 255, 200, dot_alpha);
-                                
+
                                 ui.painter().circle_filled(pill_r.left_center() + vec2(6.0, 0.0), 2.0, dot_color);
                                 ui.painter().text(
                                     pill_r.center() + vec2(4.0, 0.0),
@@ -1447,7 +1453,7 @@ fn show_flow_config_screen(
                 // Column 1: Config Parameters in structured Card Containers
                 let ui_params = &mut columns[1];
                 ui_params.vertical(|ui| {
-                    
+
                     // Card 1: DEVICE PROFILE & RESOLUTION
                     let frame1 = egui::Frame::none()
                         .fill(theme::surface_color(ui.ctx()))
@@ -1455,7 +1461,7 @@ fn show_flow_config_screen(
                         .inner_margin(12.0)
                         .outer_margin(egui::Margin::symmetric(0.0, 6.0))
                         .rounding(4.0);
-                    
+
                     let res1 = frame1.show(ui, |ui| {
                         ui.horizontal(|ui| {
                             ui.label(RichText::new("🖥").color(theme::accent_color(ui.ctx())).strong().size(12.0));
@@ -1514,7 +1520,7 @@ fn show_flow_config_screen(
                                 let btn_res = ui.add(egui::Button::new(
                                     RichText::new(btn_label).size(9.5).color(theme::accent_color(ui.ctx()))
                                 ).fill(theme::hover_color(ui.ctx())).stroke(Stroke::new(1.0, theme::accent_dim_color(ui.ctx()))).rounding(2.0));
-                                
+
                                 if btn_res.clicked() {
                                     config.settings.flow_screen_width = detected_w;
                                     config.settings.flow_screen_height = detected_h;
@@ -1530,7 +1536,7 @@ fn show_flow_config_screen(
                         });
                     });
                     theme::draw_tech_corners(ui.painter(), res1.response.rect, theme::accent_color(ui.ctx()), 5.0);
-                    
+
                     ui.add_space(10.0);
 
                     // Card 2: LINK & REDIRECTION
@@ -1682,11 +1688,7 @@ fn show_flow_config_screen(
                                     "Offline (Unreachable)".to_string()
                                 };
 
-                                let subtitle_color = if peer.is_online {
-                                    theme::muted_text(ui.ctx())
-                                } else {
-                                    theme::muted_text(ui.ctx())
-                                };
+                                let subtitle_color = theme::muted_text(ui.ctx());
 
                                 let stroke = if peer.is_active_hardware {
                                     Stroke::new(1.5, theme::accent_color(ui.ctx()))

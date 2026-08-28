@@ -40,10 +40,7 @@ impl Engine {
         Ok(())
     }
 
-    fn check_mouse_hook(
-        &self,
-        failed_mice: &mut std::collections::HashMap<String, Instant>,
-    ) {
+    fn check_mouse_hook(&self, failed_mice: &mut std::collections::HashMap<String, Instant>) {
         let inner = &self.inner;
         let mouse_paths = crate::input::find_logitech_mice();
         let mut mouse_hooks = inner.mouse_hooks.lock_safe();
@@ -117,11 +114,7 @@ impl Engine {
                                     path
                                 );
                             } else {
-                                log::warn!(
-                                    "[Engine] Mouse hook start failed for {}: {}",
-                                    path,
-                                    e
-                                );
+                                log::warn!("[Engine] Mouse hook start failed for {}: {}", path, e);
                             }
                         }
                     }
@@ -244,10 +237,8 @@ impl Engine {
         clients.retain(|c| c.is_connected());
         let new_len = clients.len();
         let changed = old_len != new_len;
-        let opened_paths: std::collections::HashSet<String> = clients
-            .iter()
-            .map(|c| c.device_path.clone())
-            .collect();
+        let opened_paths: std::collections::HashSet<String> =
+            clients.iter().map(|c| c.device_path.clone()).collect();
         drop(clients);
         if changed {
             self.update_cached_device_state();
@@ -353,9 +344,7 @@ impl Engine {
                 while inner.running.load(Ordering::Acquire) {
                     if last_mouse_check.elapsed() >= Duration::from_millis(500) {
                         last_mouse_check = Instant::now();
-                        engine_clone.check_mouse_hook(
-                            &mut failed_mice,
-                        );
+                        engine_clone.check_mouse_hook(&mut failed_mice);
                         engine_clone.check_keyboard_hooks(&mut failed_keyboards);
                     }
 
@@ -365,9 +354,7 @@ impl Engine {
                     }
 
                     let mut all_events = Vec::new();
-                    let num_clients = {
-                        inner.hid_clients.lock_safe().len()
-                    };
+                    let num_clients = { inner.hid_clients.lock_safe().len() };
 
                     for idx in 0..num_clients {
                         let mut client_evs = Vec::new();

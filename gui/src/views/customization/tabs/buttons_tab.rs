@@ -10,8 +10,8 @@ use crate::views::customization::popups::{
 };
 use eframe::egui;
 use egui::{pos2, vec2, Color32, Rect, Stroke};
-use mouser_engine::config::Config;
 use mouser_engine::client::EngineClient as Engine;
+use mouser_engine::config::Config;
 
 pub fn show_buttons_tab(
     ui: &mut egui::Ui,

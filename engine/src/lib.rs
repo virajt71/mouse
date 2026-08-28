@@ -1,5 +1,10 @@
 #![allow(dead_code)]
 #![allow(clippy::manual_range_contains, clippy::invisible_characters)]
+#![allow(
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    clippy::module_inception
+)]
 pub mod battery;
 pub mod bluetooth;
 pub mod cache;

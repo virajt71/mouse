@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use wayland_client::backend::ObjectId;
 use wayland_client::protocol::wl_callback;
 use wayland_client::protocol::wl_registry::{self, WlRegistry};
-use wayland_client::{Connection, Dispatch, EventQueue, Proxy, QueueHandle, event_created_child};
+use wayland_client::{event_created_child, Connection, Dispatch, EventQueue, Proxy, QueueHandle};
 use wayland_protocols_wlr::foreign_toplevel::v1::client::zwlr_foreign_toplevel_handle_v1::{
     self, ZwlrForeignToplevelHandleV1,
 };
@@ -267,6 +267,7 @@ struct Session {
 }
 
 impl Session {
+    #[allow(clippy::question_mark)] // `?` would partially-move `state` before it's used to build Self
     fn open() -> Option<Self> {
         let conn = Connection::connect_to_env().ok()?;
         let mut queue = conn.new_event_queue();

@@ -5,8 +5,8 @@ use crate::views::customization::mappings::{
 };
 use eframe::egui;
 use egui::{pos2, vec2, Color32, Rect, RichText, Stroke};
-use mouser_engine::config::Config;
 use mouser_engine::client::EngineClient as Engine;
+use mouser_engine::config::Config;
 
 #[allow(clippy::too_many_arguments)]
 pub fn draw_button_action_popup(

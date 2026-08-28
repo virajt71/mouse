@@ -312,9 +312,7 @@ impl MouserDaemon for MouserDaemonService {
         let rx = self.config_tx.0.subscribe();
         // Send the current config immediately as the first item.
         let initial = config_to_proto(&self.engine);
-        let stream = BroadcastStream::new(rx)
-            .filter_map(|r| r.ok())
-            .map(Ok);
+        let stream = BroadcastStream::new(rx).filter_map(|r| r.ok()).map(Ok);
         // Prepend the initial snapshot.
         let stream = tokio_stream::once(Ok(initial)).chain(stream);
         Ok(Response::new(Box::pin(stream)))
@@ -328,9 +326,7 @@ impl MouserDaemon for MouserDaemonService {
         _req: Request<Empty>,
     ) -> Result<Response<Self::WatchDeviceStateStream>, Status> {
         let rx = self.device_state_tx.0.subscribe();
-        let stream = BroadcastStream::new(rx)
-            .filter_map(|r| r.ok())
-            .map(Ok);
+        let stream = BroadcastStream::new(rx).filter_map(|r| r.ok()).map(Ok);
         Ok(Response::new(Box::pin(stream)))
     }
 }
@@ -373,8 +369,7 @@ pub fn start_grpc_server(
         rt.block_on(async move {
             use tokio::net::UnixListener;
 
-            let listener = UnixListener::bind(&uds_path)
-                .expect("bind gRPC UNIX socket");
+            let listener = UnixListener::bind(&uds_path).expect("bind gRPC UNIX socket");
 
             log::info!("[gRPC] Server listening on {:?}", uds_path);
 
@@ -382,7 +377,8 @@ pub fn start_grpc_server(
             // UdsStream implements tonic::Connected + AsyncRead + AsyncWrite.
             // We use tokio_stream::wrappers::ReceiverStream to avoid type inference
             // issues with async_stream::try_stream! and tonic's error bounds.
-            let (tx_conn, rx_conn) = tokio::sync::mpsc::channel::<Result<UdsStream, std::io::Error>>(32);
+            let (tx_conn, rx_conn) =
+                tokio::sync::mpsc::channel::<Result<UdsStream, std::io::Error>>(32);
             tokio::spawn(async move {
                 loop {
                     match listener.accept().await {
@@ -398,8 +394,9 @@ pub fn start_grpc_server(
                 }
             });
 
-            let incoming = tokio_stream::wrappers::ReceiverStream::new(rx_conn)
-                .map(|r| r.map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) }));
+            let incoming = tokio_stream::wrappers::ReceiverStream::new(rx_conn).map(|r| {
+                r.map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) })
+            });
 
             use tokio_stream::StreamExt as _;
             Server::builder()
@@ -424,7 +421,10 @@ pub fn broadcast_config(cfg: &crate::config::Config, generation: u64, tx: &Confi
 }
 
 /// Push a device-state snapshot to all watching GUI clients.
-pub fn broadcast_device_state(update: &crate::worker::DeviceStateUpdate, tx: &DeviceStateBroadcast) {
+pub fn broadcast_device_state(
+    update: &crate::worker::DeviceStateUpdate,
+    tx: &DeviceStateBroadcast,
+) {
     let paired_json = serde_json::to_string(&*update.paired_devices).unwrap_or_default();
     let msg = DeviceStateResponse {
         unifying_receiver_connected: update.unifying_receiver_connected,

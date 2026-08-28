@@ -545,14 +545,12 @@ impl Engine {
 
         if let Some(group) = cfg.profile_groups.get_mut(&active_group) {
             if let Some(profile) = group.profiles.get_mut(&profile_name) {
-                profile.mappings.insert(
-                    "backlight_enabled".to_string(),
-                    enabled.to_string(),
-                );
-                profile.mappings.insert(
-                    "backlight_effect".to_string(),
-                    effect.to_string(),
-                );
+                profile
+                    .mappings
+                    .insert("backlight_enabled".to_string(), enabled.to_string());
+                profile
+                    .mappings
+                    .insert("backlight_effect".to_string(), effect.to_string());
                 let _ = cfg.save();
                 self.increment_config_generation(&cfg);
                 log::info!(

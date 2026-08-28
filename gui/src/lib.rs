@@ -2,7 +2,8 @@
     clippy::derivable_impls,
     clippy::field_reassign_with_default,
     clippy::wildcard_in_or_patterns,
-    clippy::unnecessary_cast
+    clippy::unnecessary_cast,
+    clippy::too_many_arguments
 )]
 pub mod app;
 pub mod desktop_apps;

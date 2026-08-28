@@ -1,5 +1,5 @@
-use crate::lock_ext::MutexExt;
 use super::FLOW_MANAGER;
+use crate::lock_ext::MutexExt;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream, UdpSocket};
@@ -17,13 +17,28 @@ pub static IS_SEARCHING: std::sync::atomic::AtomicBool = std::sync::atomic::Atom
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub enum FlowEvent {
-    MouseMove { dx: i32, dy: i32 },
-    MouseButton { code: u16, value: i32 },
-    Key { code: u16, value: i32 },
-    MouseScroll { horizontal: bool, delta: i32 },
+    MouseMove {
+        dx: i32,
+        dy: i32,
+    },
+    MouseButton {
+        code: u16,
+        value: i32,
+    },
+    Key {
+        code: u16,
+        value: i32,
+    },
+    MouseScroll {
+        horizontal: bool,
+        delta: i32,
+    },
     ClipboardText(String),
     ClipboardImage(Vec<u8>),
-    FileTransfer { name: String, content: Vec<u8> },
+    FileTransfer {
+        name: String,
+        content: Vec<u8>,
+    },
     ReturnToLocal,
     FlowHandoffRequest {
         peer_id: String,
@@ -93,25 +108,35 @@ pub fn run_discovery_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) 
                     };
                     // Register peer IP and channel
                     let peer_ip = src.ip().to_string();
-                    DISCOVERED_PEERS
-                        .write()
-                        .unwrap()
-                        .insert(peer_name.clone(), (peer_ip.clone(), peer_channel, Instant::now()));
+                    DISCOVERED_PEERS.write().unwrap().insert(
+                        peer_name.clone(),
+                        (peer_ip.clone(), peer_channel, Instant::now()),
+                    );
 
                     // Respond with identity containing local name and channel
                     let reply = format!("MOUSER_IDENTITY:{}:{}", local_name, {
-                        FLOW_MANAGER.flow_local_channel_index.load(Ordering::Relaxed)
+                        FLOW_MANAGER
+                            .flow_local_channel_index
+                            .load(Ordering::Relaxed)
                     });
                     let _ = socket.send_to(reply.as_bytes(), src);
 
                     // Update flow_peers in config if already exists and changed
                     {
                         let mut cfg = engine_inner.config.lock_safe();
-                        if let Some(peer) = cfg.settings.flow_peers.iter_mut().find(|p| p.name == peer_name) {
+                        if let Some(peer) = cfg
+                            .settings
+                            .flow_peers
+                            .iter_mut()
+                            .find(|p| p.name == peer_name)
+                        {
                             if peer.channel_index != peer_channel {
                                 peer.channel_index = peer_channel;
                                 let _ = cfg.save();
-                                let gen = engine_inner.config_generation.fetch_add(1, Ordering::SeqCst) + 1;
+                                let gen = engine_inner
+                                    .config_generation
+                                    .fetch_add(1, Ordering::SeqCst)
+                                    + 1;
                                 if let Ok(lock) = engine_inner.config_change_listener.lock() {
                                     if let Some(ref callback) = *lock {
                                         callback(&cfg, gen);
@@ -132,19 +157,27 @@ pub fn run_discovery_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) 
                         0
                     };
                     let peer_ip = src.ip().to_string();
-                    DISCOVERED_PEERS
-                        .write()
-                        .unwrap()
-                        .insert(peer_name.clone(), (peer_ip.clone(), peer_channel, Instant::now()));
+                    DISCOVERED_PEERS.write().unwrap().insert(
+                        peer_name.clone(),
+                        (peer_ip.clone(), peer_channel, Instant::now()),
+                    );
 
                     // Update flow_peers in config if already exists and changed
                     {
                         let mut cfg = engine_inner.config.lock_safe();
-                        if let Some(peer) = cfg.settings.flow_peers.iter_mut().find(|p| p.name == peer_name) {
+                        if let Some(peer) = cfg
+                            .settings
+                            .flow_peers
+                            .iter_mut()
+                            .find(|p| p.name == peer_name)
+                        {
                             if peer.channel_index != peer_channel {
                                 peer.channel_index = peer_channel;
                                 let _ = cfg.save();
-                                let gen = engine_inner.config_generation.fetch_add(1, Ordering::SeqCst) + 1;
+                                let gen = engine_inner
+                                    .config_generation
+                                    .fetch_add(1, Ordering::SeqCst)
+                                    + 1;
                                 if let Ok(lock) = engine_inner.config_change_listener.lock() {
                                     if let Some(ref callback) = *lock {
                                         callback(&cfg, gen);
@@ -181,12 +214,15 @@ pub fn run_discovery_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) 
                         let mut cfg = engine_inner.config.lock_safe();
                         cfg.settings.flow_enabled = false;
                         let _ = cfg.save();
-                        
+
                         // Update cached settings in FLOW_MANAGER
                         FLOW_MANAGER.update_config(&cfg);
-                        
+
                         // Increment generation to trigger GUI reload
-                        let gen = engine_inner.config_generation.fetch_add(1, Ordering::SeqCst) + 1;
+                        let gen = engine_inner
+                            .config_generation
+                            .fetch_add(1, Ordering::SeqCst)
+                            + 1;
                         if let Ok(lock) = engine_inner.config_change_listener.lock() {
                             if let Some(ref callback) = *lock {
                                 callback(&cfg, gen);
@@ -202,7 +238,10 @@ pub fn run_discovery_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) 
     }
 }
 
-fn thread_spawn_broadcast(socket: UdpSocket, _engine_inner: Arc<crate::engine::inner::EngineInner>) {
+fn thread_spawn_broadcast(
+    socket: UdpSocket,
+    _engine_inner: Arc<crate::engine::inner::EngineInner>,
+) {
     use std::sync::atomic::Ordering;
     std::thread::spawn(move || loop {
         let enabled = FLOW_MANAGER.flow_enabled.load(Ordering::Relaxed);
@@ -210,7 +249,9 @@ fn thread_spawn_broadcast(socket: UdpSocket, _engine_inner: Arc<crate::engine::i
 
         if enabled || searching {
             let name = FLOW_MANAGER.flow_local_name.read().unwrap().clone();
-            let channel = FLOW_MANAGER.flow_local_channel_index.load(Ordering::Relaxed);
+            let channel = FLOW_MANAGER
+                .flow_local_channel_index
+                .load(Ordering::Relaxed);
             let msg = format!("MOUSER_DISCOVER:{}:{}", name, channel);
             let _ = socket.send_to(msg.as_bytes(), "255.255.255.255:50519");
         }
@@ -517,8 +558,10 @@ fn process_peer_events(
                                             "[Flow Network] Edge transition back to controller '{}'",
                                             client_name
                                         );
-                                        let _ =
-                                            send_event_to_peer(&client_name, &FlowEvent::ReturnToLocal);
+                                        let _ = send_event_to_peer(
+                                            &client_name,
+                                            &FlowEvent::ReturnToLocal,
+                                        );
                                     }
                                 }
                             }
@@ -600,8 +643,17 @@ fn process_peer_events(
                 FlowEvent::FileTransfer { name, content } => {
                     let _ = super::clipboard::save_flow_file(name, content);
                 }
-                FlowEvent::FlowHandoffRequest { peer_id, entry_edge, cursor_pos } => {
-                    crate::flow::handoff::handle_handoff_request(peer_id, entry_edge, cursor_pos, &client_name);
+                FlowEvent::FlowHandoffRequest {
+                    peer_id,
+                    entry_edge,
+                    cursor_pos,
+                } => {
+                    crate::flow::handoff::handle_handoff_request(
+                        peer_id,
+                        entry_edge,
+                        cursor_pos,
+                        &client_name,
+                    );
                 }
                 FlowEvent::FlowHandoffAck { peer_id } => {
                     crate::flow::handoff::handle_handoff_ack(peer_id);

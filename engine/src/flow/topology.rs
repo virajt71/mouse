@@ -34,17 +34,14 @@ impl FlowPeer {
 
 pub fn resolve_peer(edge: EdgeEvent) -> Option<FlowPeer> {
     let config_peers = FLOW_MANAGER.flow_peers.read().unwrap();
-    let resolved = config_peers
-        .iter()
-        .filter(|p| p.paired)
-        .find_map(|p| {
-            let fp = FlowPeer::from_config_peer(p)?;
-            if fp.edge_relation == edge {
-                Some(fp)
-            } else {
-                None
-            }
-        });
+    let resolved = config_peers.iter().filter(|p| p.paired).find_map(|p| {
+        let fp = FlowPeer::from_config_peer(p)?;
+        if fp.edge_relation == edge {
+            Some(fp)
+        } else {
+            None
+        }
+    });
 
     if let Some(ref peer) = resolved {
         log::debug!(
@@ -71,7 +68,7 @@ mod tests {
         // Right  -> Channel 1 (peer_id: "right-pc")
         // Top    -> Channel 3 (peer_id: "top-pc")
         // Bottom -> Channel 0 (peer_id: "bottom-pc")
-        let test_peers = vec![
+        let test_peers = [
             ConfigPeer {
                 name: "right-pc".to_string(),
                 ip: "192.168.1.101".to_string(),

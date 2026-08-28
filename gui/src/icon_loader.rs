@@ -57,11 +57,7 @@ fn render_svg_bytes(
         [pixmap.width() as usize, pixmap.height() as usize],
         pixmap.data(),
     );
-    Some(ctx.load_texture(
-        texture_key,
-        color_img,
-        egui::TextureOptions::default(),
-    ))
+    Some(ctx.load_texture(texture_key, color_img, egui::TextureOptions::default()))
 }
 
 thread_local! {
@@ -97,17 +93,33 @@ pub fn resolve_icon_path(icon: &str) -> Option<PathBuf> {
 
     let themes = icon_theme_roots();
     let sizes = [
-        "512x512", "512x512@2x",
-        "256x256", "256x256@2x",
-        "128x128", "128x128@2x",
-        "96x96", "96x96@2x",
-        "64x64", "64x64@2x",
-        "48x48", "48x48@2x",
-        "32x32", "32x32@2x",
-        "24x24", "24x24@2x",
-        "16x16", "16x16@2x",
+        "512x512",
+        "512x512@2x",
+        "256x256",
+        "256x256@2x",
+        "128x128",
+        "128x128@2x",
+        "96x96",
+        "96x96@2x",
+        "64x64",
+        "64x64@2x",
+        "48x48",
+        "48x48@2x",
+        "32x32",
+        "32x32@2x",
+        "24x24",
+        "24x24@2x",
+        "16x16",
+        "16x16@2x",
     ];
-    let categories = ["apps", "devices", "categories", "mimetypes", "places", "status"];
+    let categories = [
+        "apps",
+        "devices",
+        "categories",
+        "mimetypes",
+        "places",
+        "status",
+    ];
 
     for theme_dir in &themes {
         for size in &sizes {
@@ -177,7 +189,7 @@ pub fn get_app_icon_texture(ctx: &egui::Context, icon: &str) -> Option<TextureHa
         if is_svg {
             load_svg(&path, icon, ctx)
         } else if let Ok(bytes) = std::fs::read(&path) {
-            image::load_from_memory(&bytes).ok().and_then(|img| {
+            image::load_from_memory(&bytes).ok().map(|img| {
                 let rgba = img.to_rgba8();
                 let (w, h) = rgba.dimensions();
                 let color_img = egui::ColorImage::from_rgba_unmultiplied(
@@ -189,7 +201,7 @@ pub fn get_app_icon_texture(ctx: &egui::Context, icon: &str) -> Option<TextureHa
                     color_img,
                     egui::TextureOptions::default(),
                 );
-                Some(tex)
+                tex
             })
         } else {
             None

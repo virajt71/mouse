@@ -247,7 +247,9 @@ pub fn scan_all_applications() -> Vec<DesktopApp> {
     // "antigravity-ide") stay separate.
     for app in installed {
         if !app.exec.is_empty()
-            && !combined.iter().any(|existing| execs_strict(&existing.exec, &app.exec))
+            && !combined
+                .iter()
+                .any(|existing| execs_strict(&existing.exec, &app.exec))
         {
             combined.push(app);
         }
@@ -259,7 +261,9 @@ pub fn scan_all_applications() -> Vec<DesktopApp> {
     // icon-less duplicate when exact matching alone is used.
     for app in running {
         if !app.exec.is_empty()
-            && !combined.iter().any(|existing| execs_match(&existing.exec, &app.exec))
+            && !combined
+                .iter()
+                .any(|existing| execs_match(&existing.exec, &app.exec))
         {
             combined.push(app);
         }
@@ -318,20 +322,28 @@ mod tests {
         let mut combined: Vec<DesktopApp> = Vec::new();
         for app in installed {
             if !app.exec.is_empty()
-                && !combined.iter().any(|e: &DesktopApp| execs_match(&e.exec, &app.exec))
+                && !combined
+                    .iter()
+                    .any(|e: &DesktopApp| execs_match(&e.exec, &app.exec))
             {
                 combined.push(app);
             }
         }
         for app in running {
             if !app.exec.is_empty()
-                && !combined.iter().any(|e: &DesktopApp| execs_match(&e.exec, &app.exec))
+                && !combined
+                    .iter()
+                    .any(|e: &DesktopApp| execs_match(&e.exec, &app.exec))
             {
                 combined.push(app);
             }
         }
 
-        assert_eq!(combined.len(), 1, "Brave should appear once, with its real icon kept");
+        assert_eq!(
+            combined.len(),
+            1,
+            "Brave should appear once, with its real icon kept"
+        );
         assert_eq!(combined[0].icon, "brave-browser");
     }
 
@@ -355,14 +367,19 @@ mod tests {
         let mut combined: Vec<DesktopApp> = Vec::new();
         for app in apps {
             if !app.exec.is_empty()
-                && !combined.iter().any(|e: &DesktopApp| execs_strict(&e.exec, &app.exec))
+                && !combined
+                    .iter()
+                    .any(|e: &DesktopApp| execs_strict(&e.exec, &app.exec))
             {
                 combined.push(app);
             }
         }
 
-        assert_eq!(combined.len(), 2,
-            "antigravity and antigravity-ide should be separate entries");
+        assert_eq!(
+            combined.len(),
+            2,
+            "antigravity and antigravity-ide should be separate entries"
+        );
     }
 
     #[test]
@@ -376,9 +393,10 @@ mod tests {
         let apps = scan_all_applications();
         // Check that the two brave .desktop files don't create duplicates
         // via name-dedup in scan_desktop_applications + execs_match in scan_all_applications
-        let brave_entries: Vec<_> = apps.iter().filter(|a| {
-            a.name.to_lowercase().contains("brave")
-        }).collect();
+        let brave_entries: Vec<_> = apps
+            .iter()
+            .filter(|a| a.name.to_lowercase().contains("brave"))
+            .collect();
         if brave_entries.len() > 1 {
             println!("Found {} brave entries (DUPLICATE!):", brave_entries.len());
             for a in brave_entries {
@@ -386,8 +404,10 @@ mod tests {
             }
             panic!("Brave appears more than once in scanned apps");
         } else if brave_entries.len() == 1 {
-            println!("OK: single brave entry: name={}, exec={}, icon={:?}",
-                brave_entries[0].name, brave_entries[0].exec, brave_entries[0].icon);
+            println!(
+                "OK: single brave entry: name={}, exec={}, icon={:?}",
+                brave_entries[0].name, brave_entries[0].exec, brave_entries[0].icon
+            );
         } else {
             println!("Brave not found on this system, test skipped");
         }

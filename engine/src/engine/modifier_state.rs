@@ -37,7 +37,10 @@ impl ModifierState {
             "shift" => self.shift.load(Ordering::Relaxed),
             "meta" | "super" => self.meta.load(Ordering::Relaxed),
             _ => {
-                log::warn!("[ModifierState] Unknown hold_key value: '{}' — treating as satisfied", hold_key);
+                log::warn!(
+                    "[ModifierState] Unknown hold_key value: '{}' — treating as satisfied",
+                    hold_key
+                );
                 true
             }
         }

@@ -8,8 +8,8 @@ use crate::translation::tr;
 use crate::updater::Updater;
 use eframe::egui;
 use egui::{Color32, Stroke};
-use mouser_engine::config::Config;
 use mouser_engine::client::EngineClient as Engine;
+use mouser_engine::config::Config;
 
 pub use section_language::render_section_language;
 pub use section_profiles::render_section_profiles;

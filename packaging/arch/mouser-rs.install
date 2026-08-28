@@ -1,0 +1,18 @@
+post_install() {
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl --global daemon-reload >/dev/null 2>&1 || true
+    systemctl --global enable mouser.service >/dev/null 2>&1 || true
+    systemctl --user start mouser.service >/dev/null 2>&1 || true
+  fi
+}
+
+post_upgrade() {
+  post_install
+}
+
+pre_remove() {
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl --global disable mouser.service >/dev/null 2>&1 || true
+    systemctl --user disable --now mouser.service >/dev/null 2>&1 || true
+  fi
+}

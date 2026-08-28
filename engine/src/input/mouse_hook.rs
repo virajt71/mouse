@@ -32,8 +32,7 @@ pub fn is_hookable_mouse(dev: &Device) -> bool {
     let has_rel = dev
         .supported_relative_axes()
         .map(|axes| {
-            axes.contains(RelativeAxisType::REL_X)
-                && axes.contains(RelativeAxisType::REL_Y)
+            axes.contains(RelativeAxisType::REL_X) && axes.contains(RelativeAxisType::REL_Y)
         })
         .unwrap_or(false);
 
@@ -49,9 +48,7 @@ pub fn is_hookable_mouse(dev: &Device) -> bool {
     // Exclude touchpads, trackpads, touchscreens
     let touches = dev
         .supported_keys()
-        .map(|keys| {
-            keys.contains(Key::BTN_TOUCH) || keys.contains(Key::BTN_TOOL_FINGER)
-        })
+        .map(|keys| keys.contains(Key::BTN_TOUCH) || keys.contains(Key::BTN_TOOL_FINGER))
         .unwrap_or(false)
         || dev
             .supported_absolute_axes()
@@ -82,10 +79,8 @@ pub fn find_logitech_mice() -> Vec<String> {
                 if name.to_string_lossy().starts_with("event") {
                     if let Ok(dev) = Device::open(&path) {
                         let id = dev.input_id();
-                        if id.vendor() == 0x046D {
-                            if is_hookable_mouse(&dev) {
-                                mice.push(path.to_string_lossy().to_string());
-                            }
+                        if id.vendor() == 0x046D && is_hookable_mouse(&dev) {
+                            mice.push(path.to_string_lossy().to_string());
                         }
                     }
                 }
@@ -220,7 +215,7 @@ impl MouseHook {
                                                                 if let Some(peer) = crate::flow::topology::resolve_peer(edge_ev) {
                                                                     log::info!("[Flow] Software mode edge transition → {}", peer.peer_id);
                                                                     crate::flow::FLOW_MANAGER.set_active_peer(Some(peer.peer_id.clone()));
-                                                                    
+
                                                                     // Reset coordinates to opposite edge to prevent loop bouncing
                                                                     let sw = *crate::flow::FLOW_MANAGER.screen_width.read().unwrap();
                                                                     let sh = *crate::flow::FLOW_MANAGER.screen_height.read().unwrap();

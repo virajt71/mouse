@@ -77,7 +77,8 @@ pub fn draw_status_pill(
         draw_battery_widget(painter, batt_rect, level);
 
         // Charging bolt when the HID++ status says so
-        let is_charging = battery_status.contains("charging") || battery_status.contains("recharging");
+        let is_charging =
+            battery_status.contains("charging") || battery_status.contains("recharging");
         if is_charging && battery_status != "charging_error" {
             let bolt_color = if level <= 0.20 {
                 theme::COLOR_DOT_RED

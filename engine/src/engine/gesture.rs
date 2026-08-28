@@ -304,10 +304,7 @@ impl Engine {
         let btn_key;
         {
             let mut state = self.inner.gesture_state.lock_safe();
-            btn_key = state
-                .button
-                .take()
-                .unwrap_or_else(|| "gesture".to_string());
+            btn_key = state.button.take().unwrap_or_else(|| "gesture".to_string());
             state.input_source = None;
             triggered = self.inner.gesture_triggered.load(Ordering::Relaxed);
         }

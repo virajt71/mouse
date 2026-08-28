@@ -127,7 +127,8 @@ impl MouserApp {
         });
 
         // Subscribe to device-state updates via the gRPC WatchDeviceState stream.
-        let (device_tx, rx) = std::sync::mpsc::channel::<mouser_engine::worker::DeviceStateUpdate>();
+        let (device_tx, rx) =
+            std::sync::mpsc::channel::<mouser_engine::worker::DeviceStateUpdate>();
         let repaint_ctx_device = ctx.clone();
         std::sync::Arc::new(engine.clone()).subscribe_device_state(device_tx, move || {
             repaint_ctx_device.request_repaint();
@@ -176,7 +177,8 @@ impl MouserApp {
 
         if got_update {
             self.last_config_generation = self.engine.config_generation();
-            self.config_changed_flag.store(false, std::sync::atomic::Ordering::Relaxed);
+            self.config_changed_flag
+                .store(false, std::sync::atomic::Ordering::Relaxed);
         } else if self
             .config_changed_flag
             .swap(false, std::sync::atomic::Ordering::Relaxed)

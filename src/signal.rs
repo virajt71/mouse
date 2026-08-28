@@ -17,11 +17,7 @@ pub fn setup_signal_handlers() {
         let _ = sigaction(Signal::SIGINT, &sa);
         let _ = sigaction(Signal::SIGTERM, &sa);
 
-        let sa_ign = SigAction::new(
-            SigHandler::SigIgn,
-            SaFlags::empty(),
-            SigSet::empty(),
-        );
+        let sa_ign = SigAction::new(SigHandler::SigIgn, SaFlags::empty(), SigSet::empty());
         let _ = sigaction(Signal::SIGHUP, &sa_ign);
     }
 }

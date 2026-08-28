@@ -8,10 +8,7 @@ use std::{collections::HashMap, path::Path, sync::mpsc::Sender, sync::Arc};
 
 use tonic::transport::{Channel, Endpoint, Uri};
 
-use crate::{
-    config::Config,
-    worker::DeviceStateUpdate,
-};
+use crate::{config::Config, worker::DeviceStateUpdate};
 
 // The generated tonic client stub lives in the proto submodule.
 use crate::grpc::server::proto::mouser_daemon_client::MouserDaemonClient;
@@ -106,7 +103,10 @@ impl EngineClient {
     {
         if let Some(resp) = self.call(f) {
             if !resp.ok {
-                log::warn!("[EngineClient] daemon returned error: {}", resp.error_message);
+                log::warn!(
+                    "[EngineClient] daemon returned error: {}",
+                    resp.error_message
+                );
             }
         }
     }
@@ -124,7 +124,10 @@ impl EngineClient {
             }
             cfg
         } else {
-            self.last_config.lock().map(|g| g.1.clone()).unwrap_or_else(|_| Config::load())
+            self.last_config
+                .lock()
+                .map(|g| g.1.clone())
+                .unwrap_or_else(|_| Config::load())
         }
     }
 
@@ -135,7 +138,12 @@ impl EngineClient {
     pub fn get_config_if_changed(&self, last_gen: u64) -> Option<Config> {
         let current = self.config_generation();
         if current > last_gen {
-            Some(self.last_config.lock().map(|g| g.1.clone()).unwrap_or_else(|_| Config::load()))
+            Some(
+                self.last_config
+                    .lock()
+                    .map(|g| g.1.clone())
+                    .unwrap_or_else(|_| Config::load()),
+            )
         } else {
             None
         }
@@ -147,9 +155,9 @@ impl EngineClient {
 
     pub fn update_keyboard_layout(&self, layout: &str) {
         let v = layout.to_string();
-        self.call_ok(|mut s| async move {
-            s.update_keyboard_layout(StringValue { value: v }).await
-        });
+        self.call_ok(
+            |mut s| async move { s.update_keyboard_layout(StringValue { value: v }).await },
+        );
     }
 
     // ─── Profile API (mirrors Engine) ────────────────────────────────────────
@@ -169,11 +177,7 @@ impl EngineClient {
         self.call_ok(|mut s| async move { s.delete_profile(StringValue { value: v }).await });
     }
 
-    pub fn update_profile_mappings(
-        &self,
-        profile_name: &str,
-        mappings: HashMap<String, String>,
-    ) {
+    pub fn update_profile_mappings(&self, profile_name: &str, mappings: HashMap<String, String>) {
         let profile_name = profile_name.to_string();
         let mappings_json = serde_json::to_string(&mappings).unwrap_or_default();
         self.call_ok(|mut s| async move {
@@ -210,23 +214,17 @@ impl EngineClient {
 
     pub fn select_profile_group(&self, group_name: &str) {
         let v = group_name.to_string();
-        self.call_ok(|mut s| async move {
-            s.select_profile_group(StringValue { value: v }).await
-        });
+        self.call_ok(|mut s| async move { s.select_profile_group(StringValue { value: v }).await });
     }
 
     pub fn add_profile_group(&self, group_name: &str) {
         let v = group_name.to_string();
-        self.call_ok(
-            |mut s| async move { s.add_profile_group(StringValue { value: v }).await },
-        );
+        self.call_ok(|mut s| async move { s.add_profile_group(StringValue { value: v }).await });
     }
 
     pub fn delete_profile_group(&self, group_name: &str) {
         let v = group_name.to_string();
-        self.call_ok(|mut s| async move {
-            s.delete_profile_group(StringValue { value: v }).await
-        });
+        self.call_ok(|mut s| async move { s.delete_profile_group(StringValue { value: v }).await });
     }
 
     // ─── Settings API (mirrors Engine::update_global_settings) ───────────────
@@ -257,9 +255,12 @@ impl EngineClient {
             "hscroll_threshold": hscroll_threshold,
         })
         .to_string();
-        self.call_ok(
-            |mut s| async move { s.update_settings(SettingsJson { settings_json: json }).await },
-        );
+        self.call_ok(|mut s| async move {
+            s.update_settings(SettingsJson {
+                settings_json: json,
+            })
+            .await
+        });
     }
 
     // ─── Device Info (mirrors Engine) ────────────────────────────────────────
@@ -271,7 +272,8 @@ impl EngineClient {
 
     pub fn selected_device_name(&self) -> String {
         let resp = self.call(|mut s| async move { s.get_device_info(Empty {}).await });
-        resp.map(|r| r.device_name).unwrap_or_else(|| "MX Master 3".to_string())
+        resp.map(|r| r.device_name)
+            .unwrap_or_else(|| "MX Master 3".to_string())
     }
 
     pub fn active_host_channel(&self) -> Option<u8> {
@@ -295,15 +297,16 @@ impl EngineClient {
     /// Spawn a background thread that streams config updates from the daemon
     /// and pushes new `Config` values into `tx`.  The thread exits when `tx`
     /// is dropped (send error).
-    pub fn subscribe_config(self: Arc<Self>, tx: Sender<Config>, repaint: impl Fn() + Send + 'static) {
+    pub fn subscribe_config(
+        self: Arc<Self>,
+        tx: Sender<Config>,
+        repaint: impl Fn() + Send + 'static,
+    ) {
         let client = self.clone();
         std::thread::spawn(move || {
             let mut stub = client.stub.clone();
             let result = client.rt.block_on(async {
-                let mut stream = stub
-                    .watch_config(Empty {})
-                    .await?
-                    .into_inner();
+                let mut stream = stub.watch_config(Empty {}).await?.into_inner();
                 while let Some(item) = stream.message().await? {
                     let cfg: Config = match serde_json::from_str(&item.config_json) {
                         Ok(c) => c,
@@ -338,14 +341,10 @@ impl EngineClient {
         std::thread::spawn(move || {
             let mut stub = client.stub.clone();
             let result = client.rt.block_on(async {
-                let mut stream = stub
-                    .watch_device_state(Empty {})
-                    .await?
-                    .into_inner();
+                let mut stream = stub.watch_device_state(Empty {}).await?.into_inner();
                 while let Some(item) = stream.message().await? {
                     let paired: Vec<(String, String, bool)> =
-                        serde_json::from_str(&item.paired_devices_json)
-                            .unwrap_or_default();
+                        serde_json::from_str(&item.paired_devices_json).unwrap_or_default();
                     let update = DeviceStateUpdate {
                         unifying_receiver_connected: item.unifying_receiver_connected,
                         bolt_receiver_connected: item.bolt_receiver_connected,

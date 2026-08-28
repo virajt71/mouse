@@ -4,8 +4,8 @@ use crate::translation::tr;
 use crate::widgets::draw_globe_icon;
 use eframe::egui;
 use egui::{vec2, Color32, RichText, Stroke};
-use mouser_engine::config::Config;
 use mouser_engine::client::EngineClient as Engine;
+use mouser_engine::config::Config;
 
 pub fn render_section_language(ui: &mut egui::Ui, config: &mut Config, engine: &Engine) {
     section_card(ui, |ui| {

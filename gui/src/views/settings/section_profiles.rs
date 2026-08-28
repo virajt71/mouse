@@ -3,8 +3,8 @@ use crate::theme;
 use crate::widgets::draw_profiles_icon_settings;
 use eframe::egui;
 use egui::{vec2, RichText};
-use mouser_engine::config::Config;
 use mouser_engine::client::EngineClient as Engine;
+use mouser_engine::config::Config;
 
 thread_local! {
     pub static SELECTED_EDIT_GROUP: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
@@ -129,7 +129,8 @@ pub fn render_section_profiles(ui: &mut egui::Ui, config: &mut Config, engine: &
 
     if let Some(group) = group_to_delete {
         let title = format!("Delete \"{}\"?", group);
-        let body = "This removes all button and gesture mappings in this group. This can't be undone.";
+        let body =
+            "This removes all button and gesture mappings in this group. This can't be undone.";
         if let Some(confirmed) = crate::widgets::show_confirm_dialog(
             ui.ctx(),
             &title,
