@@ -44,6 +44,7 @@ pub enum UniversalButtonOption {
     RightCtrl,
     ScreenSnip,
     ShiftWheelMode,
+    ShowActionsRing,
     ThisPC,
     Undo,
     VolumeDown,
@@ -106,6 +107,7 @@ impl UniversalButtonOption {
             Self::RightCtrl => "Right Ctrl",
             Self::ScreenSnip => "Screen snip",
             Self::ShiftWheelMode => "Shift wheel mode",
+            Self::ShowActionsRing => "Show Actions Ring",
             Self::ThisPC => "This PC",
             Self::Undo => "Undo",
             Self::VolumeDown => "Volume down",
@@ -121,6 +123,7 @@ impl CustomizingButton {
         match self {
             Self::Thumb => &[
                 UniversalButtonOption::Gesture,
+                UniversalButtonOption::ShowActionsRing,
                 UniversalButtonOption::TaskView,
                 UniversalButtonOption::ShowHideDesktop,
                 UniversalButtonOption::ScreenCapture,
@@ -268,6 +271,7 @@ impl CustomizingButton {
                         UniversalButtonOption::ScreenCapture,
                         UniversalButtonOption::ScreenSnip,
                         UniversalButtonOption::ShiftWheelMode,
+                        UniversalButtonOption::ShowActionsRing,
                         UniversalButtonOption::ShowHideDesktop,
                         UniversalButtonOption::SwitchApplication,
                         UniversalButtonOption::TaskView,
@@ -409,6 +413,7 @@ pub fn get_button_option(
             "volume_up" => return UniversalButtonOption::VolumeUp,
             "zoom_in" => return UniversalButtonOption::ZoomIn,
             "zoom_out" => return UniversalButtonOption::ZoomOut,
+            "show_actions_ring" => return UniversalButtonOption::ShowActionsRing,
             s if s.starts_with("custom:") => return UniversalButtonOption::KeyboardShortcut,
             _ => {}
         }
@@ -554,6 +559,7 @@ pub fn save_button_option(
         UniversalButtonOption::RightCtrl => "right_ctrl",
         UniversalButtonOption::ScreenSnip => "screen_snip",
         UniversalButtonOption::ShiftWheelMode => "switch_scroll_mode",
+        UniversalButtonOption::ShowActionsRing => "show_actions_ring",
         UniversalButtonOption::ThisPC => "this_pc",
         UniversalButtonOption::Undo => "undo",
         UniversalButtonOption::VolumeDown => "volume_down",

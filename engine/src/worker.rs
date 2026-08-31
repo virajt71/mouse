@@ -84,6 +84,7 @@ pub fn spawn_background_worker(
                             .collect();
 
                     // Update existing cached devices
+                    let mut to_prune: Vec<String> = Vec::new();
                     for (mac, name, connected) in &mut paired_devices {
                         if let Some((fresh_name, fresh_conn)) = fresh_map.get(mac) {
                             if name != fresh_name {
@@ -95,12 +96,17 @@ pub fn spawn_background_worker(
                                 changed = true;
                             }
                         } else {
-                            // Device is in cache but not currently paired/present at OS level
-                            if *connected {
-                                *connected = false;
-                                changed = true;
-                            }
+                            // Device is in cache but missing from the OS paired list
+                            // (unpaired from the system Bluetooth menu, or removed
+                            // elsewhere). It is truly gone — prune it so the dead card
+                            // disappears. Only reached when bt_up is true, so a transient
+                            // bluetoothctl hiccup can't wipe the list.
+                            to_prune.push(mac.clone());
+                            changed = true;
                         }
+                    }
+                    if !to_prune.is_empty() {
+                        paired_devices.retain(|(m, _, _)| !to_prune.contains(m));
                     }
 
                     // Add newly paired devices to cache

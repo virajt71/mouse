@@ -1,7 +1,7 @@
+use crate::config::DeviceKey;
 use super::Engine;
 use crate::lock_ext::MutexExt;
 use evdev::Key;
-use std::sync::atomic::Ordering;
 
 pub fn compute_blocked_buttons(
     mappings: &std::collections::HashMap<String, String>,
@@ -32,42 +32,41 @@ pub fn compute_blocked_buttons(
 }
 
 impl Engine {
-    pub fn handle_app_change(&self, exe_name: String) {
+    pub fn handle_app_change(&self, device: &DeviceKey, exe_name: String) {
         let (profile_name, mappings) = {
             let cfg = self.inner.config.lock_safe();
-            let target = cfg.get_profile_for_app(&exe_name);
-            let mappings = cfg.get_resolved_mappings(&target);
+            let target = cfg.get_profile_for_app(device, &exe_name);
+            let mappings = cfg.get_resolved_mappings(device, &target);
             (target, mappings)
         };
 
-        let mut last_exe = self.inner.last_detected_exe.lock_safe();
-        let mut current_profile = self.inner.current_profile.lock_safe();
-
-        if *current_profile == profile_name && *last_exe == exe_name {
-            return;
-        }
-
-        *last_exe = exe_name.clone();
-
-        if *current_profile != profile_name {
-            log::info!("[Engine] App {} → profile '{}'", exe_name, profile_name);
-            *current_profile = profile_name.clone();
-            drop(current_profile);
-            drop(last_exe);
-
-            *self.inner.active_profile_shared.lock_safe() = profile_name;
-            {
+        let (changed, was_active) = {
+            let mut map = self.inner.per_device.lock_safe();
+            let st = map.entry(device.clone()).or_insert_with(Default::default);
+            let changed_profile = st.current_profile != profile_name;
+            let changed_exe = st.last_detected_exe != exe_name;
+            if !changed_exe && !changed_profile {
+                return;
+            }
+            st.last_detected_exe = exe_name.clone();
+            if changed_profile {
+                st.current_profile = profile_name.clone();
+                st.active_profile_shared = profile_name.clone();
                 let mappings_arc: std::collections::HashMap<String, std::sync::Arc<str>> = mappings
                     .iter()
                     .map(|(k, v)| (k.clone(), std::sync::Arc::from(v.as_str())))
                     .collect();
-                *self.inner.active_mappings.write().unwrap() = mappings_arc;
+                *st.active_mappings.write().unwrap() = mappings_arc;
+                let (blocked, hscroll_blocked) = compute_blocked_buttons(&mappings);
+                st.blocked_buttons = blocked;
+                st.block_hscroll = hscroll_blocked;
+                (true, true)
+            } else {
+                (false, true)
             }
-            let (blocked, hscroll_blocked) = compute_blocked_buttons(&mappings);
-            *self.inner.blocked_buttons_arc.lock_safe() = blocked;
-            self.inner
-                .block_hscroll_arc
-                .store(hscroll_blocked, Ordering::Relaxed);
-        }
+        };
+
+        let _ = (changed, was_active);
+        self.apply_keyboard_backlight(device);
     }
 }

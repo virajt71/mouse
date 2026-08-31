@@ -31,8 +31,8 @@ pub fn show_keyboard_keys_tab(
 
     // Fetch active profile mappings
     let profile = config
-        .get_profile(&config.active_app_profile)
-        .unwrap_or_else(|| config.get_profile("global").unwrap());
+        .get_profile(&engine.active_device_key(), &config.active_app_profile)
+        .unwrap_or_else(|| config.get_profile(&engine.active_device_key(), "global").unwrap());
 
     // Defining coordinates (rx, ry, rw, rh) for 22 customizable keys:
     // 12 F-keys: F1 to F12
@@ -253,7 +253,7 @@ pub fn show_keyboard_keys_tab(
                             });
                         } else {
                             save_button_option(btn, opt, &mut mappings);
-                            engine.update_profile_mappings(&config.active_app_profile, mappings);
+                            engine.update_profile_mappings(&engine.active_device_key(), &config.active_app_profile, mappings);
                             *customizing_button = None;
                         }
                     }
@@ -358,8 +358,8 @@ pub fn show_keyboard_backlighting_tab(
     keyboard_texture: &egui::TextureHandle,
 ) {
     let profile = config
-        .get_profile(&config.active_app_profile)
-        .unwrap_or_else(|| config.get_profile("global").unwrap());
+        .get_profile(&engine.active_device_key(), &config.active_app_profile)
+        .unwrap_or_else(|| config.get_profile(&engine.active_device_key(), "global").unwrap());
 
     let enabled_str = profile
         .mappings
@@ -578,6 +578,6 @@ pub fn show_keyboard_backlighting_tab(
         mappings.insert("backlight_enabled".to_string(), enabled.to_string());
         mappings.insert("backlight_effect".to_string(), selected_effect);
 
-        engine.update_profile_mappings(&config.active_app_profile, mappings);
+        engine.update_profile_mappings(&engine.active_device_key(), &config.active_app_profile, mappings);
     }
 }

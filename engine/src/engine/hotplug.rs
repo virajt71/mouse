@@ -1,4 +1,5 @@
 use crate::lock_ext::MutexExt;
+use crate::hidpp::{HidppClient, HidppEvent};
 use std::collections::HashSet;
 use std::sync::atomic::Ordering;
 use std::sync::Mutex;
@@ -6,7 +7,6 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use super::Engine;
-use crate::hidpp::HidppClient;
 use crate::input::{KeyboardHook, MouseHook};
 
 static CONNECTING_PATHS: std::sync::LazyLock<Mutex<HashSet<String>>> =
@@ -14,7 +14,7 @@ static CONNECTING_PATHS: std::sync::LazyLock<Mutex<HashSet<String>>> =
 
 impl Engine {
     pub fn restart_keyboard_hooks(&self) -> anyhow::Result<()> {
-        let mappings = self.inner.active_mappings.clone();
+        let mappings = self.device_mappings_arc(&self.active_device_key());
         let mut kb_hooks = self.inner.keyboard_hooks.lock_safe();
         for hook in kb_hooks.iter_mut() {
             hook.stop();
@@ -86,8 +86,9 @@ impl Engine {
                     mouse_hooks.retain(|h| h.device_path() != Some(path));
 
                     let engine = self.clone();
+                    let device_key = self.active_device_key();
                     let mut hook = MouseHook::new(move |event| {
-                        engine.handle_mouse_hook_event(event);
+                        engine.handle_mouse_hook_event(&device_key, event);
                     });
 
                     match hook.start(
@@ -167,7 +168,7 @@ impl Engine {
                     // Remove any existing dead hook for this path
                     kb_hooks.retain(|h| h.device_path() != Some(path));
 
-                    let mappings = inner.active_mappings.clone();
+                    let mappings = self.device_mappings_arc(&self.active_device_key());
                     let mut hook = KeyboardHook::new();
                     match hook.start(
                         path.clone(),
@@ -275,6 +276,17 @@ impl Engine {
                             new_client.device_name
                         );
                         let layout = new_client.get_layout_key();
+                        // Activate a stable per-model config entry NOW so all
+                        // later reads/writes route to the same key across
+                        // reconnects (the serial is volatile) and mouse vs
+                        // keyboard stay independent by model/layout.
+                        // ponytail: model (layout) is the identity, not serial.
+                        {
+                            let mut cfg = inner_clone.config.lock_safe();
+                            let model_key = crate::config::DeviceKey::new("", &layout);
+                            cfg.ensure_device_profiles(&model_key);
+                            let _ = cfg.save();
+                        }
                         let mut new_keyboard_found = false;
                         if layout.starts_with("mx_keys") || layout.starts_with("mx_mechanical") {
                             new_keyboard_found = true;
@@ -320,7 +332,7 @@ impl Engine {
 
                         if new_keyboard_found {
                             let _ = engine_clone.restart_keyboard_hooks();
-                            engine_clone.apply_keyboard_backlight();
+                            engine_clone.apply_keyboard_backlight(&engine_clone.active_device_key());
                         }
                     }
                     // _guard drops here → path removed from CONNECTING_PATHS
@@ -353,28 +365,28 @@ impl Engine {
                         engine_clone.check_hid_hotplug();
                     }
 
-                    let mut all_events = Vec::new();
                     let num_clients = { inner.hid_clients.lock_safe().len() };
 
                     for idx in 0..num_clients {
-                        let mut client_evs = Vec::new();
-                        {
+                        let mut client_evs: Vec<HidppEvent> = Vec::new();
+                        let client_key = {
                             let mut clients = inner.hid_clients.lock_safe();
                             if let Some(client) = clients.get_mut(idx) {
                                 if let Ok(evs) = client.poll_events() {
                                     client_evs = evs;
                                 }
+                                Some(client.device_key())
+                            } else {
+                                None
                             }
-                        }
-                        for ev in client_evs {
-                            all_events.push(ev);
+                        };
+                        if let Some(key) = client_key {
+                            for ev in client_evs {
+                                engine_clone.handle_hid_event(&key, ev);
+                            }
                         }
                         // Short sleep to allow UI thread to acquire clients lock if needed
                         thread::sleep(Duration::from_millis(2));
-                    }
-
-                    for ev in all_events {
-                        engine_clone.handle_hid_event(ev);
                     }
 
                     if num_clients > 0 {

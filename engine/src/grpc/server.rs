@@ -4,13 +4,14 @@
 /// the `Engine` API and exposes every method as a gRPC RPC, plus two
 /// server-streaming RPCs (`WatchConfig`, `WatchDeviceState`) that push
 /// updates to connected GUI clients.
-use std::{collections::HashMap, path::Path, pin::Pin};
+use std::{collections::HashMap, path::Path, pin::Pin, sync::mpsc::Sender};
 
 use tokio::sync::broadcast;
 use tokio_stream::{wrappers::BroadcastStream, Stream, StreamExt as _};
 use tonic::{transport::Server, Request, Response, Status};
 
 use crate::engine::Engine;
+use crate::worker::BackgroundTxCmd;
 
 // Include the protobuf-generated types and service traits.
 pub mod proto {
@@ -19,10 +20,29 @@ pub mod proto {
 
 use proto::{
     mouser_daemon_server::{MouserDaemon, MouserDaemonServer},
-    AppBindingsRequest, ConfigResponse, DeviceInfoResponse, DeviceStateResponse, Empty,
-    FlowStatusResponse, ProfileIconRequest, ProfileMappingsRequest, SettingsJson, StatusResponse,
-    StringValue,
+    ActionsRingState, AppBindingsRequest, ConfigResponse, DeviceInfoResponse, DeviceStateResponse,
+    DeviceProfileRequest, Empty, FlowStatusResponse, ProfileIconRequest, ProfileMappingsRequest,
+    SettingsJson,
+    StatusResponse, StringValue,
 };
+
+/// Extract the device key carried in a request, falling back to the daemon's
+/// currently-selected device when the request omits one (legacy/compat path).
+fn device_key_from_proto(d: &Option<proto::DeviceKey>) -> crate::config::DeviceKey {
+    match d {
+        Some(k) => crate::config::DeviceKey {
+            serial: k.serial.clone(),
+            layout: k.layout.clone(),
+        },
+        None => crate::config::DeviceKey::default(),
+    }
+}
+
+fn device_key_from_req(
+    req: &Request<DeviceProfileRequest>,
+) -> crate::config::DeviceKey {
+    device_key_from_proto(&req.get_ref().device)
+}
 
 // ─── UDS Connected newtype ─────────────────────────────────────────────────────
 
@@ -82,12 +102,19 @@ pub struct ConfigBroadcast(broadcast::Sender<ConfigResponse>);
 #[derive(Clone)]
 pub struct DeviceStateBroadcast(broadcast::Sender<DeviceStateResponse>);
 
+/// Shared sender for Actions Ring open/close signals; receivers stream
+/// `ActionsRingState` to every connected GUI client.
+#[derive(Clone)]
+pub struct ActionsRingBroadcast(broadcast::Sender<ActionsRingState>);
+
 // ─── Service implementation ────────────────────────────────────────────────────
 
 pub struct MouserDaemonService {
     engine: Engine,
     config_tx: ConfigBroadcast,
     device_state_tx: DeviceStateBroadcast,
+    actions_ring_tx: ActionsRingBroadcast,
+    worker_tx: Sender<BackgroundTxCmd>,
 }
 
 impl MouserDaemonService {
@@ -182,25 +209,28 @@ impl MouserDaemon for MouserDaemonService {
 
     async fn select_profile(
         &self,
-        req: Request<StringValue>,
+        req: Request<DeviceProfileRequest>,
     ) -> Result<Response<StatusResponse>, Status> {
-        self.engine.select_profile(&req.into_inner().value);
+        let device = device_key_from_req(&req);
+        self.engine.select_profile(&device, &req.into_inner().name);
         Ok(Response::new(Self::ok()))
     }
 
     async fn add_profile(
         &self,
-        req: Request<StringValue>,
+        req: Request<DeviceProfileRequest>,
     ) -> Result<Response<StatusResponse>, Status> {
-        self.engine.add_profile(&req.into_inner().value);
+        let device = device_key_from_req(&req);
+        self.engine.add_profile(&device, &req.into_inner().name);
         Ok(Response::new(Self::ok()))
     }
 
     async fn delete_profile(
         &self,
-        req: Request<StringValue>,
+        req: Request<DeviceProfileRequest>,
     ) -> Result<Response<StatusResponse>, Status> {
-        self.engine.delete_profile(&req.into_inner().value);
+        let device = device_key_from_req(&req);
+        self.engine.delete_profile(&device, &req.into_inner().name);
         Ok(Response::new(Self::ok()))
     }
 
@@ -209,12 +239,13 @@ impl MouserDaemon for MouserDaemonService {
         req: Request<ProfileMappingsRequest>,
     ) -> Result<Response<StatusResponse>, Status> {
         let inner = req.into_inner();
+        let device = device_key_from_proto(&inner.device);
         let mappings: HashMap<String, String> = match serde_json::from_str(&inner.mappings_json) {
             Ok(m) => m,
             Err(e) => return Ok(Response::new(Self::err(e))),
         };
         self.engine
-            .update_profile_mappings(&inner.profile_name, mappings);
+            .update_profile_mappings(&device, &inner.profile_name, mappings);
         Ok(Response::new(Self::ok()))
     }
 
@@ -223,8 +254,9 @@ impl MouserDaemon for MouserDaemonService {
         req: Request<AppBindingsRequest>,
     ) -> Result<Response<StatusResponse>, Status> {
         let inner = req.into_inner();
+        let device = device_key_from_proto(&inner.device);
         self.engine
-            .update_app_bindings(&inner.profile_name, &inner.exec);
+            .update_app_bindings(&device, &inner.profile_name, &inner.exec);
         Ok(Response::new(Self::ok()))
     }
 
@@ -233,8 +265,9 @@ impl MouserDaemon for MouserDaemonService {
         req: Request<ProfileIconRequest>,
     ) -> Result<Response<StatusResponse>, Status> {
         let inner = req.into_inner();
+        let device = device_key_from_proto(&inner.device);
         self.engine
-            .set_profile_icon(&inner.profile_name, &inner.icon_data);
+            .set_profile_icon(&device, &inner.profile_name, &inner.icon_data);
         Ok(Response::new(Self::ok()))
     }
 
@@ -296,7 +329,11 @@ impl MouserDaemon for MouserDaemonService {
         req: Request<StringValue>,
     ) -> Result<Response<StatusResponse>, Status> {
         let mac = req.into_inner().value;
-        crate::bluetooth::unpair_device(&mac);
+        // Route through the background worker: it removes the device from the OS
+        // (bluetoothctl remove), drops it from the on-disk cache, and re-polls so
+        // the GUI receives a fresh device list. Sending the command (rather than
+        // calling bluetooth::unpair_device directly) is the single source of truth.
+        let _ = self.worker_tx.send(BackgroundTxCmd::Unpair(mac.clone()));
         Ok(Response::new(Self::ok()))
     }
 
@@ -329,6 +366,30 @@ impl MouserDaemon for MouserDaemonService {
         let stream = BroadcastStream::new(rx).filter_map(|r| r.ok()).map(Ok);
         Ok(Response::new(Box::pin(stream)))
     }
+
+    type WatchActionsRingStream =
+        Pin<Box<dyn Stream<Item = Result<ActionsRingState, Status>> + Send + 'static>>;
+
+    async fn watch_actions_ring(
+        &self,
+        _req: Request<Empty>,
+    ) -> Result<Response<Self::WatchActionsRingStream>, Status> {
+        let rx = self.actions_ring_tx.0.subscribe();
+        let stream = BroadcastStream::new(rx).filter_map(|r| r.ok()).map(Ok);
+        Ok(Response::new(Box::pin(stream)))
+    }
+
+    async fn execute_action(
+        &self,
+        req: Request<StringValue>,
+    ) -> Result<Response<StatusResponse>, Status> {
+        let action_id = req.into_inner().value;
+        self.engine.execute_engine_action(&action_id);
+        // Closing the ring after the selected action runs is the GUI's job,
+        // but broadcasting a close here also keeps the engine authoritative.
+        crate::grpc::broadcast_actions_ring(false, 0, "", "", &self.actions_ring_tx);
+        Ok(Response::new(Self::ok()))
+    }
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -339,7 +400,8 @@ impl MouserDaemon for MouserDaemonService {
 pub fn start_grpc_server(
     engine: Engine,
     socket_path: &Path,
-) -> anyhow::Result<(ConfigBroadcast, DeviceStateBroadcast)> {
+    worker_tx: Sender<BackgroundTxCmd>,
+) -> anyhow::Result<(ConfigBroadcast, DeviceStateBroadcast, ActionsRingBroadcast)> {
     // Remove stale socket if present.
     if socket_path.exists() {
         std::fs::remove_file(socket_path)?;
@@ -347,14 +409,18 @@ pub fn start_grpc_server(
 
     let (config_tx, _) = broadcast::channel::<ConfigResponse>(64);
     let (device_state_tx, _) = broadcast::channel::<DeviceStateResponse>(64);
+    let (actions_ring_tx, _) = broadcast::channel::<ActionsRingState>(64);
 
     let config_broadcast = ConfigBroadcast(config_tx.clone());
     let device_state_broadcast = DeviceStateBroadcast(device_state_tx.clone());
+    let actions_ring_broadcast = ActionsRingBroadcast(actions_ring_tx.clone());
 
     let svc = MouserDaemonService {
         engine,
         config_tx: ConfigBroadcast(config_tx),
         device_state_tx: DeviceStateBroadcast(device_state_tx),
+        actions_ring_tx: ActionsRingBroadcast(actions_ring_tx),
+        worker_tx,
     };
 
     let uds_path = socket_path.to_path_buf();
@@ -407,7 +473,11 @@ pub fn start_grpc_server(
         });
     });
 
-    Ok((config_broadcast, device_state_broadcast))
+    Ok((
+        config_broadcast,
+        device_state_broadcast,
+        actions_ring_broadcast,
+    ))
 }
 
 /// Push a fresh config snapshot to all watching GUI clients.
@@ -434,6 +504,24 @@ pub fn broadcast_device_state(
         has_active_hidpp_battery: update.has_active_hidpp_battery,
         paired_devices_json: paired_json,
         battery_status: update.battery_status.clone(),
+    };
+    let _ = tx.0.send(msg);
+}
+
+/// Push an Actions Ring open/close signal to all watching GUI clients.
+/// `layout_json` / `folders_json` are ignored when `open == false`.
+pub fn broadcast_actions_ring(
+    open: bool,
+    session_id: u64,
+    layout_json: &str,
+    folders_json: &str,
+    tx: &ActionsRingBroadcast,
+) {
+    let msg = proto::ActionsRingState {
+        open,
+        session_id,
+        layout_json: layout_json.to_string(),
+        folders_json: folders_json.to_string(),
     };
     let _ = tx.0.send(msg);
 }

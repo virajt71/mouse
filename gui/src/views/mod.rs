@@ -1,3 +1,4 @@
+pub mod actions_ring;
 pub mod customization;
 pub mod empty_state;
 pub mod select_connection;

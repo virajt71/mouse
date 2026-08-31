@@ -1,4 +1,4 @@
-use mouser_engine::config::{Config, Profile, ProfileGroup};
+use mouser_engine::config::{Config, DeviceKey, Profile};
 use mouser_engine::lock_ext::MutexExt;
 use mouser_engine::Engine;
 use std::collections::HashMap;
@@ -24,6 +24,18 @@ fn test_config_migration_roundtrip() {
 
     let parsed: Config = serde_json::from_str(old_json).unwrap();
     assert_eq!(parsed.settings.dpi, 1200);
+}
+
+fn device() -> DeviceKey {
+    DeviceKey::default()
+}
+
+fn setup_device_profiles(config: &mut Config, profiles: HashMap<String, Profile>) {
+    config
+        .devices
+        .entry(device())
+        .or_default()
+        .profiles = profiles;
 }
 
 #[test]
@@ -58,14 +70,21 @@ fn test_profile_matching_logic() {
         },
     );
 
-    config
-        .profile_groups
-        .insert("default".to_string(), ProfileGroup { profiles });
+    setup_device_profiles(&mut config, profiles);
     config.normalize_apps();
 
-    assert_eq!(config.get_profile_for_app("CHROME"), "chrome_profile");
-    assert_eq!(config.get_profile_for_app("firefox "), "firefox_profile");
-    assert_eq!(config.get_profile_for_app("other-app"), "global");
+    assert_eq!(
+        config.get_profile_for_app(&device(), "CHROME"),
+        "chrome_profile"
+    );
+    assert_eq!(
+        config.get_profile_for_app(&device(), "firefox "),
+        "firefox_profile"
+    );
+    assert_eq!(
+        config.get_profile_for_app(&device(), "other-app"),
+        "global"
+    );
 }
 
 #[test]
@@ -83,14 +102,14 @@ fn test_gesture_state_transitions() {
 fn test_profile_matching_empty_exe() {
     let config = Config::default();
     // Empty string should always fall back to "global"
-    assert_eq!(config.get_profile_for_app(""), "global");
+    assert_eq!(config.get_profile_for_app(&device(), ""), "global");
 }
 
 #[test]
 fn test_profile_matching_whitespace_exe() {
     let config = Config::default();
     // Whitespace-only exe should fall back to "global"
-    assert_eq!(config.get_profile_for_app("   "), "global");
+    assert_eq!(config.get_profile_for_app(&device(), "   "), "global");
 }
 
 #[test]
@@ -115,15 +134,22 @@ fn test_profile_matching_mixed_case() {
             icon: String::new(),
         },
     );
-    config
-        .profile_groups
-        .insert("default".to_string(), ProfileGroup { profiles });
+    setup_device_profiles(&mut config, profiles);
     config.normalize_apps();
 
     // Mixed case should normalize to lowercase before matching
-    assert_eq!(config.get_profile_for_app("CODE"), "vscode_profile");
-    assert_eq!(config.get_profile_for_app("Code"), "vscode_profile");
-    assert_eq!(config.get_profile_for_app("code"), "vscode_profile");
+    assert_eq!(
+        config.get_profile_for_app(&device(), "CODE"),
+        "vscode_profile"
+    );
+    assert_eq!(
+        config.get_profile_for_app(&device(), "Code"),
+        "vscode_profile"
+    );
+    assert_eq!(
+        config.get_profile_for_app(&device(), "code"),
+        "vscode_profile"
+    );
 }
 
 #[test]
@@ -148,14 +174,18 @@ fn test_profile_matching_no_match_returns_global() {
             icon: String::new(),
         },
     );
-    config
-        .profile_groups
-        .insert("default".to_string(), ProfileGroup { profiles });
+    setup_device_profiles(&mut config, profiles);
     config.normalize_apps();
 
     // Non-matching exe should return "global"
-    assert_eq!(config.get_profile_for_app("gimp"), "global");
-    assert_eq!(config.get_profile_for_app("terminal"), "global");
+    assert_eq!(
+        config.get_profile_for_app(&device(), "gimp"),
+        "global"
+    );
+    assert_eq!(
+        config.get_profile_for_app(&device(), "terminal"),
+        "global"
+    );
 }
 
 // §6.1 — Gesture button clear regression (§3.2 fix)
@@ -165,7 +195,7 @@ fn test_gesture_button_cleared_after_up() {
 
     // Simulate an up event when gesture was never activated.
     // Before the §3.2 fix, this left state.button populated.
-    engine.handle_gesture_up();
+    engine.handle_gesture_up(&device());
 
     let state = engine.inner.gesture_state.lock_safe();
     // button must be None after any up event, even on an idle engine
@@ -189,15 +219,13 @@ fn test_normalize_apps_idempotent() {
             icon: String::new(),
         },
     );
-    config
-        .profile_groups
-        .insert("default".to_string(), ProfileGroup { profiles });
+    setup_device_profiles(&mut config, profiles);
 
     // Already normalized — calling twice should be a no-op
     config.normalize_apps();
     config.normalize_apps();
 
-    let group = config.profile_groups.get("default").unwrap();
-    let global = group.profiles.get("global").unwrap();
+    let device_profiles = config.devices.get(&device()).unwrap();
+    let global = device_profiles.profiles.get("global").unwrap();
     assert_eq!(global.apps, vec!["chrome", "firefox"]);
 }

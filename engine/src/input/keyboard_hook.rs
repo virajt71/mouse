@@ -188,7 +188,7 @@ impl KeyboardHook {
                                             if key_code == Key::KEY_KBDILLUMTOGGLE.0 {
                                                 if event.value() == 1 {
                                                     log::info!("[KeyboardHook] Captured Fn + Lightbulb (KEY_KBDILLUMTOGGLE). Cycling backlight effect...");
-                                                    engine.cycle_backlight_effect();
+                                                    engine.cycle_backlight_effect(&engine.active_device_key());
                                                 }
                                                 should_forward = false;
                                             } else {

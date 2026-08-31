@@ -56,7 +56,7 @@ pub fn draw_gesture_config_ui(
         Color32::from_rgb(0, 245, 198), // Teal `#00f5c6`
     );
 
-    let profile = match config.get_profile(&config.active_app_profile) {
+    let profile = match config.get_profile(&engine.active_device_key(), &config.active_app_profile) {
         Some(p) => p,
         None => return clicked_away,
     };
@@ -213,7 +213,7 @@ pub fn draw_gesture_config_ui(
         mps.insert(up_key.to_string(), preset.up.to_string());
         mps.insert(down_key.to_string(), preset.down.to_string());
         mps.insert(click_key.to_string(), preset.click.to_string());
-        engine.update_profile_mappings(&config.active_app_profile, mps);
+        engine.update_profile_mappings(&engine.active_device_key(), &config.active_app_profile, mps);
     }
 
     content_ui.add_space(8.0);
@@ -406,7 +406,7 @@ pub fn draw_gesture_config_ui(
                 let resolved = resolve_generic_slot_action(&act_val, dir);
                 let mut mps = profile.mappings.clone();
                 mps.insert(key_str.to_string(), resolved);
-                engine.update_profile_mappings(&config.active_app_profile, mps);
+                engine.update_profile_mappings(&engine.active_device_key(), &config.active_app_profile, mps);
             }
         }
     }

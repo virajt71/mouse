@@ -1,10 +1,5 @@
 # Rust build output
 /target
-/graphify-out
-/packaging/linux/mouser.desktop
-/packaging/linux/mouser.service
-/packaging/linux/mouser.spec
-/packaging/linux/PKGBUILD
 /.github
 /.agents
 /.claude

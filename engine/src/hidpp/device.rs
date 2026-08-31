@@ -169,6 +169,19 @@ impl HidppClient {
         get_layout_key_from_name(&self.device_name)
     }
 
+    /// Stable per-device identity used as the key for per-device profile stores.
+    /// Serial = HID++ device name, layout = layout key. Falls back to layout
+    /// only when the name is the default "None".
+    pub fn device_key(&self) -> crate::config::DeviceKey {
+        let layout = self.get_layout_key();
+        let serial = if self.device_name == "None" {
+            String::new()
+        } else {
+            self.device_name.clone()
+        };
+        crate::config::DeviceKey { serial, layout }
+    }
+
     /// Open the first reachable HID++ device and probe only the battery
     /// features — no REPROG_V4 requirement, no gesture diversion. Used by the
     /// background worker for battery polling so it never disturbs installed

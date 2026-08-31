@@ -232,10 +232,11 @@ pub fn show(
             // Gap ~14px
             ui.add_space(14.0);
 
-            // Get custom profiles sorted alphabetically from active group
+            // Get custom profiles sorted alphabetically from active device
             let mut custom_profiles: Vec<String> = Vec::new();
-            if let Some(group) = config.profile_groups.get(&config.active_group) {
-                custom_profiles = group
+            let device_key = engine.active_device_key();
+            if let Some(device_profiles) = config.devices.get(&device_key) {
+                custom_profiles = device_profiles
                     .profiles
                     .keys()
                     .filter(|k| *k != "global")
@@ -248,7 +249,7 @@ pub fn show(
             for p_name in custom_profiles.iter().rev() {
                 let is_active = config.active_app_profile == *p_name;
                 let profile_icon = config
-                    .get_profile(p_name)
+                    .get_profile(&engine.active_device_key(), p_name)
                     .map(|p| p.icon.as_str())
                     .unwrap_or("");
 
@@ -329,7 +330,7 @@ pub fn show(
                 }
 
                 if p_res.clicked() && !delete_clicked {
-                    engine.select_profile(p_name);
+                    engine.select_profile(&engine.active_device_key(), p_name);
                     config.active_app_profile = p_name.clone();
                 }
 
@@ -345,7 +346,7 @@ pub fn show(
             }
 
             if grid_res.clicked() {
-                engine.select_profile("global");
+                engine.select_profile(&engine.active_device_key(), "global");
                 config.active_app_profile = "global".to_string();
             }
 
@@ -607,7 +608,7 @@ pub fn show(
                     if is_valid_combo(&recorded) {
                         // Save the shortcut safely
                         let profile_name = &config.active_app_profile;
-                        if let Some(profile) = config.get_profile(profile_name).or_else(|| config.get_profile("global")) {
+                        if let Some(profile) = config.get_profile(&engine.active_device_key(), profile_name).or_else(|| config.get_profile(&engine.active_device_key(), "global")) {
                             let mut mappings = profile.mappings.clone();
                             let action_str = format!("custom:{}", recorded);
                             match &target {
@@ -630,7 +631,7 @@ pub fn show(
                                     mappings.insert(key_to_update.to_string(), action_str);
                                 }
                             }
-                            engine.update_profile_mappings(profile_name, mappings);
+                            engine.update_profile_mappings(&engine.active_device_key(), profile_name, mappings);
                         }
                     }
                     RECORDING_TARGET.with(|r| *r.borrow_mut() = None);
@@ -684,7 +685,7 @@ pub fn show(
             crate::widgets::show_confirm_dialog(ctx, &title, body, "Delete profile", "Cancel")
         {
             if confirmed {
-                engine.delete_profile(&profile);
+                engine.delete_profile(&engine.active_device_key(), &profile);
             }
             CONFIRM_DELETE_PROFILE.with(|c| *c.borrow_mut() = None);
         }

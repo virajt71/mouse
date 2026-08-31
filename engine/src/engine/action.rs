@@ -8,6 +8,22 @@ impl Engine {
             return;
         }
 
+        // Smart Action: run a named multi-step macro from settings.
+        if let Some(macro_name) = action_id.strip_prefix("macro:") {
+            let steps = {
+                let cfg = self.inner.config.lock_safe();
+                cfg.settings.macros.get(macro_name).cloned()
+            };
+            if let Some(steps) = steps {
+                for step in steps {
+                    self.execute_engine_action(&step);
+                }
+            } else {
+                log::warn!("[Engine] Unknown macro referenced by ring: {macro_name}");
+            }
+            return;
+        }
+
         if action_id == "toggle_smart_shift" {
             self.toggle_smart_shift();
         } else if action_id == "switch_scroll_mode" {
@@ -16,6 +32,42 @@ impl Engine {
             self.cycle_dpi();
         } else {
             self.inner.key_simulator.execute_action(action_id);
+        }
+    }
+
+    /// Open the Actions Ring overlay in the GUI with the layout for the
+    /// currently focused application. Bails out if the ring is disabled or no
+    /// GUI broadcast handle is wired in.
+    pub fn open_actions_ring(&self) {
+        let (enabled, layout_json) = {
+            let cfg = self.inner.config.lock_safe();
+            if !cfg.settings.actions_ring.enabled {
+                return;
+            }
+            let app = self.inner.last_detected_exe.lock_safe().clone();
+            let app_id = if app.is_empty() {
+                None
+            } else {
+                Some(app.as_str())
+            };
+            let layout = cfg.settings.actions_ring.effective_layout(app_id);
+            let json = serde_json::to_string(&layout).unwrap_or_default();
+            (true, json)
+        };
+        if !enabled {
+            return;
+        }
+        let session_id = self
+            .inner
+            .actions_ring_session
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            + 1;
+        let folders_json = {
+            let cfg = self.inner.config.lock_safe();
+            serde_json::to_string(&cfg.settings.actions_ring.folders).unwrap_or_default()
+        };
+        if let Some(bc) = self.inner.actions_ring_bc.lock_safe().as_ref() {
+            crate::grpc::broadcast_actions_ring(true, session_id, &layout_json, &folders_json, bc);
         }
     }
 

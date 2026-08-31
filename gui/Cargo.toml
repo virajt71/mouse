@@ -13,6 +13,7 @@ dirs = "6.0.0"
 ureq = { version = "2.10", default-features = false, features = ["tls", "json"] }
 sha2 = "0.10"
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 mouser_engine = { path = "../engine" }
 
 log = "0.4"

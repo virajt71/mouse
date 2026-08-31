@@ -11,7 +11,7 @@ use crate::lock_ext::MutexExt;
 use std::collections::HashMap;
 use std::sync::{
     atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
-    Arc, Mutex,
+    Arc, Mutex, RwLock,
 };
 use std::time::Instant;
 
@@ -45,7 +45,6 @@ impl Engine {
         {
             key_simulator.set_keyboard_layout(layout);
         }
-        let current_profile = "global".to_string();
 
         let invert_vscroll = config.settings.invert_vscroll;
         let invert_hscroll = config.settings.invert_hscroll;
@@ -67,9 +66,7 @@ impl Engine {
             hid_clients: Mutex::new(Vec::new()),
             selected_device_idx: Mutex::new(0),
             running: AtomicBool::new(false),
-            current_profile: Mutex::new(current_profile.clone()),
-            active_mappings: Arc::new(std::sync::RwLock::new(HashMap::new())),
-            active_profile_shared: Arc::new(Mutex::new(current_profile)),
+            per_device: Mutex::new(HashMap::new()),
             last_detected_exe: Mutex::new(String::new()),
 
             blocked_buttons_arc: Arc::new(Mutex::new(Vec::new())),
@@ -101,12 +98,14 @@ impl Engine {
             cached_gesture_cooldown_ms: AtomicU64::new(init_gesture_cooldown_ms),
             cached_hscroll_threshold: AtomicU32::new(init_hscroll_threshold),
             config_change_listener: Mutex::new(None),
+            actions_ring_bc: Mutex::new(None),
+            actions_ring_session: AtomicU64::new(0),
         };
 
         let engine = Engine {
             inner: Arc::new(inner),
         };
-        engine.refresh_active_profile();
+        engine.refresh_active_profile(&crate::config::DeviceKey::default());
         engine
     }
 
@@ -124,7 +123,7 @@ impl Engine {
         self.inner.gesture_tracking.store(false, Ordering::Relaxed);
         self.inner.gesture_triggered.store(false, Ordering::Relaxed);
 
-        self.refresh_active_profile();
+        self.refresh_active_profile(&crate::config::DeviceKey::default());
 
         let _ = self.restart_keyboard_hooks();
 
@@ -132,7 +131,20 @@ impl Engine {
         if app_det_lock.is_none() {
             let engine = self.clone();
             let mut app_det = AppDetector::new(move |exe_name| {
-                engine.handle_app_change(exe_name);
+                // App change applies to every known device independently: each
+                // device re-resolves its own per-app profile from the shared
+                // foreground exe.
+                let keys: Vec<crate::config::DeviceKey> = {
+                    let cfg = engine.inner.config.lock_safe();
+                    cfg.devices.keys().cloned().collect()
+                };
+                if keys.is_empty() {
+                    engine.handle_app_change(&crate::config::DeviceKey::default(), exe_name);
+                } else {
+                    for k in keys {
+                        engine.handle_app_change(&k, exe_name.clone());
+                    }
+                }
             });
             app_det.start();
             *app_det_lock = Some(app_det);
@@ -188,7 +200,13 @@ impl Engine {
     }
 
     pub fn active_profile_shared(&self) -> Arc<Mutex<String>> {
-        self.inner.active_profile_shared.clone()
+        let key = self.active_device_key();
+        let map = self.inner.per_device.lock_safe();
+        let shared = map
+            .get(&key)
+            .map(|s| s.active_profile_shared.clone())
+            .unwrap_or_else(|| "global".to_string());
+        Arc::new(Mutex::new(shared))
     }
 
     pub fn config_generation(&self) -> u64 {
@@ -212,6 +230,13 @@ impl Engine {
         *self.inner.config_change_listener.lock_safe() = Some(Box::new(listener));
     }
 
+    /// Wire the Actions Ring broadcast handle (called by the daemon after the
+    /// gRPC server starts). The engine uses it to signal the GUI to open/close
+    /// the ring when the "Show Actions Ring" button is pressed.
+    pub fn set_actions_ring_broadcast(&self, bc: crate::grpc::ActionsRingBroadcast) {
+        *self.inner.actions_ring_bc.lock_safe() = Some(bc);
+    }
+
     pub fn update_cached_device_state(&self) {
         let clients = self.inner.hid_clients.lock_safe();
         let idx = *self.inner.selected_device_idx.lock_safe();
@@ -232,9 +257,35 @@ impl Engine {
         let mut cached = self.inner.cached_device_state.lock_safe();
         cached.device_connected = device_connected;
         cached.device_names = device_names;
-        cached.selected_device_name = selected_device_name;
-        cached.selected_device_layout = selected_device_layout;
+        cached.selected_device_name = selected_device_name.clone();
+        cached.selected_device_layout = selected_device_layout.clone();
         cached.active_host_channel = active_host_channel;
+    }
+
+    /// Device key for the currently selected device (used by the evdev mouse
+    /// hook, which doesn't carry HID++ identity itself).
+    pub fn active_device_key(&self) -> crate::config::DeviceKey {
+        let cached = self.inner.cached_device_state.lock_safe();
+        // Identity is the model/layout (stable across reconnects); the serial is
+        // volatile and only used to disambiguate two same-model devices. This
+        // keeps reads/writes on the per-model entry activated at connect time.
+        crate::config::DeviceKey {
+            serial: String::new(),
+            layout: cached.selected_device_layout.clone(),
+        }
+    }
+
+    /// Per-device active mappings arc (created if absent), for input hooks that
+    /// need a shared reference to resolve remaps for a specific device.
+    pub fn device_mappings_arc(
+        &self,
+        device: &crate::config::DeviceKey,
+    ) -> Arc<RwLock<HashMap<String, Arc<str>>>> {
+        let mut map = self.inner.per_device.lock_safe();
+        map.entry(device.clone())
+            .or_insert_with(Default::default)
+            .active_mappings
+            .clone()
     }
 
     pub fn device_connected(&self) -> bool {

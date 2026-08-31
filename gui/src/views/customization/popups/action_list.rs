@@ -43,7 +43,7 @@ pub fn draw_button_action_popup(
         .rect_stroke(rect, 2.0, Stroke::new(1.0, border));
     theme::draw_tech_corners(ui.painter(), rect, theme::accent_color(ui.ctx()), 6.0);
 
-    let profile = match config.get_profile(&config.active_app_profile) {
+    let profile = match config.get_profile(&_engine.active_device_key(), &config.active_app_profile) {
         Some(p) => p,
         None => return clicked_away,
     };

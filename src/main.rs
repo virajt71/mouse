@@ -87,8 +87,14 @@ fn main() -> Result<(), eframe::Error> {
             return Ok(());
         }
 
-        let (config_bc, device_state_bc) =
-            match engine::grpc::start_grpc_server(engine.clone(), &grpc_socket_path) {
+        // Background worker owns the paired-device cache and is the single source
+        // of truth for (un)pairing. Spawn it before the gRPC server so its command
+        // channel can be handed to the server (unpair_device RPC forwards to it).
+        let (worker_tx, worker_rx) =
+            engine::worker::spawn_background_worker(move || {}, engine.active_profile_shared());
+
+        let (config_bc, device_state_bc, actions_ring_bc) =
+            match engine::grpc::start_grpc_server(engine.clone(), &grpc_socket_path, worker_tx) {
                 Ok(res) => res,
                 Err(e) => {
                     log::error!("Failed to start gRPC server: {}", e);
@@ -96,6 +102,9 @@ fn main() -> Result<(), eframe::Error> {
                     return Ok(());
                 }
             };
+
+        // Wire the Actions Ring broadcast so "Show Actions Ring" presses open the overlay.
+        engine.set_actions_ring_broadcast(actions_ring_bc.clone());
 
         // Broadcast config changes over gRPC
         let config_bc_clone = config_bc.clone();
@@ -105,8 +114,6 @@ fn main() -> Result<(), eframe::Error> {
 
         // Broadcast device state changes over gRPC
         let dev_bc_clone = device_state_bc.clone();
-        let (_worker_tx, worker_rx) =
-            engine::worker::spawn_background_worker(move || {}, engine.active_profile_shared());
         std::thread::spawn(move || {
             while let Ok(update) = worker_rx.recv() {
                 engine::grpc::broadcast_device_state(&update, &dev_bc_clone);

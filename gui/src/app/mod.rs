@@ -65,6 +65,11 @@ pub struct MouserApp {
     pub(crate) config_rx: std::sync::mpsc::Receiver<mouser_engine::config::Config>,
     // Hardware polling channel — filled by the gRPC WatchDeviceState stream
     pub(crate) rx: std::sync::mpsc::Receiver<mouser_engine::worker::DeviceStateUpdate>,
+    // Actions Ring open/close signal channel — filled by the gRPC WatchActionsRing stream
+    pub(crate) actions_ring_rx:
+        std::sync::mpsc::Receiver<mouser_engine::grpc::server::proto::ActionsRingState>,
+    /// Live ring state: Some while the overlay is shown, None when idle.
+    pub(crate) actions_ring: Option<crate::views::actions_ring::RingState>,
     pub(crate) battery_pct: String,
     pub(crate) battery_status: String,
     pub(crate) has_active_hidpp_battery: Option<bool>,
@@ -134,6 +139,14 @@ impl MouserApp {
             repaint_ctx_device.request_repaint();
         });
 
+        // Subscribe to Actions Ring open/close signals via WatchActionsRing.
+        let (ring_tx, actions_ring_rx) =
+            std::sync::mpsc::channel::<mouser_engine::grpc::server::proto::ActionsRingState>();
+        let repaint_ctx_ring = ctx.clone();
+        std::sync::Arc::new(engine.clone()).subscribe_actions_ring(ring_tx, move || {
+            repaint_ctx_ring.request_repaint();
+        });
+
         Self {
             tray_icon,
             current_tray_icon_type: "mouse".to_string(),
@@ -156,6 +169,8 @@ impl MouserApp {
             config_changed_flag,
             config_rx,
             rx,
+            actions_ring_rx,
+            actions_ring: None,
             battery_pct: "0".to_string(),
             battery_status: String::new(),
             has_active_hidpp_battery: None,
@@ -191,6 +206,16 @@ impl MouserApp {
                 self.last_config_generation = self.engine.config_generation();
             }
         }
+    }
+
+    /// Dismiss the ring and restore the window out of fullscreen-overlay mode.
+    pub fn close_actions_ring(&mut self, ctx: &egui::Context) {
+        if self.actions_ring.is_some() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(true));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Transparent(false));
+        }
+        self.actions_ring = None;
     }
 }
 

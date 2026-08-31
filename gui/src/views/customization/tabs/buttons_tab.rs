@@ -33,8 +33,8 @@ pub fn show_buttons_tab(
 
     // 2. Fetch active mappings
     let profile = config
-        .get_profile(&config.active_app_profile)
-        .unwrap_or_else(|| config.get_profile("global").unwrap());
+        .get_profile(&engine.active_device_key(), &config.active_app_profile)
+        .unwrap_or_else(|| config.get_profile(&engine.active_device_key(), "global").unwrap());
 
     let middle_val = mapping_to_action(CustomizingButton::Middle, &profile.mappings);
     let top_val = mapping_to_action(CustomizingButton::Top, &profile.mappings);
@@ -354,10 +354,10 @@ pub fn show_buttons_tab(
                         if opt == ThumbwheelOption::KeyboardShortcut {
                             // Leave it in ActionList view; inline buttons handle transitions.
                             save_thumbwheel_option(opt, &mut mappings);
-                            engine.update_profile_mappings(&config.active_app_profile, mappings);
+                            engine.update_profile_mappings(&engine.active_device_key(), &config.active_app_profile, mappings);
                         } else {
                             save_thumbwheel_option(opt, &mut mappings);
-                            engine.update_profile_mappings(&config.active_app_profile, mappings);
+                            engine.update_profile_mappings(&engine.active_device_key(), &config.active_app_profile, mappings);
                             *customizing_button = None;
                         }
                     }
@@ -381,7 +381,7 @@ pub fn show_buttons_tab(
                         if opt == UniversalButtonOption::Gesture {
                             // Persist gesture_enabled = "true"
                             save_button_option(btn, opt, &mut mappings);
-                            engine.update_profile_mappings(&config.active_app_profile, mappings);
+                            engine.update_profile_mappings(&engine.active_device_key(), &config.active_app_profile, mappings);
                             // Then show the gesture configuration panel
                             ui.ctx().data_mut(|d| {
                                 d.insert_temp(view_state_id, PopupView::GesturesConfig)
@@ -407,7 +407,7 @@ pub fn show_buttons_tab(
                             });
                         } else {
                             save_button_option(btn, opt, &mut mappings);
-                            engine.update_profile_mappings(&config.active_app_profile, mappings);
+                            engine.update_profile_mappings(&engine.active_device_key(), &config.active_app_profile, mappings);
                             *customizing_button = None;
                         }
                     }

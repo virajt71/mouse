@@ -157,10 +157,11 @@ fn handle_status() -> Result<(), Box<dyn Error>> {
 fn handle_profile_list() -> Result<(), Box<dyn Error>> {
     let client = connect_client()?;
     let config = client.get_config();
+    let device_key = client.active_device_key();
 
-    if let Some(group) = config.profile_groups.get(&config.active_group) {
-        println!("Profiles in group '{}':", config.active_group);
-        for (pname, pdata) in &group.profiles {
+    if let Some(device_profiles) = config.devices.get(&device_key) {
+        println!("Profiles for {}:", device_key.serial);
+        for (pname, pdata) in &device_profiles.profiles {
             let active_marker = if pname == &config.active_app_profile {
                 " (active)"
             } else {
@@ -176,8 +177,8 @@ fn handle_profile_list() -> Result<(), Box<dyn Error>> {
         }
     } else {
         println!(
-            "No profiles found in active group '{}'.",
-            config.active_group
+            "No profiles found for device '{}'.",
+            device_key.serial
         );
     }
     Ok(())
@@ -193,17 +194,18 @@ fn handle_profile_get() -> Result<(), Box<dyn Error>> {
 fn handle_profile_set(name: &str) -> Result<(), Box<dyn Error>> {
     let client = connect_client()?;
     let config = client.get_config();
+    let device_key = client.active_device_key();
 
-    if let Some(group) = config.profile_groups.get(&config.active_group) {
-        if !group.profiles.contains_key(name) {
+    if let Some(device_profiles) = config.devices.get(&device_key) {
+        if !device_profiles.profiles.contains_key(name) {
             println!(
-                "Warning: Profile '{}' does not exist in group '{}'. Setting anyway.",
-                name, config.active_group
+                "Warning: Profile '{}' does not exist for device '{}'. Setting anyway.",
+                name, device_key.serial
             );
         }
     }
 
-    client.select_profile(name);
+    client.select_profile(&device_key, name);
     println!("Active profile updated to '{}'.", name);
     Ok(())
 }

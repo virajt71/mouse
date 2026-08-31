@@ -4,10 +4,11 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use crate::config::Config;
+use crate::config::{Config, DeviceKey};
 use crate::detection::AppDetector;
 use crate::hidpp::HidppClient;
 use crate::input::{KeySimulator, KeyboardHook, MouseHook};
+use crate::lock_ext::MutexExt;
 
 use super::modifier_state::ModifierState;
 
@@ -29,6 +30,19 @@ pub struct CachedDeviceState {
     pub active_host_channel: Option<u8>,
 }
 
+/// Per-device resolved runtime state. Each physical device (keyed by
+/// `DeviceKey`) keeps its own active profile + mappings so a per-app profile on
+/// the mouse never bleeds onto the keyboard (and vice versa).
+#[derive(Clone, Default, Debug)]
+pub struct PerDeviceState {
+    pub current_profile: String,
+    pub active_profile_shared: String,
+    pub last_detected_exe: String,
+    pub active_mappings: Arc<std::sync::RwLock<HashMap<String, std::sync::Arc<str>>>>,
+    pub blocked_buttons: Vec<Key>,
+    pub block_hscroll: bool,
+}
+
 pub struct EngineInner {
     pub cached_device_state: Mutex<CachedDeviceState>,
     pub config: Mutex<Config>,
@@ -41,12 +55,12 @@ pub struct EngineInner {
     pub hid_clients: Mutex<Vec<HidppClient>>,
     pub selected_device_idx: Mutex<usize>,
     pub running: AtomicBool,
-    pub current_profile: Mutex<String>,
-    pub active_mappings: Arc<std::sync::RwLock<HashMap<String, std::sync::Arc<str>>>>,
-    pub active_profile_shared: Arc<Mutex<String>>,
+    /// Per-device resolved state, keyed by `DeviceKey` (layout + HID++ name).
+    pub per_device: Mutex<HashMap<DeviceKey, PerDeviceState>>,
+    /// Shared fallback exe cache (kept for single-device callers / migration).
     pub last_detected_exe: Mutex<String>,
 
-    // Shared state variables with MouseHook
+    // Shared state variables with MouseHook (global gesture settings)
     pub blocked_buttons_arc: Arc<Mutex<Vec<Key>>>,
     pub invert_vscroll_arc: Arc<AtomicBool>,
     pub invert_hscroll_arc: Arc<AtomicBool>,
@@ -81,4 +95,20 @@ pub struct EngineInner {
     pub modifier_state: Arc<ModifierState>,
 
     pub config_change_listener: Mutex<Option<Box<dyn Fn(&Config, u64) + Send + Sync + 'static>>>,
+
+    /// Handle used to push Actions Ring open/close signals to GUI clients.
+    /// None until the daemon wires it in after starting the gRPC server.
+    pub actions_ring_bc: Mutex<Option<crate::grpc::ActionsRingBroadcast>>,
+    /// Monotonic id for the current ring session (stale close signals ignored).
+    pub actions_ring_session: AtomicU64,
+}
+
+impl EngineInner {
+    /// Get (creating if absent) the per-device state for `key`.
+    pub fn device_state(&self, key: &DeviceKey) -> PerDeviceState {
+        let mut map = self.per_device.lock_safe();
+        map.entry(key.clone())
+            .or_insert_with(PerDeviceState::default)
+            .clone()
+    }
 }

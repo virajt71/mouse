@@ -8,13 +8,13 @@ use std::{collections::HashMap, path::Path, sync::mpsc::Sender, sync::Arc};
 
 use tonic::transport::{Channel, Endpoint, Uri};
 
-use crate::{config::Config, worker::DeviceStateUpdate};
+use crate::{config::{Config, DeviceKey}, worker::DeviceStateUpdate};
 
 // The generated tonic client stub lives in the proto submodule.
 use crate::grpc::server::proto::mouser_daemon_client::MouserDaemonClient;
 use crate::grpc::server::proto::{
-    AppBindingsRequest, Empty, ProfileIconRequest, ProfileMappingsRequest, SettingsJson,
-    StringValue,
+    ActionsRingState, AppBindingsRequest, DeviceKey as ProtoDeviceKey, DeviceProfileRequest,
+    Empty, ProfileIconRequest, ProfileMappingsRequest, SettingsJson, StringValue,
 };
 
 // ─── EngineClient ─────────────────────────────────────────────────────────────
@@ -162,49 +162,121 @@ impl EngineClient {
 
     // ─── Profile API (mirrors Engine) ────────────────────────────────────────
 
-    pub fn select_profile(&self, name: &str) {
-        let v = name.to_string();
-        self.call_ok(|mut s| async move { s.select_profile(StringValue { value: v }).await });
+    /// Device key for the currently selected device (mirrors `Engine`).
+    /// Resolves the key from the daemon's actual `Config.devices` map rather
+    /// than re-deriving the layout from the name, so it always matches the key
+    /// the daemon stored profiles under (which may be a Product-ID-based
+    /// layout). Falls back to name-derived key when the config isn't cached.
+    pub fn active_device_key(&self) -> DeviceKey {
+        let name = self.selected_device_name();
+        if let Ok(guard) = self.last_config.lock() {
+            let cfg = &guard.1;
+            // Exact serial match first.
+            if let Some(key) = cfg
+                .devices
+                .keys()
+                .find(|k| k.serial == name)
+                .cloned()
+            {
+                return key;
+            }
+            // Layout-only fallback (serial-less key, e.g. evdev path).
+            let layout = crate::hidpp::device::get_layout_key_from_name(&name);
+            if let Some(key) = cfg
+                .devices
+                .keys()
+                .find(|k| k.serial.is_empty() && k.layout == layout)
+                .cloned()
+            {
+                return key;
+            }
+        }
+        let layout = crate::hidpp::device::get_layout_key_from_name(&name);
+        DeviceKey { serial: String::new(), layout }
     }
 
-    pub fn add_profile(&self, name: &str) {
-        let v = name.to_string();
-        self.call_ok(|mut s| async move { s.add_profile(StringValue { value: v }).await });
+    pub fn select_profile(&self, device: &DeviceKey, name: &str) {
+        let device = Some(ProtoDeviceKey {
+            serial: device.serial.clone(),
+            layout: device.layout.clone(),
+        });
+        let req = DeviceProfileRequest {
+            name: name.to_string(),
+            device,
+        };
+        self.call_ok(|mut s| async move { s.select_profile(req).await });
     }
 
-    pub fn delete_profile(&self, name: &str) {
-        let v = name.to_string();
-        self.call_ok(|mut s| async move { s.delete_profile(StringValue { value: v }).await });
+    pub fn add_profile(&self, device: &DeviceKey, name: &str) {
+        let device = Some(ProtoDeviceKey {
+            serial: device.serial.clone(),
+            layout: device.layout.clone(),
+        });
+        let req = DeviceProfileRequest {
+            name: name.to_string(),
+            device,
+        };
+        self.call_ok(|mut s| async move { s.add_profile(req).await });
     }
 
-    pub fn update_profile_mappings(&self, profile_name: &str, mappings: HashMap<String, String>) {
+    pub fn delete_profile(&self, device: &DeviceKey, name: &str) {
+        let device = Some(ProtoDeviceKey {
+            serial: device.serial.clone(),
+            layout: device.layout.clone(),
+        });
+        let req = DeviceProfileRequest {
+            name: name.to_string(),
+            device,
+        };
+        self.call_ok(|mut s| async move { s.delete_profile(req).await });
+    }
+
+    pub fn update_profile_mappings(&self, device: &DeviceKey, profile_name: &str, mappings: HashMap<String, String>) {
+        let device = Some(ProtoDeviceKey {
+            serial: device.serial.clone(),
+            layout: device.layout.clone(),
+        });
         let profile_name = profile_name.to_string();
         let mappings_json = serde_json::to_string(&mappings).unwrap_or_default();
         self.call_ok(|mut s| async move {
             s.update_profile_mappings(ProfileMappingsRequest {
                 profile_name,
                 mappings_json,
+                device,
             })
             .await
         });
     }
 
-    pub fn update_app_bindings(&self, profile_name: &str, exec: &str) {
+    pub fn update_app_bindings(&self, device: &DeviceKey, profile_name: &str, exec: &str) {
+        let device = Some(ProtoDeviceKey {
+            serial: device.serial.clone(),
+            layout: device.layout.clone(),
+        });
         let profile_name = profile_name.to_string();
         let exec = exec.to_string();
         self.call_ok(|mut s| async move {
-            s.update_app_bindings(AppBindingsRequest { profile_name, exec })
-                .await
+            s.update_app_bindings(AppBindingsRequest {
+                profile_name,
+                exec,
+                device,
+            })
+            .await
         });
     }
 
-    pub fn set_profile_icon(&self, profile_name: &str, icon_data: &str) {
+    pub fn set_profile_icon(&self, device: &DeviceKey, profile_name: &str, icon_data: &str) {
+        let device = Some(ProtoDeviceKey {
+            serial: device.serial.clone(),
+            layout: device.layout.clone(),
+        });
         let profile_name = profile_name.to_string();
         let icon_data = icon_data.to_string();
         self.call_ok(|mut s| async move {
             s.set_profile_icon(ProfileIconRequest {
                 profile_name,
                 icon_data,
+                device,
             })
             .await
         });
@@ -365,6 +437,46 @@ impl EngineClient {
             if let Err(e) = result {
                 log::warn!("[EngineClient] device-state stream ended: {e}");
             }
+        });
+    }
+
+    /// Spawn a background thread that streams Actions Ring open/close signals
+    /// and pushes them into `tx`. Each `ActionsRingState` carries whether the
+    /// ring is open and, when open, the serialised per-app layout JSON.
+    pub fn subscribe_actions_ring(
+        self: Arc<Self>,
+        tx: Sender<ActionsRingState>,
+        repaint: impl Fn() + Send + 'static,
+    ) {
+        let client = self.clone();
+        std::thread::spawn(move || {
+            let mut stub = client.stub.clone();
+            let result = client.rt.block_on(async {
+                let mut stream = stub.watch_actions_ring(Empty {}).await?.into_inner();
+                while let Some(item) = stream.message().await? {
+                    if tx.send(item).is_err() {
+                        break; // GUI dropped the receiver — exit cleanly.
+                    }
+                    repaint();
+                }
+                Ok::<_, tonic::Status>(())
+            });
+            if let Err(e) = result {
+                log::warn!("[EngineClient] actions-ring stream ended: {e}");
+            }
+        });
+    }
+
+    /// Ask the engine to execute an action by id (used when a ring slot is
+    /// activated). Mirrors `Engine::execute_engine_action`.
+    pub fn execute_action(&self, action_id: &str) {
+        let client = self.clone();
+        let action_id = action_id.to_string();
+        std::thread::spawn(move || {
+            let mut stub = client.stub.clone();
+            let _ = client
+                .rt
+                .block_on(async { stub.execute_action(StringValue { value: action_id }).await });
         });
     }
 }

@@ -1,3 +1,4 @@
+use crate::config::DeviceKey;
 use crate::lock_ext::MutexExt;
 use evdev::Key;
 use std::sync::atomic::Ordering;
@@ -8,7 +9,15 @@ use crate::hidpp::HidppEvent;
 use crate::input::{get_mouse_button_key, is_mouse_button_action, MouseHookEvent};
 
 impl Engine {
-    pub fn handle_mouse_hook_event(&self, event: MouseHookEvent) {
+    /// Resolve the active mappings for a device, falling back to an empty map.
+    fn device_mappings(&self, device: &DeviceKey) -> std::collections::HashMap<String, std::sync::Arc<str>> {
+        let map = self.inner.per_device.lock_safe();
+        map.get(device)
+            .map(|s| s.active_mappings.read().unwrap().clone())
+            .unwrap_or_default()
+    }
+
+    pub fn handle_mouse_hook_event(&self, device: &DeviceKey, event: MouseHookEvent) {
         match event {
             MouseHookEvent::Button { key, down } => {
                 let btn_key = if key == Key::BTN_MIDDLE {
@@ -22,7 +31,7 @@ impl Engine {
                 };
 
                 let gestures_enabled = {
-                    let active = self.inner.active_mappings.read().unwrap();
+                    let active = self.device_mappings(device);
                     let enabled_key = if btn_key == "middle" {
                         "middle_gesture_enabled"
                     } else if btn_key == "xbutton1" {
@@ -64,19 +73,27 @@ impl Engine {
                             state.button.as_ref() == Some(&btn_key.to_string())
                         };
                         if is_current {
-                            self.handle_gesture_up();
+                            self.handle_gesture_up(device);
                         }
                     }
                     return;
                 }
 
                 let mapping = {
-                    let active = self.inner.active_mappings.read().unwrap();
+                    let active = self.device_mappings(device);
                     active.get(btn_key).cloned()
                 };
 
                 if let Some(action_id) = mapping {
                     if action_id.as_ref() == "none" {
+                        return;
+                    }
+                    if action_id.as_ref() == "show_actions_ring" {
+                        // Open the radial menu overlay (handled by the GUI);
+                        // engine just signals it on press.
+                        if down {
+                            self.open_actions_ring();
+                        }
                         return;
                     }
                     if is_mouse_button_action(action_id.as_ref()) {
@@ -101,7 +118,7 @@ impl Engine {
                     };
 
                     let mapping = {
-                        let active = self.inner.active_mappings.read().unwrap();
+                        let active = self.device_mappings(device);
                         active.get(action_key).cloned()
                     };
 
@@ -114,17 +131,17 @@ impl Engine {
             }
             MouseHookEvent::Relative { dx, dy } => {
                 if self.inner.gesture_active_arc.load(Ordering::Relaxed) {
-                    self.handle_gesture_move(dx as i16, dy as i16, "evdev");
+                    self.handle_gesture_move(device, dx as i16, dy as i16, "evdev");
                 }
             }
         }
     }
 
-    pub fn handle_hid_event(&self, event: HidppEvent) {
+    pub fn handle_hid_event(&self, device: &DeviceKey, event: HidppEvent) {
         match event {
             HidppEvent::GestureDown => {
                 let (enabled, mapping) = {
-                    let active = self.inner.active_mappings.read().unwrap();
+                    let active = self.device_mappings(device);
                     let enabled = match active.get("gesture_enabled").map(|s| s.as_ref()) {
                         Some("false") => [
                             "gesture_left",
@@ -168,7 +185,7 @@ impl Engine {
             }
             HidppEvent::GestureUp => {
                 let (enabled, mapping) = {
-                    let active = self.inner.active_mappings.read().unwrap();
+                    let active = self.device_mappings(device);
                     let enabled = match active.get("gesture_enabled").map(|s| s.as_ref()) {
                         Some("false") => [
                             "gesture_left",
@@ -189,7 +206,7 @@ impl Engine {
                     (enabled, mapping)
                 };
                 if enabled {
-                    self.handle_gesture_up();
+                    self.handle_gesture_up(device);
                 } else if let Some(ref action_id) = mapping {
                     if action_id.as_ref() != "none" && is_mouse_button_action(action_id.as_ref()) {
                         if let Some(sim_key) = get_mouse_button_key(action_id.as_ref()) {
@@ -205,7 +222,7 @@ impl Engine {
             HidppEvent::GestureMove { dx, dy } => {
                 let enabled = {
                     let btn_key = self.inner.gesture_state.lock_safe().button.clone();
-                    let active = self.inner.active_mappings.read().unwrap();
+                    let active = self.device_mappings(device);
                     let enabled_key = match btn_key.as_deref() {
                         Some("middle") => "middle_gesture_enabled",
                         Some("xbutton1") => "xbutton1_gesture_enabled",
@@ -232,7 +249,7 @@ impl Engine {
                     }
                 };
                 if enabled {
-                    self.handle_gesture_move(dx, dy, "hid_rawxy");
+                    self.handle_gesture_move(device, dx, dy, "hid_rawxy");
                 } else {
                     self.inner
                         .key_simulator
@@ -242,10 +259,7 @@ impl Engine {
             HidppEvent::ModeShiftDown => {
                 log::debug!("[Engine] HID ModeShift button down");
                 let mapping = self
-                    .inner
-                    .active_mappings
-                    .read()
-                    .unwrap()
+                    .device_mappings(device)
                     .get("mode_shift")
                     .cloned();
                 if let Some(ref action_id) = mapping {
@@ -256,7 +270,7 @@ impl Engine {
                 log::debug!("[Engine] HID ModeShift button up");
             }
             HidppEvent::BacklightChanged { enabled, effect_id } => {
-                self.apply_backlight_from_hid(enabled, effect_id);
+                self.apply_backlight_from_hid(device, enabled, effect_id);
             }
             HidppEvent::HostChannelChanged(ch) => {
                 log::info!("[Engine] Host channel changed to {}", ch);
@@ -295,7 +309,7 @@ impl Engine {
         }
     }
 
-    pub fn handle_gesture_up(&self) {
+    pub fn handle_gesture_up(&self, device: &DeviceKey) {
         log::debug!("[Engine] Gesture track: button up");
 
         // Always clear button and input_source — even if gesture_active was already false.
@@ -318,24 +332,34 @@ impl Engine {
 
         if !triggered {
             let mapping = self
-                .inner
-                .active_mappings
-                .read()
-                .unwrap()
+                .device_mappings(device)
                 .get(&btn_key)
                 .cloned();
             if let Some(ref action_id) = mapping {
-                log::info!(
-                    "[Engine] Executing {} click fallback action: {}",
-                    btn_key,
-                    action_id
-                );
-                self.execute_engine_action(action_id.as_ref());
+                // Quick tap of the gesture button with no assigned click fallback:
+                // open the Actions Ring (Options+ hold-gesture-button-then-tap).
+                let tap_opens_ring = {
+                    let cfg = self.inner.config.lock_safe();
+                    cfg.settings.actions_ring.enabled
+                        && cfg.settings.actions_ring.open_on_gesture_tap
+                        && action_id.as_ref() == "none"
+                };
+                if tap_opens_ring {
+                    log::info!("[Engine] Gesture tap opening Actions Ring");
+                    self.open_actions_ring();
+                } else {
+                    log::info!(
+                        "[Engine] Executing {} click fallback action: {}",
+                        btn_key,
+                        action_id
+                    );
+                    self.execute_engine_action(action_id.as_ref());
+                }
             }
         }
     }
 
-    pub fn handle_gesture_move(&self, dx: i16, dy: i16, source: &str) {
+    pub fn handle_gesture_move(&self, device: &DeviceKey, dx: i16, dy: i16, source: &str) {
         let threshold = self.inner.cached_gesture_threshold.load(Ordering::Relaxed) as f32;
         let deadzone = self.inner.cached_gesture_deadzone.load(Ordering::Relaxed) as f32;
         let timeout =
@@ -446,10 +470,7 @@ impl Engine {
             );
 
             let mapping = self
-                .inner
-                .active_mappings
-                .read()
-                .unwrap()
+                .device_mappings(device)
                 .get(&resolved_action_key)
                 .cloned();
             if let Some(ref action_id) = mapping {

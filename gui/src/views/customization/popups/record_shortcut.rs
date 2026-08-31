@@ -278,8 +278,8 @@ pub fn draw_record_shortcut_ui(
         if is_valid_combo(&recorded) {
             let profile_name = &config.active_app_profile;
             if let Some(profile) = config
-                .get_profile(profile_name)
-                .or_else(|| config.get_profile("global"))
+                .get_profile(&engine.active_device_key(), profile_name)
+                .or_else(|| config.get_profile(&engine.active_device_key(), "global"))
             {
                 let mut mappings = profile.mappings.clone();
                 let action_str = format!("custom:{}", recorded);
@@ -299,7 +299,7 @@ pub fn draw_record_shortcut_ui(
                     }
                 }
 
-                engine.update_profile_mappings(profile_name, mappings);
+                engine.update_profile_mappings(&engine.active_device_key(), profile_name, mappings);
             }
         }
         let next_view = if target_key.contains("_gesture_") || target_key.starts_with("gesture_") {

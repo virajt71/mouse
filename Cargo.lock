@@ -2806,6 +2806,7 @@ dependencies = [
  "mouser_engine",
  "resvg",
  "serde",
+ "serde_json",
  "sha2",
  "tray-icon",
  "ureq",

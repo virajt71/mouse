@@ -106,6 +106,28 @@ impl eframe::App for MouserApp {
             ctx.set_visuals(visual);
         }
 
+        // ── Receive Actions Ring open/close signals from background thread ──
+        while let Ok(sig) = self.actions_ring_rx.try_recv() {
+            if sig.open {
+                // Make the window a fullscreen, borderless, transparent overlay so
+                // the ring can centre on the real OS cursor and catch clicks
+                // anywhere on screen. Restored when the ring closes.
+                ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(false));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Transparent(true));
+                let center = ctx
+                    .input(|i| i.pointer.hover_pos())
+                    .unwrap_or_else(|| ctx.screen_rect().center());
+                self.actions_ring = Some(crate::views::actions_ring::RingState::from_payload(
+                    &sig.layout_json,
+                    &sig.folders_json,
+                    center,
+                ));
+            } else {
+                self.close_actions_ring(ctx);
+            }
+        }
+
         // ── Render ───────────────────────────────────────────────────────────
         egui::CentralPanel::default()
             .frame(egui::Frame::none().fill(bg))
@@ -123,14 +145,16 @@ impl eframe::App for MouserApp {
                             }
 
                             if !display_devices.is_empty() {
-                                ui.vertical_centered(|ui| {
-                                    let height = ui.available_height();
-                                    // Spacing at the top to vertically center the row
-                                    let content_height = 360.0;
+                                let height = ui.available_height();
+                                // Spacing at the top to vertically center the row
+                                let content_height = 360.0;
                                     let top_padding = ((height - content_height) / 2.0 - 20.0).max(0.0);
                                     ui.add_space(top_padding);
 
-                                    ui.horizontal_top(|ui| {
+                                    egui::ScrollArea::horizontal()
+                                        .auto_shrink([false, false])
+                                        .show(ui, |ui| {
+                                        ui.horizontal_top(|ui| {
                                         let gap = 40.0;
                                         let mut total_width = 0.0;
                                         for (_, name, _) in &display_devices {
@@ -141,7 +165,8 @@ impl eframe::App for MouserApp {
                                         }
                                         total_width += gap * (display_devices.len() - 1) as f32;
 
-                                        let start_space = ((ui.available_width() - total_width) / 2.0).max(0.0);
+                                        let viewport_w = ctx.available_rect().width();
+                                        let start_space = ((viewport_w - total_width) / 2.0).max(0.0);
                                         ui.add_space(start_space);
 
                                         let mut action_to_take = None;
@@ -307,5 +332,18 @@ impl eframe::App for MouserApp {
             });
 
         self.draw_toast(ctx);
+
+        // ── Actions Ring overlay (drawn last so it sits above everything) ──
+        if let Some(ring) = &mut self.actions_ring {
+            match crate::views::actions_ring::show_ring(ctx, ring) {
+                Some(action_id) => {
+                    self.engine.execute_action(&action_id);
+                    self.close_actions_ring(ctx); // engine also broadcasts close
+                }
+                None => {
+                    self.close_actions_ring(ctx);
+                }
+            }
+        }
     }
 }

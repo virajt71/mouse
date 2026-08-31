@@ -118,6 +118,22 @@ pub fn draw_add_app_modal(
                             })
                             .collect();
 
+                        let device_key = engine.active_device_key();
+                        let device_key_clone = device_key.clone();
+                        // Pre-extract assigned profile info to avoid borrowing config in the click closure
+                        let assigned_apps: std::collections::HashMap<String, String> = config
+                            .devices
+                            .get(&device_key)
+                            .map(|d| {
+                                d.profiles
+                                    .iter()
+                                    .flat_map(|(pname, pdata)| {
+                                        pdata.apps.iter().map(move |a| (a.clone(), pname.clone()))
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+
                         if filtered_apps.is_empty() {
                             ui.vertical_centered(|ui| {
                                 ui.add_space(40.0);
@@ -141,18 +157,8 @@ pub fn draw_add_app_modal(
                                 .show(ui, |ui| {
                                     ui.spacing_mut().item_spacing = egui::vec2(0.0, 4.0);
                                     for app in filtered_apps {
-                                        // Check if already assigned
-                                        let mut assigned_profile = None;
-                                        if let Some(g_data) =
-                                            config.profile_groups.get(&config.active_group)
-                                        {
-                                            for (pname, pdata) in &g_data.profiles {
-                                                if pdata.apps.contains(&app.exec) {
-                                                    assigned_profile = Some(pname.clone());
-                                                    break;
-                                                }
-                                            }
-                                        }
+                                        // Check if already assigned in this device's profiles
+                                        let assigned_profile = assigned_apps.get(&app.exec).cloned();
 
                                         let is_assigned = assigned_profile.is_some();
                                         let item_w = ui.available_width();
@@ -250,13 +256,13 @@ pub fn draw_add_app_modal(
 
                                         if !is_assigned && item_res.clicked() {
                                             // 1. Add Profile to config
-                                            engine.add_profile(&app.name);
+                                            engine.add_profile(&device_key_clone, &app.name);
                                             // 2. Update its app bindings
-                                            engine.update_app_bindings(&app.name, &app.exec);
+                                            engine.update_app_bindings(&device_key_clone, &app.name, &app.exec);
                                             // 3. Set profile icon
-                                            engine.set_profile_icon(&app.name, &app.icon);
+                                            engine.set_profile_icon(&device_key_clone, &app.name, &app.icon);
                                             // 4. Switch to it as the active profile
-                                            engine.select_profile(&app.name);
+                                            engine.select_profile(&device_key_clone, &app.name);
                                             // 5. Instantly refresh local config state from daemon
                                             *config = engine.get_config();
                                             config.active_app_profile = app.name.clone();

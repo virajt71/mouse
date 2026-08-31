@@ -9,6 +9,12 @@ message StringValue {
   string value = 1;
 }
 
+/// Stable per-device identity (mirrors mouser_engine::config::DeviceKey).
+message DeviceKey {
+  string serial = 1;
+  string layout = 2;
+}
+
 message StatusResponse {
   bool ok = 1;
   string error_message = 2;
@@ -34,17 +40,29 @@ message ProfileMappingsRequest {
   string profile_name  = 1;
   /// JSON-serialised HashMap<String, String>
   string mappings_json = 2;
+  /// Device the profile belongs to (per-device profile store).
+  DeviceKey device     = 3;
+}
+
+/// Select / Add / Delete a profile on a specific device.
+message DeviceProfileRequest {
+  string name   = 1;
+  DeviceKey device = 2;
 }
 
 message AppBindingsRequest {
   string profile_name = 1;
   string exec         = 2;
+  /// Device the profile belongs to (per-device profile store).
+  DeviceKey device     = 3;
 }
 
 message ProfileIconRequest {
   string profile_name = 1;
   /// Base64-encoded icon data string (same format stored in Config::Profile::icon)
   string icon_data    = 2;
+  /// Device the profile belongs to (per-device profile store).
+  DeviceKey device     = 3;
 }
 
 // ─── Device State ─────────────────────────────────────────────────────────────
@@ -74,6 +92,21 @@ message FlowStatusResponse {
   bool is_searching = 1;
 }
 
+// ─── Actions Ring (server-push) ──────────────────────────────────────────────
+
+/// Engine → GUI signal that opens or closes the Actions Ring overlay.
+/// `layout_json` is a serialised `mouser_engine::config::actions_ring::ActionRingLayout`.
+message ActionsRingState {
+  bool   open        = 1;
+  /// Unique id for this ring session (used to ignore stale close signals).
+  uint64 session_id  = 2;
+  /// JSON-serialised ActionRingLayout, present only when `open == true`.
+  string layout_json = 3;
+  /// JSON-serialised map of folder name → ActionRingLayout, present only when
+  /// `open == true`. Slots with action id `folder:<name>` open these sub-rings.
+  string folders_json = 4;
+}
+
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 service MouserDaemon {
@@ -84,9 +117,9 @@ service MouserDaemon {
   rpc UpdateKeyboardLayout(StringValue)    returns (StatusResponse);
 
   // ── Profiles ────────────────────────────────────────────────────────────
-  rpc SelectProfile        (StringValue)          returns (StatusResponse);
-  rpc AddProfile           (StringValue)          returns (StatusResponse);
-  rpc DeleteProfile        (StringValue)          returns (StatusResponse);
+  rpc SelectProfile        (DeviceProfileRequest) returns (StatusResponse);
+  rpc AddProfile           (DeviceProfileRequest) returns (StatusResponse);
+  rpc DeleteProfile        (DeviceProfileRequest) returns (StatusResponse);
   rpc UpdateProfileMappings(ProfileMappingsRequest) returns (StatusResponse);
   rpc UpdateAppBindings    (AppBindingsRequest)   returns (StatusResponse);
   rpc SetProfileIcon       (ProfileIconRequest)   returns (StatusResponse);
@@ -103,7 +136,13 @@ service MouserDaemon {
   // ── Streaming (server-push) ─────────────────────────────────────────────
   rpc WatchConfig     (Empty) returns (stream ConfigResponse);
   rpc WatchDeviceState(Empty) returns (stream DeviceStateResponse);
+  rpc WatchActionsRing(Empty) returns (stream ActionsRingState);
 
   // ── Pairing ─────────────────────────────────────────────────────────────
   rpc UnpairDevice(StringValue) returns (StatusResponse);
+
+  // ── Actions Ring ──────────────────────────────────────────────────────────
+  /// Execute a single action id by name (used by the ring overlay to run the
+  /// action the user selected in a slot).
+  rpc ExecuteAction(StringValue) returns (StatusResponse);
 }

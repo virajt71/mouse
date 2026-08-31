@@ -82,6 +82,7 @@ pub enum ButtonAction {
     HorizontalScroll,
     Gestures,
     Keystroke,
+    ShowActionsRing,
     Disabled,
 }
 
@@ -95,6 +96,7 @@ impl ButtonAction {
             Self::HorizontalScroll => "Horizontal scroll",
             Self::Gestures => "Gestures",
             Self::Keystroke => "Keyboard shortcut",
+            Self::ShowActionsRing => "Show Actions Ring",
             Self::Disabled => "Disabled",
         }
     }
@@ -254,6 +256,7 @@ pub fn mapping_to_action(
                     "mouse_forward_click" => ButtonAction::Forward,
                     "mouse_back_click" => ButtonAction::Back,
                     "hscroll" => ButtonAction::HorizontalScroll,
+                    "show_actions_ring" => ButtonAction::ShowActionsRing,
                     _ => ButtonAction::Disabled,
                 }
             }
