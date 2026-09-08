@@ -262,6 +262,9 @@ pub fn show_buttons_tab(
                     170.0
                 }
             }
+            PopupView::RingActionPicker { .. }
+            | PopupView::RingFolderPopup { .. }
+            | PopupView::RingFolderBubblePicker { .. } => 280.0,
         };
 
         let popup_h = match &current_view {
@@ -280,6 +283,9 @@ pub fn show_buttons_tab(
                     190.0
                 }
             }
+            PopupView::RingActionPicker { .. }
+            | PopupView::RingFolderPopup { .. }
+            | PopupView::RingFolderBubblePicker { .. } => 350.0,
         };
 
         let mut popup_rect = if card_pos.x > center.x {
@@ -354,7 +360,6 @@ pub fn show_buttons_tab(
                     if let Some(opt) = selected_opt {
                         let mut mappings = profile.mappings.clone();
                         if opt == ThumbwheelOption::KeyboardShortcut {
-                            // Leave it in ActionList view; inline buttons handle transitions.
                             save_thumbwheel_option(opt, &mut mappings);
                             engine.update_profile_mappings(&config.active_app_profile, mappings);
                         } else {
@@ -381,10 +386,8 @@ pub fn show_buttons_tab(
                     if let Some(opt) = selected_opt {
                         let mut mappings = profile.mappings.clone();
                         if opt == UniversalButtonOption::Gesture {
-                            // Persist gesture_enabled = "true"
                             save_button_option(btn, opt, &mut mappings);
                             engine.update_profile_mappings(&config.active_app_profile, mappings);
-                            // Then show the gesture configuration panel
                             ui.ctx().data_mut(|d| {
                                 d.insert_temp(view_state_id, PopupView::GesturesConfig)
                             });
@@ -415,6 +418,11 @@ pub fn show_buttons_tab(
                     }
                     res
                 }
+            }
+            PopupView::RingActionPicker { .. }
+            | PopupView::RingFolderPopup { .. }
+            | PopupView::RingFolderBubblePicker { .. } => {
+                false // Ring popups handle their own close logic
             }
         };
 

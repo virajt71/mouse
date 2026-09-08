@@ -2,6 +2,7 @@ use super::MouserApp;
 use crate::theme;
 use crate::views::ActiveView;
 use eframe::egui;
+use egui::pos2;
 
 impl eframe::App for MouserApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -305,6 +306,33 @@ impl eframe::App for MouserApp {
                     }
                 });
             });
+
+        // ── Actions Ring overlay ──
+        // Check if engine has triggered a new ring open (via ring_trigger_count change)
+        let new_triggers = self.engine.get_ring_trigger_count();
+        if new_triggers > self.ring_trigger_count {
+            self.ring_trigger_count = new_triggers;
+            let pos = ctx.input(|i| i.pointer.hover_pos()).unwrap_or(pos2(400.0, 300.0));
+            let layout = self.config.active_profile_ring_layout();
+            crate::app::ring::open_ring(&mut self.ring_state, pos, layout);
+        }
+
+        // Handle ring input (timeout, hover, click, scroll)
+        if self.ring_state.open {
+            // Keep ring position at cursor
+            let pos = ctx.input(|i| i.pointer.hover_pos()).unwrap_or(self.ring_state.position);
+            self.ring_state.position = pos;
+
+            let mut sender = crate::app::ring::EngineActionSender { engine: &self.engine };
+            crate::app::ring::handle_ring_input(&mut self.ring_state, ctx, &mut sender);
+
+            // Draw ring overlay
+            egui::Area::new(egui::Id::new("actions_ring"))
+                .sense(egui::Sense::hover())
+                .show(ctx, |ui| {
+                    crate::app::ring::draw_ring(&mut self.ring_state, ui, ctx);
+                });
+        }
 
         self.draw_toast(ctx);
     }

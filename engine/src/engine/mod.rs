@@ -101,7 +101,8 @@ impl Engine {
             cached_gesture_cooldown_ms: AtomicU64::new(init_gesture_cooldown_ms),
             cached_hscroll_threshold: AtomicU32::new(init_hscroll_threshold),
             config_change_listener: Mutex::new(None),
-        };
+            ring_trigger_count: AtomicU64::new(0),
+                    };
 
         let engine = Engine {
             inner: Arc::new(inner),
@@ -308,5 +309,13 @@ impl Engine {
         cfg.devices.iter()
             .map(|(k, dp)| (k.serial.clone(), k.layout.clone(), dp.active_app_profile.clone(), dp.profiles.len() as u32))
             .collect()
+    }
+
+    pub fn get_ring_trigger_count(&self) -> u64 {
+        self.inner.ring_trigger_count.load(Ordering::Relaxed)
+    }
+
+    pub fn increment_ring_trigger(&self) {
+        self.inner.ring_trigger_count.fetch_add(1, Ordering::Relaxed);
     }
 }

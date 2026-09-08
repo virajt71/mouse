@@ -1,7 +1,9 @@
 use crate::updater::Updater;
+// ring overlay module — see ring.rs for draw_ring, handle_ring_input, etc.
 use crate::views::ActiveView;
 use eframe::egui;
 
+pub mod ring;
 pub mod texture;
 pub mod toast;
 pub mod update;
@@ -77,6 +79,10 @@ pub struct MouserApp {
     pub(crate) current_connection_type: Option<String>,
     pub(crate) toast_message: Option<String>,
     pub(crate) toast_shown_at: Option<std::time::Instant>,
+
+    // Actions Ring state
+    pub(crate) ring_state: ring::RingState,
+    pub(crate) ring_trigger_count: u64,
 }
 
 impl MouserApp {
@@ -165,6 +171,9 @@ impl MouserApp {
             current_connection_type: None,
             toast_message: None,
             toast_shown_at: None,
+
+            ring_state: ring::RingState::default(),
+            ring_trigger_count: 0,
         }
     }
 

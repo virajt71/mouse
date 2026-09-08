@@ -55,6 +55,16 @@ impl Engine {
             drop(current_profile);
             drop(last_exe);
 
+            // Persist the app-resolved profile so the GUI's ring layout and
+            // mapping resolution follow the live foreground app.
+            let cfg_snapshot = {
+                let mut cfg = self.inner.config.lock_safe();
+                cfg.active_app_profile = profile_name.clone();
+                let _ = cfg.save();
+                cfg.clone()
+            };
+            self.increment_config_generation(&cfg_snapshot);
+
             *self.inner.active_profile_shared.lock_safe() = profile_name;
             {
                 let mappings_arc: std::collections::HashMap<String, std::sync::Arc<str>> = mappings

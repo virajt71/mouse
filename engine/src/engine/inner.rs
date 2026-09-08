@@ -81,4 +81,7 @@ pub struct EngineInner {
     pub modifier_state: Arc<ModifierState>,
 
     pub config_change_listener: Mutex<Option<Box<dyn Fn(&Config, u64) + Send + Sync + 'static>>>,
+
+    /// Incremented each time the ring is triggered; GUI polls via config stream.
+    pub ring_trigger_count: std::sync::atomic::AtomicU64,
 }

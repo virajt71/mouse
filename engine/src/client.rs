@@ -28,7 +28,7 @@ pub struct EngineClient {
     stub: MouserDaemonClient<Channel>,
     rt: Arc<tokio::runtime::Runtime>,
     // Local generation counter so `get_config_if_changed` keeps working.
-    last_config: Arc<std::sync::Mutex<(u64, Config)>>,
+    last_config: Arc<std::sync::Mutex<(u64, Config, u64)>>,
 }
 
 impl EngineClient {
@@ -70,7 +70,7 @@ impl EngineClient {
         Ok(Self {
             stub,
             rt,
-            last_config: Arc::new(std::sync::Mutex::new((0, init_cfg))),
+            last_config: Arc::new(std::sync::Mutex::new((0, init_cfg, 0))),
         })
     }
 
@@ -121,6 +121,7 @@ impl EngineClient {
             if let Ok(mut guard) = self.last_config.lock() {
                 guard.0 = resp.generation;
                 guard.1 = cfg.clone();
+                guard.2 = resp.ring_trigger_count;
             }
             cfg
         } else {
@@ -149,8 +150,19 @@ impl EngineClient {
         }
     }
 
+    pub fn get_ring_trigger_count(&self) -> u64 {
+        self.last_config.lock().map(|g| g.2).unwrap_or(0)
+    }
+
     pub fn reload_config(&self) {
         self.call_ok(|mut s| async move { s.reload_config(Empty {}).await });
+    }
+
+    pub fn execute_engine_action(&self, action_id: &str) {
+        let v = action_id.to_string();
+        self.call_ok(|mut s| async move {
+            s.execute_engine_action(StringValue { value: v }).await
+        });
     }
 
     pub fn update_keyboard_layout(&self, layout: &str) {
@@ -333,6 +345,7 @@ impl EngineClient {
                     if let Ok(mut guard) = client.last_config.lock() {
                         guard.0 = item.generation;
                         guard.1 = cfg.clone();
+                        guard.2 = item.ring_trigger_count;
                     }
                     if tx.send(cfg).is_err() {
                         break; // GUI dropped the receiver — exit cleanly.

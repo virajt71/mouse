@@ -79,6 +79,7 @@ impl Engine {
                                 apps: Vec::new(),
                                 mappings: std::collections::HashMap::new(),
                                 icon: String::new(),
+                                ring_layout: None,
                             }
                         });
                     let mut new_profile = global_profile;
@@ -370,6 +371,7 @@ impl Engine {
                             apps: vec![],
                             mappings: default_mappings,
                             icon: String::new(),
+                            ring_layout: None,
                         },
                     );
                     e.insert(crate::config::ProfileGroup {

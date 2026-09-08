@@ -3,7 +3,66 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+#[serde(default)]
+pub struct RingLayout {
+    #[serde(default)]
+    pub primary: Vec<RingBubble>,
+    #[serde(default)]
+    pub folders: Vec<RingFolder>,
+    #[serde(default)]
+    pub auto_close: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+pub struct RingBubble {
+    #[serde(default)]
+    pub action_id: String,
+    #[serde(default)]
+    pub icon_name: String,
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub kind: RingBubbleKind,
+    #[serde(default)]
+    pub adjustment_range: Option<RingAdjustmentRange>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+pub struct RingAdjustmentRange {
+    #[serde(default)]
+    pub min: i32,
+    #[serde(default)]
+    pub max: i32,
+    #[serde(default)]
+    pub step: i32,
+    #[serde(default)]
+    pub default: Option<i32>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub enum RingBubbleKind {
+    Action { action_id: String },
+    Folder { folder_id: String },
+}
+
+impl Default for RingBubbleKind {
+    fn default() -> Self {
+        RingBubbleKind::Action { action_id: String::new() }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+pub struct RingFolder {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub bubbles: Vec<RingBubble>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 #[serde(default)]
 pub struct Profile {
     pub label: String,
@@ -11,6 +70,8 @@ pub struct Profile {
     pub mappings: HashMap<String, String>,
     #[serde(default)]
     pub icon: String,
+    #[serde(default)]
+    pub ring_layout: Option<RingLayout>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
@@ -293,6 +354,7 @@ impl Default for Config {
             apps: vec![],
             mappings: default_mappings,
             icon: String::new(),
+            ring_layout: None,
         };
 
         let mut profiles = HashMap::new();
@@ -497,6 +559,13 @@ impl Config {
             })
     }
 
+    pub fn get_profile_mut(&mut self, name: &str) -> Option<&mut Profile> {
+        let ag = self.active_group.clone();
+        let ag = if ag.is_empty() { "default".to_string() } else { ag };
+        let group = self.profile_groups.get_mut(&ag)?;
+        group.profiles.get_mut(name)
+    }
+
     pub fn get_resolved_mappings(&self, profile_name: &str) -> HashMap<String, String> {
         let mut resolved = HashMap::new();
         let group = self
@@ -575,6 +644,7 @@ impl Config {
                             apps: vec![],
                             mappings: HashMap::new(),
                             icon: String::new(),
+                            ring_layout: None,
                         },
                     );
                     e.insert(DeviceProfiles {
@@ -601,6 +671,7 @@ impl Config {
                     apps: vec![],
                     mappings: HashMap::new(),
                     icon: String::new(),
+                    ring_layout: None,
                 },
             );
             devices.insert(
@@ -738,6 +809,14 @@ impl Config {
             std::collections::hash_map::Entry::Occupied(_) => {}
         }
     }
+
+    /// Returns the ring layout for the active profile, if configured.
+    pub fn active_profile_ring_layout(&self) -> Option<RingLayout> {
+        self.profile_groups
+            .get(&self.active_group)
+            .and_then(|g| g.profiles.get(&self.active_app_profile))
+            .and_then(|p| p.ring_layout.clone())
+    }
 }
 
 /// Strip release-channel suffixes distros commonly append to the real exec
@@ -777,6 +856,7 @@ mod tests {
             apps: vec!["brave-browser-stable".to_string()],
             mappings: HashMap::new(),
             icon: String::new(),
+            ring_layout: None,
         };
         if let Some(group) = config.profile_groups.get_mut("default") {
             group
@@ -922,6 +1002,7 @@ mod tests {
             apps: vec!["brave-browser-stable".into()],
             mappings: HashMap::new(),
             icon: "brave-browser".into(),
+            ring_layout: None,
         };
         if let Some(group) = config.profile_groups.get_mut("default") {
             group

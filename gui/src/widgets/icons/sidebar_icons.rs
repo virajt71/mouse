@@ -160,3 +160,30 @@ pub fn draw_settings_slider_icon(ui: &egui::Ui, center: egui::Pos2, color: Color
         painter.circle_filled(pos2(knob_x, y), 2.0, color);
     }
 }
+pub fn draw_ring_icon(ui: &egui::Ui, center: egui::Pos2, color: Color32) {
+    let painter = ui.painter();
+    let stroke = Stroke::new(1.2, color);
+
+    // Outer ring circle
+    painter.circle_stroke(center, 7.0, stroke);
+
+    // Inner dot (center of ring)
+    painter.circle_filled(center, 2.0, color);
+
+    // Small bubbles around the ring (4 dots at N/E/S/W positions)
+    let bubble_r = 1.5;
+    let ring_r = 7.0;
+    let positions = [
+        (0.0, -ring_r),   // top
+        (ring_r, 0.0),    // right
+        (0.0, ring_r),    // bottom
+        (-ring_r, 0.0),   // left
+    ];
+    for (dx, dy) in positions {
+        painter.circle_filled(
+            pos2(center.x + dx as f32, center.y + dy as f32),
+            bubble_r,
+            color,
+        );
+    }
+}

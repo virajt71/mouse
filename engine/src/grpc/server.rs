@@ -113,6 +113,7 @@ fn config_to_proto(engine: &Engine) -> ConfigResponse {
     ConfigResponse {
         config_json: json,
         generation: engine.config_generation(),
+        ring_trigger_count: engine.get_ring_trigger_count(),
     }
 }
 
@@ -124,7 +125,7 @@ impl MouserDaemon for MouserDaemonService {
         let cfg = self.engine.get_config();
         let json = serde_json::to_string(&cfg).unwrap_or_default();
         let gen = self.engine.config_generation();
-        Ok(Response::new(ConfigResponse { config_json: json, generation: gen }))
+        Ok(Response::new(ConfigResponse { config_json: json, generation: gen, ring_trigger_count: self.engine.get_ring_trigger_count() }))
     }
 
     async fn reload_config(
@@ -268,6 +269,17 @@ impl MouserDaemon for MouserDaemonService {
     }
 
     // ── Device Info ───────────────────────────────────────────────────────────
+
+    async fn execute_engine_action(
+        &self,
+        req: Request<StringValue>,
+    ) -> Result<Response<StatusResponse>, Status> {
+        self.engine.execute_engine_action(&req.into_inner().value);
+        // The ring trigger (actions_ring_open) bumps the engine counter but is
+        // otherwise never broadcast; push a fresh snapshot so the GUI's poll sees it.
+        let _ = self.config_tx.0.send(config_to_proto(&self.engine));
+        Ok(Response::new(Self::ok()))
+    }
 
     async fn get_device_info(
         &self,
@@ -440,6 +452,7 @@ pub fn broadcast_config(cfg: &crate::config::Config, generation: u64, tx: &Confi
     let msg = ConfigResponse {
         config_json: json,
         generation,
+        ring_trigger_count: 0,
     };
     let _ = tx.0.send(msg);
 }

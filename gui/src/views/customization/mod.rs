@@ -17,7 +17,7 @@ pub use popups::{
 };
 use sidebar::draw_sidebar;
 pub use sidebar::SidebarTab;
-use tabs::{show_buttons_tab, show_flow_tab, show_point_scroll_tab, show_profiles_settings_tab};
+use tabs::{show_buttons_tab, show_flow_tab, show_point_scroll_tab, show_profiles_settings_tab, show_ring_tab};
 
 thread_local! {
     pub static CONFIRM_DELETE_PROFILE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
@@ -463,6 +463,7 @@ pub fn show(
                 );
             }
             SidebarTab::Flow => {}
+            SidebarTab::Ring => {}
             SidebarTab::Settings => {
                 show_profiles_settings_tab(&mut canvas_ui, engine, config, true);
             }
@@ -483,6 +484,9 @@ pub fn show(
             }
             SidebarTab::Flow => {
                 show_flow_tab(&mut canvas_ui, engine, config);
+            }
+            SidebarTab::Ring => {
+                show_ring_tab(&mut canvas_ui, engine, config, customizing_button);
             }
             SidebarTab::Settings => {
                 show_profiles_settings_tab(&mut canvas_ui, engine, config, false);

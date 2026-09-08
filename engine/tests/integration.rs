@@ -33,6 +33,7 @@ fn test_profile_matching_logic() {
     profiles.insert(
         "global".to_string(),
         Profile {
+        ring_layout: None,
             label: "Default".to_string(),
             apps: vec![],
             mappings: HashMap::new(),
@@ -42,6 +43,7 @@ fn test_profile_matching_logic() {
     profiles.insert(
         "chrome_profile".to_string(),
         Profile {
+        ring_layout: None,
             label: "Chrome".to_string(),
             apps: vec!["chrome".to_string()],
             mappings: HashMap::new(),
@@ -51,6 +53,7 @@ fn test_profile_matching_logic() {
     profiles.insert(
         "firefox_profile".to_string(),
         Profile {
+        ring_layout: None,
             label: "Firefox".to_string(),
             apps: vec!["firefox".to_string()],
             mappings: HashMap::new(),
@@ -100,6 +103,7 @@ fn test_profile_matching_mixed_case() {
     profiles.insert(
         "global".to_string(),
         Profile {
+        ring_layout: None,
             label: "Default".to_string(),
             apps: vec![],
             mappings: HashMap::new(),
@@ -109,6 +113,7 @@ fn test_profile_matching_mixed_case() {
     profiles.insert(
         "vscode_profile".to_string(),
         Profile {
+        ring_layout: None,
             label: "VS Code".to_string(),
             apps: vec!["code".to_string()],
             mappings: HashMap::new(),
@@ -133,6 +138,7 @@ fn test_profile_matching_no_match_returns_global() {
     profiles.insert(
         "global".to_string(),
         Profile {
+        ring_layout: None,
             label: "Default".to_string(),
             apps: vec![],
             mappings: HashMap::new(),
@@ -142,6 +148,7 @@ fn test_profile_matching_no_match_returns_global() {
     profiles.insert(
         "chrome_profile".to_string(),
         Profile {
+        ring_layout: None,
             label: "Chrome".to_string(),
             apps: vec!["chrome".to_string()],
             mappings: HashMap::new(),
@@ -183,6 +190,7 @@ fn test_normalize_apps_idempotent() {
     profiles.insert(
         "global".to_string(),
         Profile {
+        ring_layout: None,
             label: "Default".to_string(),
             apps: vec!["chrome".to_string(), "firefox".to_string()],
             mappings: HashMap::new(),

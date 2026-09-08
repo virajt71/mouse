@@ -2,7 +2,7 @@ use crate::theme;
 use crate::views::customization::mappings::CustomizingButton;
 use crate::widgets::{
     draw_backlighting_icon, draw_equalizer_icon, draw_flow_icon, draw_hamburger_icon,
-    draw_keys_icon, draw_mouse_outline_icon, draw_settings_slider_icon,
+    draw_keys_icon, draw_mouse_outline_icon, draw_ring_icon, draw_settings_slider_icon,
 };
 use eframe::egui;
 use egui::{pos2, vec2, Color32, Rect};
@@ -12,6 +12,7 @@ pub enum SidebarTab {
     Buttons,
     PointAndScroll,
     Flow,
+    Ring,
     Settings,
 }
 
@@ -41,6 +42,7 @@ pub fn draw_sidebar(
                 (SidebarTab::Buttons, "BUTTONS"),
                 (SidebarTab::PointAndScroll, "POINT AND SCROLL"),
                 (SidebarTab::Flow, "FLOW"),
+                (SidebarTab::Ring, "ACTIONS RING"),
                 (SidebarTab::Settings, "SETTINGS"),
             ][..]
         };
@@ -90,6 +92,7 @@ pub fn draw_sidebar(
                             draw_backlighting_icon(ui, icon_center, text_color)
                         }
                         SidebarTab::Flow => {}
+                        SidebarTab::Ring => {}
                         SidebarTab::Settings => {
                             draw_settings_slider_icon(ui, icon_center, text_color)
                         }
@@ -101,6 +104,7 @@ pub fn draw_sidebar(
                             draw_mouse_outline_icon(ui, icon_center, text_color)
                         }
                         SidebarTab::Flow => draw_flow_icon(ui, icon_center, text_color),
+                        SidebarTab::Ring => draw_ring_icon(ui, icon_center, text_color),
                         SidebarTab::Settings => draw_hamburger_icon(ui, icon_center, text_color),
                     }
                 }

@@ -1,10 +1,16 @@
 use super::Engine;
 use crate::lock_ext::MutexExt;
+use std::sync::atomic::Ordering;
 use std::thread;
 
 impl Engine {
     pub fn execute_engine_action(&self, action_id: &str) {
         if action_id == "none" {
+            return;
+        }
+
+        if action_id == "actions_ring_open" {
+            self.trigger_ring_open();
             return;
         }
 
@@ -130,5 +136,13 @@ impl Engine {
                 }
             }
         });
+    }
+
+    pub fn trigger_ring_open(&self) {
+        log::info!("[Engine] Actions Ring triggered");
+        self.increment_ring_trigger();
+        if let Some(ref listener) = *self.inner.config_change_listener.lock_safe() {
+            let _ = listener(&self.inner.config.lock_safe(), self.inner.config_generation.load(Ordering::Relaxed));
+        }
     }
 }
