@@ -144,7 +144,7 @@ pub fn draw_add_app_modal(
                                         // Check if already assigned
                                         let mut assigned_profile = None;
                                         if let Some(g_data) =
-                                            config.profile_groups.get(&config.active_group)
+                                            config.profile_groups.get(config.get_active_group())
                                         {
                                             for (pname, pdata) in &g_data.profiles {
                                                 if pdata.apps.contains(&app.exec) {

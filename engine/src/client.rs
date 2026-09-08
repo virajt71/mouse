@@ -222,12 +222,29 @@ impl EngineClient {
         self.call_ok(|mut s| async move { s.add_profile_group(StringValue { value: v }).await });
     }
 
-    pub fn delete_profile_group(&self, group_name: &str) {
+        pub fn delete_profile_group(&self, group_name: &str) {
         let v = group_name.to_string();
         self.call_ok(|mut s| async move { s.delete_profile_group(StringValue { value: v }).await });
     }
 
-    // ─── Settings API (mirrors Engine::update_global_settings) ───────────────
+    // ── Device List ────────────────────────────────────────────────────────────
+
+    /// Returns the list of known devices from Config.devices.
+    pub fn get_devices(&self) -> Vec<crate::grpc::server::proto::DeviceInfo> {
+        self.call(|mut stub| async move { stub.get_devices(Empty {}).await })
+            .map(|resp| resp.devices)
+            .unwrap_or_default()
+    }
+
+    pub fn select_device(&self, serial: &str) -> bool {
+        match self.call(|mut stub| async move {
+            stub.select_device(StringValue { value: serial.to_string() }).await
+        }) {
+            Some(resp) => resp.ok,
+            None => false,
+        }
+    }
+
 
     pub fn update_global_settings(
         &self,

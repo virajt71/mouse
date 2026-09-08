@@ -107,8 +107,11 @@ fn main() -> Result<(), eframe::Error> {
         let dev_bc_clone = device_state_bc.clone();
         let (_worker_tx, worker_rx) =
             engine::worker::spawn_background_worker(move || {}, engine.active_profile_shared());
+        let engine_ws = engine.clone();
         std::thread::spawn(move || {
             while let Ok(update) = worker_rx.recv() {
+                let hidpp_names: Vec<String> = engine_ws.device_names();
+                engine_ws.update_devices(&update.paired_devices, &hidpp_names);
                 engine::grpc::broadcast_device_state(&update, &dev_bc_clone);
             }
         });

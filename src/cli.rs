@@ -158,8 +158,9 @@ fn handle_profile_list() -> Result<(), Box<dyn Error>> {
     let client = connect_client()?;
     let config = client.get_config();
 
-    if let Some(group) = config.profile_groups.get(&config.active_group) {
-        println!("Profiles in group '{}':", config.active_group);
+    let active_group = config.get_active_group();
+    if let Some(group) = config.profile_groups.get(active_group) {
+        println!("Profiles in group '{}':", active_group);
         for (pname, pdata) in &group.profiles {
             let active_marker = if pname == &config.active_app_profile {
                 " (active)"
@@ -177,7 +178,7 @@ fn handle_profile_list() -> Result<(), Box<dyn Error>> {
     } else {
         println!(
             "No profiles found in active group '{}'.",
-            config.active_group
+            active_group
         );
     }
     Ok(())
@@ -194,11 +195,12 @@ fn handle_profile_set(name: &str) -> Result<(), Box<dyn Error>> {
     let client = connect_client()?;
     let config = client.get_config();
 
-    if let Some(group) = config.profile_groups.get(&config.active_group) {
+    let active_group = config.get_active_group();
+    if let Some(group) = config.profile_groups.get(active_group) {
         if !group.profiles.contains_key(name) {
             println!(
                 "Warning: Profile '{}' does not exist in group '{}'. Setting anyway.",
-                name, config.active_group
+                name, active_group
             );
         }
     }

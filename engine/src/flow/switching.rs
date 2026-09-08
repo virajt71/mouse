@@ -1,5 +1,6 @@
 use super::FLOW_MANAGER;
 use crate::lock_ext::MutexExt;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 use x11rb::connection::Connection;
@@ -7,7 +8,6 @@ use x11rb::connection::Connection;
 pub fn run_edge_detection_loop(engine_inner: Arc<crate::engine::inner::EngineInner>) {
     // Dedicated edge-detection thread (primarily for X11/XWayland active pointer query fallback)
     // Wayland uses raw evdev injection from MouseHook, but X11 can run query_pointer
-    use std::sync::atomic::Ordering;
 
     loop {
         if !engine_inner.running.load(Ordering::Acquire) {
@@ -55,8 +55,8 @@ pub fn run_edge_detection_loop(engine_inner: Arc<crate::engine::inner::EngineInn
                                         let sh = screen.height_in_pixels as i32;
 
                                         // Update local screen dimensions in FlowManager
-                                        *FLOW_MANAGER.screen_width.write().unwrap() = sw;
-                                        *FLOW_MANAGER.screen_height.write().unwrap() = sh;
+                                        FLOW_MANAGER.screen_width.store(sw, Ordering::Relaxed);
+                                        FLOW_MANAGER.screen_height.store(sh, Ordering::Relaxed);
 
                                         let threshold = 2;
                                         let mut lx = 0;
@@ -131,8 +131,10 @@ pub fn run_edge_detection_loop(engine_inner: Arc<crate::engine::inner::EngineInn
                                                     FLOW_MANAGER
                                                         .set_active_peer(Some(peer.name.clone()));
                                                     // Sync virtual coords for the transition
-                                                    *FLOW_MANAGER.virtual_x.lock_safe() =
-                                                        if lx == -1 { sw - 50 } else { 50 };
+                                                    FLOW_MANAGER.virtual_x.store(
+                                                        if lx == -1 { sw - 50 } else { 50 },
+                                                        Ordering::Relaxed,
+                                                    );
 
                                                     let mode = FLOW_MANAGER
                                                         .flow_mouse_mode

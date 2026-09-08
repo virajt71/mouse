@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 
-use mouser_engine::config::{execs_match, normalize_exec};
+use mouser_engine::config::normalize_exec;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DesktopApp {
@@ -230,28 +230,35 @@ pub fn scan_running_processes() -> Vec<DesktopApp> {
 /// Strict exec comparison — normalize + exact equality only, no substring
 /// containment. Used for deduplicating installed desktop files against each
 /// other, where "antigravity" and "antigravity-ide" must remain separate.
-fn execs_strict(a: &str, b: &str) -> bool {
-    let na = normalize_exec(a);
-    let nb = normalize_exec(b);
+fn norm_strict(na: &str, nb: &str) -> bool {
     !na.is_empty() && !nb.is_empty() && na == nb
+}
+
+fn norm_match(na: &str, nb: &str) -> bool {
+    if na.is_empty() || nb.is_empty() {
+        return false;
+    }
+    na == nb || na.contains(nb) || nb.contains(na)
 }
 
 pub fn scan_all_applications() -> Vec<DesktopApp> {
     let installed = scan_desktop_applications();
     let running = scan_running_processes();
 
-    let mut combined: Vec<DesktopApp> = Vec::new();
+    let mut combined: Vec<(DesktopApp, String)> = Vec::new();
 
     // 1. Add all installed applications first. Use *strict* matching so that
     // unrelated apps with a common prefix (e.g. "antigravity" vs
     // "antigravity-ide") stay separate.
     for app in installed {
-        if !app.exec.is_empty()
-            && !combined
+        if !app.exec.is_empty() {
+            let norm = normalize_exec(&app.exec);
+            if !combined
                 .iter()
-                .any(|existing| execs_strict(&existing.exec, &app.exec))
-        {
-            combined.push(app);
+                .any(|(_, existing_norm)| norm_strict(existing_norm, &norm))
+            {
+                combined.push((app, norm));
+            }
         }
     }
 
@@ -260,23 +267,28 @@ pub fn scan_all_applications() -> Vec<DesktopApp> {
     // mismatch (e.g. brave-browser-stable vs brave) creates a second,
     // icon-less duplicate when exact matching alone is used.
     for app in running {
-        if !app.exec.is_empty()
-            && !combined
+        if !app.exec.is_empty() {
+            let norm = normalize_exec(&app.exec);
+            if !combined
                 .iter()
-                .any(|existing| execs_match(&existing.exec, &app.exec))
-        {
-            combined.push(app);
+                .any(|(_, existing_norm)| norm_match(existing_norm, &norm))
+            {
+                combined.push((app, norm));
+            }
         }
     }
 
+    let mut result: Vec<DesktopApp> = combined.into_iter().map(|(app, _)| app).collect();
+
     // Sort alphabetically by name
-    combined.sort_by_key(|a| a.name.to_lowercase());
-    combined
+    result.sort_by_key(|a| a.name.to_lowercase());
+    result
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mouser_engine::config::execs_match;
 
     #[test]
     fn test_clean_exec_command() {
@@ -369,7 +381,7 @@ mod tests {
             if !app.exec.is_empty()
                 && !combined
                     .iter()
-                    .any(|e: &DesktopApp| execs_strict(&e.exec, &app.exec))
+                    .any(|e: &DesktopApp| norm_strict(&normalize_exec(&e.exec), &normalize_exec(&app.exec)))
             {
                 combined.push(app);
             }

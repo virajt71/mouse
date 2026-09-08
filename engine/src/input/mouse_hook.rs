@@ -199,8 +199,7 @@ impl MouseHook {
                                                     let enabled = crate::flow::FLOW_MANAGER.flow_enabled.load(Ordering::Relaxed);
                                                     if enabled {
                                                         if let Some(edge_ev) = crate::flow::FLOW_MANAGER.handle_raw_motion(dx, dy) {
-                                                            let mode = crate::flow::FLOW_MANAGER.flow_mouse_mode.read().unwrap().clone();
-                                                            if mode == "hardware" {
+                                                            if crate::flow::FLOW_MANAGER.flow_mouse_mode_hardware.load(Ordering::Relaxed) {
                                                                 let hold_key = crate::flow::FLOW_MANAGER.flow_hold_key.read().unwrap().clone();
                                                                 let ctrl_only = crate::flow::FLOW_MANAGER.flow_hold_ctrl_only.load(Ordering::Relaxed);
                                                                 let mut satisfied = crate::flow::switching::is_hold_key_satisfied(&hold_key);
@@ -217,15 +216,13 @@ impl MouseHook {
                                                                     crate::flow::FLOW_MANAGER.set_active_peer(Some(peer.peer_id.clone()));
 
                                                                     // Reset coordinates to opposite edge to prevent loop bouncing
-                                                                    let sw = *crate::flow::FLOW_MANAGER.screen_width.read().unwrap();
-                                                                    let sh = *crate::flow::FLOW_MANAGER.screen_height.read().unwrap();
-                                                                    let mut vx = crate::flow::FLOW_MANAGER.virtual_x.lock_safe();
-                                                                    let mut vy = crate::flow::FLOW_MANAGER.virtual_y.lock_safe();
+                                                                    let sw = crate::flow::FLOW_MANAGER.screen_width.load(Ordering::Relaxed);
+                                                                    let sh = crate::flow::FLOW_MANAGER.screen_height.load(Ordering::Relaxed);
                                                                     match edge_ev {
-                                                                        crate::flow::edge::EdgeEvent::Left => *vx = sw - 20,
-                                                                        crate::flow::edge::EdgeEvent::Right => *vx = 20,
-                                                                        crate::flow::edge::EdgeEvent::Top => *vy = sh - 20,
-                                                                        crate::flow::edge::EdgeEvent::Bottom => *vy = 20,
+                                                                        crate::flow::edge::EdgeEvent::Left => crate::flow::FLOW_MANAGER.virtual_x.store(sw - 20, Ordering::Relaxed),
+                                                                        crate::flow::edge::EdgeEvent::Right => crate::flow::FLOW_MANAGER.virtual_x.store(20, Ordering::Relaxed),
+                                                                        crate::flow::edge::EdgeEvent::Top => crate::flow::FLOW_MANAGER.virtual_y.store(sh - 20, Ordering::Relaxed),
+                                                                        crate::flow::edge::EdgeEvent::Bottom => crate::flow::FLOW_MANAGER.virtual_y.store(20, Ordering::Relaxed),
                                                                     }
                                                                 }
                                                             }

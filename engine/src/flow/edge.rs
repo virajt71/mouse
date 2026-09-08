@@ -76,8 +76,8 @@ pub fn run_x11_edge_polling(engine_inner: Arc<crate::engine::inner::EngineInner>
                                         let sh = screen.height_in_pixels as i32;
 
                                         // Update dimensions
-                                        *FLOW_MANAGER.screen_width.write().unwrap() = sw;
-                                        *FLOW_MANAGER.screen_height.write().unwrap() = sh;
+                                        FLOW_MANAGER.screen_width.store(sw, Ordering::Relaxed);
+                                        FLOW_MANAGER.screen_height.store(sh, Ordering::Relaxed);
 
                                         let threshold = FLOW_MANAGER
                                             .flow_edge_threshold

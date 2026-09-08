@@ -234,7 +234,7 @@ pub fn show(
 
             // Get custom profiles sorted alphabetically from active group
             let mut custom_profiles: Vec<String> = Vec::new();
-            if let Some(group) = config.profile_groups.get(&config.active_group) {
+            if let Some(group) = config.profile_groups.get(config.get_active_group()) {
                 custom_profiles = group
                     .profiles
                     .keys()

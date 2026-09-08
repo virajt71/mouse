@@ -3,6 +3,9 @@ use std::path::PathBuf;
 /// Returns the path to the persistent paired-device cache file.
 /// Location: ~/.local/share/mouser-rs/paired_devices.csv
 pub fn device_cache_path() -> Option<PathBuf> {
+    if let Ok(p) = std::env::var("MOUSER_DEVICE_CACHE_PATH") {
+        return Some(PathBuf::from(p));
+    }
     let mut path = dirs::data_local_dir()?; // ~/.local/share on Linux
     path.push("mouser-rs");
     path.push("paired_devices.csv");

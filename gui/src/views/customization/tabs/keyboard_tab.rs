@@ -30,9 +30,11 @@ pub fn show_keyboard_keys_tab(
     );
 
     // Fetch active profile mappings
+    let fallback_profile = mouser_engine::config::Profile::default();
     let profile = config
         .get_profile(&config.active_app_profile)
-        .unwrap_or_else(|| config.get_profile("global").unwrap());
+        .or_else(|| config.get_profile("global"))
+        .unwrap_or(&fallback_profile);
 
     // Defining coordinates (rx, ry, rw, rh) for 22 customizable keys:
     // 12 F-keys: F1 to F12
@@ -357,9 +359,11 @@ pub fn show_keyboard_backlighting_tab(
     config: &Config,
     keyboard_texture: &egui::TextureHandle,
 ) {
+    let fallback_profile = mouser_engine::config::Profile::default();
     let profile = config
         .get_profile(&config.active_app_profile)
-        .unwrap_or_else(|| config.get_profile("global").unwrap());
+        .or_else(|| config.get_profile("global"))
+        .unwrap_or(&fallback_profile);
 
     let enabled_str = profile
         .mappings

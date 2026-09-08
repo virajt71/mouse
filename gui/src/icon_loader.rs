@@ -8,29 +8,34 @@ thread_local! {
     static ICON_CACHE: RefCell<HashMap<String, Option<TextureHandle>>> = RefCell::new(HashMap::new());
 }
 
-fn icon_theme_roots() -> Vec<PathBuf> {
-    let mut roots = Vec::new();
-    let mut bases = vec![
-        PathBuf::from("/usr/share/icons"),
-        PathBuf::from("/usr/local/share/icons"),
-    ];
-    if let Some(home) = dirs::home_dir() {
-        bases.push(home.join(".local/share/icons"));
-        bases.push(home.join(".icons"));
-    }
-    for base in bases {
-        if let Ok(entries) = std::fs::read_dir(&base) {
-            for entry in entries.flatten() {
-                if entry.path().is_dir() {
-                    roots.push(entry.path());
+use std::sync::OnceLock;
+
+fn icon_theme_roots() -> &'static [PathBuf] {
+    static ROOTS: OnceLock<Vec<PathBuf>> = OnceLock::new();
+    ROOTS.get_or_init(|| {
+        let mut roots = Vec::new();
+        let mut bases = vec![
+            PathBuf::from("/usr/share/icons"),
+            PathBuf::from("/usr/local/share/icons"),
+        ];
+        if let Some(home) = dirs::home_dir() {
+            bases.push(home.join(".local/share/icons"));
+            bases.push(home.join(".icons"));
+        }
+        for base in bases {
+            if let Ok(entries) = std::fs::read_dir(&base) {
+                for entry in entries.flatten() {
+                    if entry.path().is_dir() {
+                        roots.push(entry.path());
+                    }
                 }
             }
         }
-    }
-    // hicolor is the spec's fallback theme — check it last so a concrete
-    // active-theme icon wins when both exist.
-    roots.sort_by_key(|p| p.file_name().is_some_and(|n| n == "hicolor"));
-    roots
+        // hicolor is the spec's fallback theme — check it last so a concrete
+        // active-theme icon wins when both exist.
+        roots.sort_by_key(|p| p.file_name().is_some_and(|n| n == "hicolor"));
+        roots
+    })
 }
 
 fn load_svg(path: &Path, icon: &str, ctx: &egui::Context) -> Option<TextureHandle> {
@@ -121,7 +126,7 @@ pub fn resolve_icon_path(icon: &str) -> Option<PathBuf> {
         "status",
     ];
 
-    for theme_dir in &themes {
+    for theme_dir in themes {
         for size in &sizes {
             for category in &categories {
                 let base = theme_dir.join(size).join(category);

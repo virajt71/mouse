@@ -3,6 +3,7 @@ use crate::lock_ext::MutexExt;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream, UdpSocket};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
@@ -685,8 +686,8 @@ fn process_peer_events(
                         crate::flow::switching::trigger_hidpp_channel_switch(0);
                     }
 
-                    let sw = *FLOW_MANAGER.screen_width.read().unwrap();
-                    let sh = *FLOW_MANAGER.screen_height.read().unwrap();
+                    let sw = FLOW_MANAGER.screen_width.load(Ordering::Relaxed);
+                    let sh = FLOW_MANAGER.screen_height.load(Ordering::Relaxed);
 
                     let target_x = if lx == 1 {
                         sw - 50
@@ -703,8 +704,8 @@ fn process_peer_events(
                         sh / 2
                     };
 
-                    *FLOW_MANAGER.virtual_x.lock_safe() = target_x;
-                    *FLOW_MANAGER.virtual_y.lock_safe() = target_y;
+                    FLOW_MANAGER.virtual_x.store(target_x, Ordering::Relaxed);
+                    FLOW_MANAGER.virtual_y.store(target_y, Ordering::Relaxed);
 
                     if let Ok((conn, screen_num)) =
                         x11rb::rust_connection::RustConnection::connect(None)

@@ -32,9 +32,11 @@ pub fn show_buttons_tab(
     );
 
     // 2. Fetch active mappings
+    let fallback_profile = mouser_engine::config::Profile::default();
     let profile = config
         .get_profile(&config.active_app_profile)
-        .unwrap_or_else(|| config.get_profile("global").unwrap());
+        .or_else(|| config.get_profile("global"))
+        .unwrap_or(&fallback_profile);
 
     let middle_val = mapping_to_action(CustomizingButton::Middle, &profile.mappings);
     let top_val = mapping_to_action(CustomizingButton::Top, &profile.mappings);

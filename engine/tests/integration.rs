@@ -60,7 +60,7 @@ fn test_profile_matching_logic() {
 
     config
         .profile_groups
-        .insert("default".to_string(), ProfileGroup { profiles });
+        .insert("default".to_string(), ProfileGroup { name: "default".to_string(), profiles, apps: vec![] });
     config.normalize_apps();
 
     assert_eq!(config.get_profile_for_app("CHROME"), "chrome_profile");
@@ -117,7 +117,7 @@ fn test_profile_matching_mixed_case() {
     );
     config
         .profile_groups
-        .insert("default".to_string(), ProfileGroup { profiles });
+        .insert("default".to_string(), ProfileGroup { name: "default".to_string(), profiles, apps: vec![] });
     config.normalize_apps();
 
     // Mixed case should normalize to lowercase before matching
@@ -150,7 +150,7 @@ fn test_profile_matching_no_match_returns_global() {
     );
     config
         .profile_groups
-        .insert("default".to_string(), ProfileGroup { profiles });
+        .insert("default".to_string(), ProfileGroup { name: "default".to_string(), profiles, apps: vec![] });
     config.normalize_apps();
 
     // Non-matching exe should return "global"
@@ -191,7 +191,7 @@ fn test_normalize_apps_idempotent() {
     );
     config
         .profile_groups
-        .insert("default".to_string(), ProfileGroup { profiles });
+        .insert("default".to_string(), ProfileGroup { name: "default".to_string(), profiles, apps: vec![] });
 
     // Already normalized — calling twice should be a no-op
     config.normalize_apps();

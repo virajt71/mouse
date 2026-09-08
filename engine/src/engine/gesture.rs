@@ -34,17 +34,31 @@ impl Engine {
                     let explicit = active.get(enabled_key).map(|s| s.as_ref());
                     match explicit {
                         Some("false") => {
-                            let prefix = if btn_key == "middle" {
-                                "middle_gesture_"
+                            let keys: &[&str] = if btn_key == "middle" {
+                                &[
+                                    "middle_gesture_left",
+                                    "middle_gesture_right",
+                                    "middle_gesture_up",
+                                    "middle_gesture_down",
+                                ]
                             } else if btn_key == "xbutton1" {
-                                "xbutton1_gesture_"
+                                &[
+                                    "xbutton1_gesture_left",
+                                    "xbutton1_gesture_right",
+                                    "xbutton1_gesture_up",
+                                    "xbutton1_gesture_down",
+                                ]
                             } else {
-                                "xbutton2_gesture_"
+                                &[
+                                    "xbutton2_gesture_left",
+                                    "xbutton2_gesture_right",
+                                    "xbutton2_gesture_up",
+                                    "xbutton2_gesture_down",
+                                ]
                             };
-                            ["left", "right", "up", "down"].iter().any(|dir| {
-                                let k = format!("{}{}", prefix, dir);
+                            keys.iter().any(|k| {
                                 active
-                                    .get(&k)
+                                    .get(*k)
                                     .map(|v| v.as_ref() != "none")
                                     .unwrap_or(false)
                             })

@@ -68,6 +68,20 @@ message DeviceStateResponse {
   string battery_status              = 7;
 }
 
+// ─── Device List ──────────────────────────────────────────────────────────────
+
+/// One entry per connected device in Config.devices.
+message DeviceInfo {
+  string serial            = 1;
+  string layout            = 2;
+  string active_app_profile = 3;
+  uint32 profile_count     = 4;
+}
+
+message DeviceListResponse {
+  repeated DeviceInfo devices = 1;
+}
+
 // ─── Flow (pass-through query helpers) ────────────────────────────────────────
 
 message FlowStatusResponse {
@@ -106,4 +120,8 @@ service MouserDaemon {
 
   // ── Pairing ─────────────────────────────────────────────────────────────
   rpc UnpairDevice(StringValue) returns (StatusResponse);
+
+  // ── Device List ───────────────────────────────────────────────────────────
+  rpc GetDevices   (Empty) returns (DeviceListResponse);
+  rpc SelectDevice (StringValue) returns (StatusResponse);
 }

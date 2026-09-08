@@ -121,7 +121,10 @@ impl MouserDaemon for MouserDaemonService {
     // ── Config ────────────────────────────────────────────────────────────────
 
     async fn get_config(&self, _req: Request<Empty>) -> Result<Response<ConfigResponse>, Status> {
-        Ok(Response::new(config_to_proto(&self.engine)))
+        let cfg = self.engine.get_config();
+        let json = serde_json::to_string(&cfg).unwrap_or_default();
+        let gen = self.engine.config_generation();
+        Ok(Response::new(ConfigResponse { config_json: json, generation: gen }))
     }
 
     async fn reload_config(
@@ -278,6 +281,27 @@ impl MouserDaemon for MouserDaemonService {
             device_name,
             active_host_channel: channel,
         }))
+    }
+
+    async fn get_devices(&self, _req: Request<Empty>) -> Result<Response<proto::DeviceListResponse>, Status> {
+        let devices = self.engine.device_list().into_iter()
+            .map(|(serial, layout, active_app_profile, profile_count)| proto::DeviceInfo {
+                serial, layout, active_app_profile, profile_count,
+            })
+            .collect();
+        Ok(Response::new(proto::DeviceListResponse { devices }))
+    }
+
+    async fn select_device(
+        &self,
+        req: Request<StringValue>,
+    ) -> Result<Response<StatusResponse>, Status> {
+        let serial = req.into_inner().value;
+        if self.engine.select_device(&serial) {
+            Ok(Response::new(Self::ok()))
+        } else {
+            Ok(Response::new(Self::err(format!("device not found: {serial}"))))
+        }
     }
 
     async fn get_flow_status(

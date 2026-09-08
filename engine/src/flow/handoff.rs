@@ -47,8 +47,8 @@ pub fn handle_edge_event(edge: EdgeEvent) {
         let local_name = FLOW_MANAGER.flow_local_name.read().unwrap().clone();
 
         // Read current cursor position from virtual_x and virtual_y
-        let cx = *FLOW_MANAGER.virtual_x.lock_safe();
-        let cy = *FLOW_MANAGER.virtual_y.lock_safe();
+        let cx = FLOW_MANAGER.virtual_x.load(Ordering::Relaxed);
+        let cy = FLOW_MANAGER.virtual_y.load(Ordering::Relaxed);
 
         // The entry edge on the receiver side is the opposite of the sender's exit edge:
         // Left exit -> Right entry
@@ -129,8 +129,8 @@ pub fn handle_handoff_request(
     FLOW_MANAGER.set_active_peer(None);
 
     // Calculate target cursor position
-    let sw = *FLOW_MANAGER.screen_width.read().unwrap();
-    let sh = *FLOW_MANAGER.screen_height.read().unwrap();
+    let sw = FLOW_MANAGER.screen_width.load(Ordering::Relaxed);
+    let sh = FLOW_MANAGER.screen_height.load(Ordering::Relaxed);
 
     let (target_x, target_y) = match entry_edge {
         EdgeEvent::Left => (50, cursor_pos.1),
@@ -142,8 +142,8 @@ pub fn handle_handoff_request(
     let target_x = target_x.clamp(0, sw);
     let target_y = target_y.clamp(0, sh);
 
-    *FLOW_MANAGER.virtual_x.lock_safe() = target_x;
-    *FLOW_MANAGER.virtual_y.lock_safe() = target_y;
+    FLOW_MANAGER.virtual_x.store(target_x, Ordering::Relaxed);
+    FLOW_MANAGER.virtual_y.store(target_y, Ordering::Relaxed);
 
     log::info!(
         "[Handoff] Seeding/injecting cursor position to ({}, {})",
@@ -250,15 +250,13 @@ fn check_timeout(peer_id: &str) {
                 *HANDOFF_START_TIME.lock().unwrap() = None;
 
                 // Warp virtual cursor back slightly to prevent immediate re-triggering
-                let sw = *FLOW_MANAGER.screen_width.read().unwrap();
-                let sh = *FLOW_MANAGER.screen_height.read().unwrap();
-                let mut vx = FLOW_MANAGER.virtual_x.lock_safe();
-                let mut vy = FLOW_MANAGER.virtual_y.lock_safe();
+                let sw = FLOW_MANAGER.screen_width.load(Ordering::Relaxed);
+                let sh = FLOW_MANAGER.screen_height.load(Ordering::Relaxed);
                 match peer.edge_relation {
-                    EdgeEvent::Left => *vx = 20,
-                    EdgeEvent::Right => *vx = sw - 20,
-                    EdgeEvent::Top => *vy = 20,
-                    EdgeEvent::Bottom => *vy = sh - 20,
+                    EdgeEvent::Left => FLOW_MANAGER.virtual_x.store(20, Ordering::Relaxed),
+                    EdgeEvent::Right => FLOW_MANAGER.virtual_x.store(sw - 20, Ordering::Relaxed),
+                    EdgeEvent::Top => FLOW_MANAGER.virtual_y.store(20, Ordering::Relaxed),
+                    EdgeEvent::Bottom => FLOW_MANAGER.virtual_y.store(sh - 20, Ordering::Relaxed),
                 }
             }
         }

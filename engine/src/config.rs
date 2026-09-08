@@ -146,6 +146,100 @@ impl Default for Settings {
 #[serde(default)]
 pub struct ProfileGroup {
     pub profiles: HashMap<String, Profile>,
+    pub name: String,
+    pub apps: Vec<String>,
+}
+
+/// Device identity: serial (HID++ device name) + layout key (PID-based).
+/// Two identical mice stay independent because their serials differ.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+pub struct DeviceKey {
+    pub serial: String,
+    pub layout: String,
+}
+impl DeviceKey {
+    pub fn new(serial: &str, layout: &str) -> Self {
+        Self { serial: serial.to_string(), layout: layout.to_string() }
+    }
+}
+/// Per-device profile storage — each connected device gets its own profile map.
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[serde(default)]
+pub struct DeviceProfiles {
+    pub profiles: HashMap<String, Profile>,
+    pub active_app_profile: String,
+}
+// Custom serde for DeviceKey so HashMap keys survive JSON roundtrip
+// even when the map is empty (de/serialize as a map with string keys).
+impl serde::Serialize for DeviceKey {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // Serialize as "serial|layout" string so DeviceKey works both as a
+        // struct field and as a HashMap key (JSON object keys must be strings).
+        serializer.serialize_str(&format!("{}|{}", self.serial, self.layout))
+    }
+}
+impl<'de> serde::Deserialize<'de> for DeviceKey {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_any(Visitor)
+    }
+}
+
+struct Visitor;
+
+impl<'de> serde::de::Visitor<'de> for Visitor {
+    type Value = DeviceKey;
+
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("a DeviceKey string (\'serial|layout\') or struct")
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        // String format: "serial|layout"
+        if let Some((serial, layout)) = value.split_once('|') {
+            return Ok(DeviceKey {
+                serial: serial.to_string(),
+                layout: layout.to_string(),
+            });
+        }
+        // If it's not a pipe-separated string, try parsing as a plain serial
+        // (single-field legacy format or just the serial number)
+        Err(serde::de::Error::custom(
+            "DeviceKey string must be \'serial|layout\' format",
+        ))
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    where
+        A: serde::de::MapAccess<'de>,
+    {
+        // Struct format: {"serial": "...", "layout": "..."}
+        #[derive(serde::Deserialize)]
+        #[serde(field_identifier, rename_all = "snake_case")]
+        enum Field {
+            Serial,
+            Layout,
+        }
+        let mut serial = None;
+        let mut layout = None;
+        while let Some(key) = map.next_key()? {
+            match key {
+                Field::Serial => serial = Some(map.next_value()?),
+                Field::Layout => layout = Some(map.next_value()?),
+            }
+        }
+        let serial = serial.ok_or_else(|| serde::de::Error::missing_field("serial"))?;
+        let layout = layout.ok_or_else(|| serde::de::Error::missing_field("layout"))?;
+        Ok(DeviceKey { serial, layout })
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -155,6 +249,7 @@ pub struct Config {
     pub active_group: String,
     pub active_app_profile: String,
     pub profile_groups: HashMap<String, ProfileGroup>,
+    pub devices: HashMap<DeviceKey, DeviceProfiles>,
     pub settings: Settings,
 }
 
@@ -204,19 +299,23 @@ impl Default for Config {
         profiles.insert("global".to_string(), global_profile);
 
         let mut profile_groups = HashMap::new();
-        profile_groups.insert("default".to_string(), ProfileGroup { profiles });
+        profile_groups.insert("default".to_string(), ProfileGroup { name: "default".to_string(), profiles, apps: vec![] });
 
         Config {
             version: 13,
             active_group: "default".to_string(),
             active_app_profile: "global".to_string(),
             profile_groups,
+            devices: HashMap::new(),
             settings: Settings::default(),
         }
     }
 }
 
 pub fn get_config_path() -> PathBuf {
+    if let Ok(p) = std::env::var("MOUSER_CONFIG_PATH") {
+        return PathBuf::from(p);
+    }
     if cfg!(test) {
         let mut path = std::env::temp_dir();
         path.push("mouser_test_config.json");
@@ -271,7 +370,7 @@ impl Config {
                 global_profile.label = "Default (All Apps)".to_string();
                 profiles.insert("global".to_string(), global_profile);
             }
-            profile_groups.insert("default".to_string(), ProfileGroup { profiles });
+            profile_groups.insert("default".to_string(), ProfileGroup { name: "default".to_string(), profiles, apps: vec![] });
 
             let active_app_profile = if old_cfg.active_profile == "default" {
                 "global".to_string()
@@ -284,6 +383,7 @@ impl Config {
                 active_group: "default".to_string(),
                 active_app_profile,
                 profile_groups,
+                devices: HashMap::new(),
                 settings: old_cfg.settings,
             };
             let _ = new_cfg.save();
@@ -301,6 +401,12 @@ impl Config {
                 match serde_json::from_str::<Config>(&content) {
                     Ok(mut cfg) => {
                         if cfg.version == 13 {
+                            if cfg.devices.is_empty() {
+                                log::info!("[Config] Migrating v13 config: populating devices from cache");
+                                cfg.devices = Self::migrate_devices_from_cache();
+                            }
+                            cfg.version = 14;
+                            let _ = cfg.save();
                             return cfg;
                         }
                         if cfg.version < 13 {
@@ -308,12 +414,8 @@ impl Config {
                                 return migrated;
                             }
                         }
-                        // Successfully deserialized but unexpected version — bump to 13.
-                        log::warn!(
-                            "[Config] Loaded config with version {}, upgrading version to 13.",
-                            cfg.version
-                        );
-                        cfg.version = 13;
+                        // version >= 14 — already current, accept as-is
+                        // (no migration needed, just save to ensure consistency)
                         let _ = cfg.save();
                         return cfg;
                     }
@@ -352,10 +454,12 @@ impl Config {
     pub fn save(&self) -> anyhow::Result<()> {
         let mut cloned = self.clone();
         cloned.normalize_apps();
+        cloned.ensure_valid();
         let path = get_config_path();
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
+        cloned.version = 14;
         let content = serde_json::to_string_pretty(&cloned)?;
         fs::write(path, content)?;
         Ok(())
@@ -382,14 +486,24 @@ impl Config {
     }
 
     pub fn get_profile(&self, name: &str) -> Option<&Profile> {
+        let ag = self.get_active_group();
         self.profile_groups
-            .get(&self.active_group)
+            .get(ag)
             .and_then(|g| g.profiles.get(name))
+            .or_else(|| {
+                self.profile_groups
+                    .get("default")
+                    .and_then(|g| g.profiles.get(name))
+            })
     }
 
     pub fn get_resolved_mappings(&self, profile_name: &str) -> HashMap<String, String> {
         let mut resolved = HashMap::new();
-        if let Some(group) = self.profile_groups.get(&self.active_group) {
+        let group = self
+            .profile_groups
+            .get(self.get_active_group())
+            .or_else(|| self.profile_groups.get("default"));
+        if let Some(group) = group {
             if let Some(global_profile) = group.profiles.get("global") {
                 resolved = global_profile.mappings.clone();
             }
@@ -419,7 +533,11 @@ impl Config {
             return "global".to_string();
         }
         let exe_lower = exe_name.trim().to_lowercase();
-        if let Some(group) = self.profile_groups.get(&self.active_group) {
+        let group = self
+            .profile_groups
+            .get(self.get_active_group())
+            .or_else(|| self.profile_groups.get("default"));
+        if let Some(group) = group {
             for (pname, pdata) in &group.profiles {
                 if let Some(app) = pdata.apps.first() {
                     if execs_match(app, &exe_lower) {
@@ -429,6 +547,196 @@ impl Config {
             }
         }
         "global".to_string()
+    }
+
+    /// Sync live device list into `devices`. Called by Engine::update_devices().
+    pub fn update_devices(&mut self, bt_paired: &[(String, String, bool)], hidpp_names: &[String]) {
+        // Build a map of BT paired devices by MAC
+        let mut bt_map: HashMap<String, (String, bool)> = HashMap::new();
+        for (mac, name, connected) in bt_paired {
+            bt_map.insert(mac.clone(), (name.clone(), *connected));
+        }
+        // Build set of HID++ device names
+        let hidpp_set: std::collections::HashSet<String> = hidpp_names.iter().cloned().collect();
+        // Remove devices that are no longer connected
+        self.devices.retain(|k, _| {
+            bt_map.contains_key(&k.serial) || hidpp_set.contains(&k.serial)
+        });
+        // Add/update BT paired devices
+        for (mac, name, _) in bt_paired {
+            let key = DeviceKey::new(mac, &Self::layout_from_name(name));
+            match self.devices.entry(key) {
+                std::collections::hash_map::Entry::Vacant(e) => {
+                    let mut profiles = HashMap::new();
+                    profiles.insert(
+                        "global".to_string(),
+                        Profile {
+                            label: format!("Default ({})", name),
+                            apps: vec![],
+                            mappings: HashMap::new(),
+                            icon: String::new(),
+                        },
+                    );
+                    e.insert(DeviceProfiles {
+                        profiles,
+                        active_app_profile: "global".to_string(),
+                    });
+                }
+                std::collections::hash_map::Entry::Occupied(_) => {}
+            }
+        }
+    }
+    /// Migrate devices from Bluetooth cache on v13 to v14 upgrade.
+    fn migrate_devices_from_cache() -> HashMap<DeviceKey, DeviceProfiles> {
+        let cached = crate::cache::load_device_cache();
+        let mut devices = HashMap::new();
+        for (mac, name, _) in &cached {
+            let layout = Self::layout_from_name(name);
+            let key = DeviceKey::new(mac, &layout);
+            let mut profiles = HashMap::new();
+            profiles.insert(
+                "global".to_string(),
+                Profile {
+                    label: "Default (All Apps)".to_string(),
+                    apps: vec![],
+                    mappings: HashMap::new(),
+                    icon: String::new(),
+                },
+            );
+            devices.insert(
+                key,
+                DeviceProfiles {
+                    profiles,
+                    active_app_profile: "global".to_string(),
+                },
+            );
+        }
+        devices
+    }
+    /// Map a device name to a layout key (PID-based).
+    /// ponytail: name-based heuristic; switch to actual PID bytes from HID++ report if
+    /// devices with identical names but different layouts ever appear in the wild.
+    fn layout_from_name(name: &str) -> String {
+        let nl = name.to_lowercase();
+        if nl.contains("mx master 3s") || nl.contains("mx master 3") {
+            return "mx_master_3".into();
+        }
+        if nl.contains("mx master 2s") || nl.contains("mx master 2") {
+            return "mx_master_2s".into();
+        }
+        if nl.contains("mx master") {
+            return "mx_master".into();
+        }
+        if nl.contains("mx anywhere 3s") || nl.contains("mx anywhere 3") {
+            return "mx_anywhere_3".into();
+        }
+        if nl.contains("mx anywhere 2s") || nl.contains("mx anywhere 2") {
+            return "mx_anywhere_2s".into();
+        }
+        if nl.contains("mx anywhere") {
+            return "mx_anywhere".into();
+        }
+        if nl.contains("mx vertical") {
+            return "mx_vertical".into();
+        }
+        if nl.contains("mx ergo") {
+            return "mx_ergo".into();
+        }
+        if nl.contains("mx keys") || nl.contains("mx mechanical") {
+            return "mx_mechanical".into();
+        }
+        if nl.contains("craft") {
+            return "craft".into();
+        }
+        if nl.contains("g502") {
+            return "g502".into();
+        }
+        if nl.contains("g304") || nl.contains("g305") {
+            return "g304".into();
+        }
+        if nl.contains("g604") {
+            return "g604".into();
+        }
+        if nl.contains("g703") {
+            return "g703".into();
+        }
+        if nl.contains("g900") {
+            return "g900".into();
+        }
+        if nl.contains("g903") {
+            return "g903".into();
+        }
+        if nl.contains("lift") {
+            return "lift".into();
+        }
+        if nl.contains("pop") {
+            return "pop".into();
+        }
+        if nl.contains("m720") {
+            return "m720".into();
+        }
+        if nl.contains("m336") || nl.contains("m337") {
+            return "m336".into();
+        }
+        if nl.contains("m510") {
+            return "m510".into();
+        }
+        if nl.contains("m585") || nl.contains("m590") {
+            return "m585".into();
+        }
+        if nl.contains("m705") {
+            return "m705".into();
+        }
+        if nl.contains("k850") || nl.contains("k860") {
+            return "k850".into();
+        }
+        if nl.contains("k480") {
+            return "k480".into();
+        }
+        if nl.contains("k380") {
+            return "k380".into();
+        }
+        if nl.contains("pangolin") || nl.contains("trackball") {
+            return "trackball".into();
+        }
+        "generic".into()
+    }
+    /// Return the active group name, falling back to "default" if empty.
+    pub fn get_active_group(&self) -> &str {
+        if self.active_group.is_empty() {
+            "default"
+        } else {
+            &self.active_group
+        }
+    }
+    /// Ensure required fields have valid defaults after load/migration.
+    pub fn ensure_valid(&mut self) {
+        if self.active_group.is_empty() {
+            self.active_group = "default".to_string();
+        }
+        if self.active_app_profile.is_empty() {
+            self.active_app_profile = "global".to_string();
+        }
+        // Ensure the active group exists
+        let group = self
+            .profile_groups
+            .entry(self.active_group.clone())
+            .or_insert_with(|| ProfileGroup {
+                name: self.active_group.clone(),
+                profiles: HashMap::new(),
+                apps: vec![],
+            });
+        // Ensure "global" profile exists in the active group
+        match group.profiles.entry("global".to_string()) {
+            std::collections::hash_map::Entry::Vacant(e) => {
+                if let Some(def_group) = Config::default().profile_groups.get("default") {
+                    if let Some(gp) = def_group.profiles.get("global") {
+                        e.insert(gp.clone());
+                    }
+                }
+            }
+            std::collections::hash_map::Entry::Occupied(_) => {}
+        }
     }
 }
 
@@ -636,5 +944,57 @@ mod tests {
         );
         assert_eq!(config.get_profile_for_app("unknown"), "global");
         assert_eq!(config.get_profile_for_app(""), "global");
+    }
+
+    #[test]
+    fn test_layout_from_name() {
+        assert_eq!(Config::layout_from_name("MX Master 3"), "mx_master_3");
+        assert_eq!(Config::layout_from_name("mx master 3s"), "mx_master_3");
+        assert_eq!(Config::layout_from_name("MX Anywhere 3"), "mx_anywhere_3");
+        assert_eq!(Config::layout_from_name("Logitech Lift"), "lift");
+        assert_eq!(Config::layout_from_name("MX Keys"), "mx_mechanical");
+        assert_eq!(Config::layout_from_name("G502"), "g502");
+        assert_eq!(Config::layout_from_name("Unknown Device 123"), "generic");
+    }
+    #[test]
+    fn test_migrate_devices_from_cache() {
+        // Create a temp CSV cache with known devices
+        let tmp = std::env::temp_dir().join("mouser_test_cache_devices.csv");
+        let _ = std::fs::write(
+            &tmp,
+            "AA:BB:CC:DD:EE:01,MX Master 3,true\nAA:BB:CC:DD:EE:02,Logitech Lift,false\nAA:BB:CC:DD:EE:03,Unknown Device, true",
+        );
+        // Override MOUSER_DEVICE_CACHE_PATH
+        let old_env = std::env::var("MOUSER_DEVICE_CACHE_PATH").ok();
+        std::env::set_var("MOUSER_DEVICE_CACHE_PATH", &tmp);
+        // Create a v13 config that will trigger migration
+        let v13 = r#"{"version":13,"active_group":"default","active_app_profile":"global","profile_groups":{},"settings":{}}"#;
+        let tmp_cfg = std::env::temp_dir().join(format!("mouser_test_config_migrate_{}.json", std::process::id()));
+        let _ = std::fs::write(&tmp_cfg, v13);
+        let old_cfg_env = std::env::var("MOUSER_CONFIG_PATH").ok();
+        std::env::set_var("MOUSER_CONFIG_PATH", &tmp_cfg);
+        let cfg = Config::load();
+        assert_eq!(cfg.version, 14);
+        assert_eq!(cfg.devices.len(), 3);
+        assert!(cfg.devices.contains_key(&DeviceKey::new("AA:BB:CC:DD:EE:01", "mx_master_3")));
+        assert!(cfg.devices.contains_key(&DeviceKey::new("AA:BB:CC:DD:EE:02", "lift")));
+        assert!(cfg.devices.contains_key(&DeviceKey::new("AA:BB:CC:DD:EE:03", "generic")));
+        for (_, dp) in cfg.devices.iter() {
+            assert!(dp.profiles.contains_key("global"));
+            assert_eq!(dp.active_app_profile, "global");
+        }
+        // Cleanup
+        if let Some(v) = old_env {
+            std::env::set_var("MOUSER_DEVICE_CACHE_PATH", v);
+        } else {
+            std::env::remove_var("MOUSER_DEVICE_CACHE_PATH");
+        }
+        if let Some(v) = old_cfg_env {
+            std::env::set_var("MOUSER_CONFIG_PATH", v);
+        } else {
+            std::env::remove_var("MOUSER_CONFIG_PATH");
+        }
+        let _ = std::fs::remove_file(&tmp);
+        let _ = std::fs::remove_file(&tmp_cfg);
     }
 }

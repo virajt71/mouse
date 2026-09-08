@@ -349,30 +349,38 @@ impl Engine {
 
     pub fn add_profile_group(&self, name: &str) {
         log::info!("[Engine] Adding profile group: {}", name);
+        // Pre-compute default mappings before the entry API borrow.
+        let default_mappings = {
+            let cfg = self.inner.config.lock_safe();
+            cfg.profile_groups
+                .get("default")
+                .and_then(|g| g.profiles.get("global"))
+                .map(|p| p.mappings.clone())
+                .unwrap_or_default()
+        };
         {
             let mut cfg = self.inner.config.lock_safe();
-            if !cfg.profile_groups.contains_key(name) {
-                let mut profiles = std::collections::HashMap::new();
-                let default_mappings = cfg
-                    .profile_groups
-                    .get("default")
-                    .and_then(|g| g.profiles.get("global"))
-                    .map(|p| p.mappings.clone())
-                    .unwrap_or_default();
-
-                profiles.insert(
-                    "global".to_string(),
-                    crate::config::Profile {
-                        label: "Default (All Apps)".to_string(),
+            match cfg.profile_groups.entry(name.to_string()) {
+                std::collections::hash_map::Entry::Vacant(e) => {
+                    let mut profiles = std::collections::HashMap::new();
+                    profiles.insert(
+                        "global".to_string(),
+                        crate::config::Profile {
+                            label: "Default (All Apps)".to_string(),
+                            apps: vec![],
+                            mappings: default_mappings,
+                            icon: String::new(),
+                        },
+                    );
+                    e.insert(crate::config::ProfileGroup {
+                        name: name.to_string(),
+                        profiles,
                         apps: vec![],
-                        mappings: default_mappings,
-                        icon: String::new(),
-                    },
-                );
-                cfg.profile_groups
-                    .insert(name.to_string(), crate::config::ProfileGroup { profiles });
-                let _ = cfg.save();
-                self.increment_config_generation(&cfg);
+                    });
+                    let _ = cfg.save();
+                    self.increment_config_generation(&cfg);
+                }
+                std::collections::hash_map::Entry::Occupied(_) => {}
             }
         }
     }

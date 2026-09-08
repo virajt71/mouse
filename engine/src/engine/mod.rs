@@ -276,4 +276,37 @@ impl Engine {
         *self.inner.selected_device_idx.lock_safe() = idx;
         self.update_cached_device_state();
     }
+
+    /// Sync the live device list from the worker into Config.devices.
+    /// Called after each poll cycle so the config always reflects currently
+    /// connected devices.
+    pub fn update_devices(&self, bt_paired: &[(String, String, bool)], hidpp_names: &[String]) {
+        let mut cfg = self.inner.config.lock_safe();
+        cfg.update_devices(bt_paired, hidpp_names);
+        let _ = cfg.save();
+        self.increment_config_generation(&cfg);
+    }
+
+    /// Select a device by serial. Returns false if the serial isn't known.
+    pub fn select_device(&self, serial: &str) -> bool {
+        let mut cfg = self.inner.config.lock_safe();
+        if !cfg.devices.keys().any(|k| k.serial == serial) {
+            return false;
+        }
+        cfg.settings.device_layout_overrides.insert(
+            "selected_device_serial".to_string(),
+            serde_json::Value::String(serial.to_string()),
+        );
+        let _ = cfg.save();
+        self.increment_config_generation(&cfg);
+        true
+    }
+
+    /// List currently-known devices from Config.devices.
+    pub fn device_list(&self) -> Vec<(String, String, String, u32)> {
+        let cfg = self.inner.config.lock_safe();
+        cfg.devices.iter()
+            .map(|(k, dp)| (k.serial.clone(), k.layout.clone(), dp.active_app_profile.clone(), dp.profiles.len() as u32))
+            .collect()
+    }
 }

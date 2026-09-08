@@ -4,56 +4,83 @@ use super::kde::get_pid_from_kdotool;
 use super::sway::get_active_app_pid_sway;
 use super::xdotool::get_pid_from_xdotool;
 
-pub fn get_active_app_pid_fallbacks(x11_queried: bool) -> Option<u32> {
-    let desktop = std::env::var("XDG_CURRENT_DESKTOP")
-        .unwrap_or_default()
-        .to_uppercase();
-    let session_type = std::env::var("XDG_SESSION_TYPE")
-        .unwrap_or_default()
-        .to_lowercase();
+use std::sync::OnceLock;
 
-    let is_kde = desktop.contains("KDE");
-    let is_sway = desktop.contains("SWAY");
-    let is_hyprland = desktop.contains("HYPRLAND");
-    let is_i3 = desktop.contains("I3");
-    let has_display = std::env::var("DISPLAY")
-        .map(|v| !v.is_empty())
-        .unwrap_or(false);
-    let is_wayland = session_type == "wayland"
-        || std::env::var("WAYLAND_DISPLAY")
+struct EnvFlags {
+    is_kde: bool,
+    is_sway: bool,
+    is_hyprland: bool,
+    is_i3: bool,
+    has_display: bool,
+    is_wayland: bool,
+}
+
+fn get_env_flags() -> &'static EnvFlags {
+    static FLAGS: OnceLock<EnvFlags> = OnceLock::new();
+    FLAGS.get_or_init(|| {
+        let desktop = std::env::var("XDG_CURRENT_DESKTOP")
+            .unwrap_or_default()
+            .to_uppercase();
+        let session_type = std::env::var("XDG_SESSION_TYPE")
+            .unwrap_or_default()
+            .to_lowercase();
+
+        let is_kde = desktop.contains("KDE");
+        let is_sway = desktop.contains("SWAY");
+        let is_hyprland = desktop.contains("HYPRLAND");
+        let is_i3 = desktop.contains("I3");
+        let has_display = std::env::var("DISPLAY")
             .map(|v| !v.is_empty())
             .unwrap_or(false);
+        let is_wayland = session_type == "wayland"
+            || std::env::var("WAYLAND_DISPLAY")
+                .map(|v| !v.is_empty())
+                .unwrap_or(false);
+
+        EnvFlags {
+            is_kde,
+            is_sway,
+            is_hyprland,
+            is_i3,
+            has_display,
+            is_wayland,
+        }
+    })
+}
+
+pub fn get_active_app_pid_fallbacks(x11_queried: bool) -> Option<u32> {
+    let env = get_env_flags();
 
     // 2. kdotool — KDE Wayland native apps
-    if is_kde && is_wayland {
+    if env.is_kde && env.is_wayland {
         if let Some(pid) = get_pid_from_kdotool() {
             return Some(pid);
         }
     }
 
     // 3. Sway
-    if is_sway {
+    if env.is_sway {
         if let Some(pid) = get_active_app_pid_sway() {
             return Some(pid);
         }
     }
 
     // 4. Hyprland
-    if is_hyprland {
+    if env.is_hyprland {
         if let Some(pid) = get_active_app_pid_hyprland() {
             return Some(pid);
         }
     }
 
     // 5. i3 (X11, but JSON path is more reliable than xdotool on i3)
-    if is_i3 {
+    if env.is_i3 {
         if let Some(pid) = get_active_app_pid_i3() {
             return Some(pid);
         }
     }
 
     // 6. xdotool — legacy X11 / XWayland subprocess fallback
-    if has_display && !x11_queried {
+    if env.has_display && !x11_queried {
         if let Some(pid) = get_pid_from_xdotool() {
             return Some(pid);
         }

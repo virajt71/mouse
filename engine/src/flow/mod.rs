@@ -18,10 +18,10 @@ pub static FLOW_MANAGER: std::sync::LazyLock<Arc<FlowManager>> =
 
 pub struct FlowManager {
     pub active_peer: RwLock<Option<String>>, // None means local input is active
-    pub virtual_x: Mutex<i32>,
-    pub virtual_y: Mutex<i32>,
-    pub screen_width: RwLock<i32>,
-    pub screen_height: RwLock<i32>,
+    pub virtual_x: AtomicI32,
+    pub virtual_y: AtomicI32,
+    pub screen_width: AtomicI32,
+    pub screen_height: AtomicI32,
     pub is_running: Mutex<bool>,
     pub engine_inner: Mutex<Option<Arc<crate::engine::inner::EngineInner>>>,
     pub current_controller: RwLock<Option<String>>,
@@ -45,10 +45,10 @@ impl FlowManager {
     pub fn new() -> Self {
         FlowManager {
             active_peer: RwLock::new(None),
-            virtual_x: Mutex::new(960), // start in center of screen
-            virtual_y: Mutex::new(540),
-            screen_width: RwLock::new(1920),
-            screen_height: RwLock::new(1080),
+            virtual_x: AtomicI32::new(960), // start in center of screen
+            virtual_y: AtomicI32::new(540),
+            screen_width: AtomicI32::new(1920),
+            screen_height: AtomicI32::new(1080),
             is_running: Mutex::new(false),
             engine_inner: Mutex::new(None),
             current_controller: RwLock::new(None),
@@ -159,8 +159,10 @@ impl FlowManager {
     }
 
     pub fn update_config(&self, cfg: &Config) {
-        *self.screen_width.write().unwrap() = cfg.settings.flow_screen_width;
-        *self.screen_height.write().unwrap() = cfg.settings.flow_screen_height;
+        self.screen_width
+            .store(cfg.settings.flow_screen_width, Ordering::Relaxed);
+        self.screen_height
+            .store(cfg.settings.flow_screen_height, Ordering::Relaxed);
         self.flow_enabled
             .store(cfg.settings.flow_enabled, Ordering::Relaxed);
         *self.flow_mouse_mode.write().unwrap() = cfg.settings.flow_mouse_mode.clone();
@@ -182,26 +184,28 @@ impl FlowManager {
     }
 
     pub fn handle_raw_motion(&self, dx: i32, dy: i32) -> Option<EdgeEvent> {
-        let mut vx = self.virtual_x.lock_safe();
-        let mut vy = self.virtual_y.lock_safe();
+        let sw = self.screen_width.load(Ordering::Relaxed);
+        let sh = self.screen_height.load(Ordering::Relaxed);
 
-        let sw = *self.screen_width.read().unwrap();
-        let sh = *self.screen_height.read().unwrap();
+        let cur_x = self.virtual_x.load(Ordering::Relaxed);
+        let new_x = (cur_x + dx).clamp(0, sw);
+        self.virtual_x.store(new_x, Ordering::Relaxed);
 
-        *vx = (*vx + dx).clamp(0, sw);
-        *vy = (*vy + dy).clamp(0, sh);
+        let cur_y = self.virtual_y.load(Ordering::Relaxed);
+        let new_y = (cur_y + dy).clamp(0, sh);
+        self.virtual_y.store(new_y, Ordering::Relaxed);
 
         let threshold = self.flow_edge_threshold.load(Ordering::Relaxed);
         let mut edge = None;
 
         // Boundary checks
-        if *vx <= threshold {
+        if new_x <= threshold {
             edge = Some(EdgeEvent::Left);
-        } else if *vx >= sw - threshold {
+        } else if new_x >= sw - threshold {
             edge = Some(EdgeEvent::Right);
-        } else if *vy <= threshold {
+        } else if new_y <= threshold {
             edge = Some(EdgeEvent::Top);
-        } else if *vy >= sh - threshold {
+        } else if new_y >= sh - threshold {
             edge = Some(EdgeEvent::Bottom);
         }
 
