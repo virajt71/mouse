@@ -125,6 +125,7 @@ pub fn show_known_device(
     texture: &egui::TextureHandle,
     conn_type: &str,
     battery_pct: &str,
+    battery_status: &str,
     lang: &str,
 ) -> DeviceCardAction {
     let mut unpair_clicked = false;
@@ -266,6 +267,27 @@ pub fn show_known_device(
             // Connection icon (centered in the right half)
             let conn_center = egui::pos2(cx + (pill_rect.max.x - cx) / 2.0, cy);
             draw_connection_icon_clean(painter, conn_center, conn_type, egui::Color32::WHITE);
+
+            // Battery status label below the connection icon
+            let status_font = egui::FontId::monospace(9.0);
+            let status_color = if battery_status.is_empty() {
+                egui::Color32::from_rgb(0x88, 0x88, 0x88)
+            } else {
+                egui::Color32::from_rgb(0xAA, 0xAA, 0xAA)
+            };
+            let status_text = if battery_status.is_empty() {
+                String::new()
+            } else {
+                format!("({})", battery_status)
+            };
+            let status_pos = egui::pos2(conn_center.x, conn_center.y + 14.0);
+            painter.text(
+                status_pos,
+                egui::Align2::CENTER_CENTER,
+                &status_text,
+                status_font,
+                status_color,
+            );
         } else {
             // "INACTIVE" label
             let label_font = egui::FontId::proportional(11.0);

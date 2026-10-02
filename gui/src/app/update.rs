@@ -180,6 +180,7 @@ impl eframe::App for MouserApp {
                                                     &device_tex,
                                                     conn_type,
                                                     &battery_pct,
+                                                    &self.battery_status,
                                                     &self.config.settings.language,
                                                 );
 
@@ -199,10 +200,26 @@ impl eframe::App for MouserApp {
                                         if let Some((mac, action)) = action_to_take {
                                             match action {
                                                 crate::views::empty_state::DeviceCardAction::Unpair => {
-                                                    self.engine.unpair_device(&mac);
-                                                     let mut devices = (*self.paired_devices).clone();
-                                                     devices.retain(|(m, _, _)| m != &mac);
-                                                     self.paired_devices = std::sync::Arc::new(devices);
+                                                    // Attempt the OS-level unpair and only remove the
+                                                    // device from the local list if it actually
+                                                    // succeeded.  If the RPC fails (bluez not
+                                                    // settled, device already gone, etc.) the device
+                                                    // stays visible and the user can retry — this
+                                                    // prevents the "I deleted it but it keeps
+                                                    // coming back" confusion where the GUI pretends
+                                                    // the unpair worked but the worker re-adds the
+                                                    // device on the next poll because bluez still
+                                                    // has it paired.
+                                                    match self.engine.unpair_device(&mac) {
+                                                        Ok(()) => {
+                                                            let mut devices = (*self.paired_devices).clone();
+                                                            devices.retain(|(m, _, _)| m != &mac);
+                                                            self.paired_devices = std::sync::Arc::new(devices);
+                                                        }
+                                                        Err(err) => {
+                                                            log::warn!("[GUI] unpair {} failed: {}", mac, err);
+                                                        }
+                                                    }
                                                 }
                                                 crate::views::empty_state::DeviceCardAction::Customize => {
                                                     if let Some((_, name, _)) = display_devices.iter().find(|(m, _, _)| m == &mac) {

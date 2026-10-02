@@ -117,6 +117,33 @@ impl HidppClient {
     }
 }
 
+/// Approximate level label for the unified battery feature's level byte
+/// (0x1004 `getBatteryInfo` payload[1]). Matches the vendored `hidpp`
+/// crate's [`BatteryLevel`] discriminant values:
+/// Critical = 1, Low = 2, Good = 4, Full = 8.
+pub fn unified_battery_level_label(level: u8) -> String {
+    match level {
+        1 => "critical".into(),
+        2 => "low".into(),
+        4 => "good".into(),
+        8 => "full".into(),
+        _ => "unknown_level".into(),
+    }
+}
+
+/// Full unified-battery decode: percentage, level label, status label.
+/// Mirrors OpenLogi's decode (0x1004 `getBatteryInfo` → payload[percentage,
+/// level, status]) plus the level label the existing
+/// `parse_unified_battery` ignored.
+pub fn parse_unified_battery_full(payload: &[u8]) -> Option<(u8, String, String)> {
+    if payload.len() < 3 {
+        return None;
+    }
+    let percentage = payload[0].min(100);
+    let level = unified_battery_level_label(payload[1]);
+    let status = unified_battery_status_label(payload[2]);
+    Some((percentage, level, status))
+}
 /// Decode a unified-battery (0x1004) response &[percentage, level, status].
 /// Mirrors OpenLogi's `decode` for this feature.
 pub fn parse_unified_battery(payload: &[u8]) -> (u8, String) {
@@ -138,6 +165,88 @@ pub fn unified_battery_status_label(status: u8) -> String {
         7 => "charging_error".into(),
         _ => "unknown".into(),
     }
+}
+
+
+/// Status label for the 0x1001 voltage-battery status byte.
+/// Values mirror the HID++ 2.0 `batteryVoltageStatus` usage (OpenLogi's
+/// `BatteryVoltageStatus` enum): discharging, charging, fast charge, full,
+/// slow charge, invalid, thermal error, charging error.
+pub fn voltage_battery_status_label(status: u8) -> &'static str {
+    match status {
+        0 => "discharging",
+        1 => "charging",
+        2 => "charging_fast",
+        3 => "full",
+        4 => "charging_slow",
+        5 => "invalid_battery",
+        6 => "thermal_error",
+        7 => "charging_error",
+        _ => "unknown",
+    }
+}
+
+/// Estimate a charge percentage from a 0x1001 voltage reading (millivolts).
+///
+/// The 0x1001 feature reports battery voltage, not percent, so we model the
+/// discharge curve ourselves. This table is a conservative Solaar-style
+/// mapping for single-cell Li-Po packs; when in doubt we round down rather
+/// than over-promise charge. Calibrate against a real device before trusting
+/// the exact numbers.
+pub fn voltage_to_battery_percent(mv: u16) -> u8 {
+    const CURVE: &[(u16, u8)] = &[
+        (4200, 100),
+        (4100, 90),
+        (4000, 80),
+        (3900, 70),
+        (3800, 60),
+        (3700, 50),
+        (3600, 40),
+        (3500, 30),
+        (3400, 20),
+        (3300, 10),
+        (3200, 5),
+        (3100, 2),
+        (3000, 0),
+    ];
+
+    if mv >= CURVE[0].0 {
+        return CURVE[0].1;
+    }
+    if mv <= CURVE[CURVE.len() - 1].0 {
+        return CURVE[CURVE.len() - 1].1;
+    }
+    for i in 1..CURVE.len() {
+        if mv >= CURVE[i].0 {
+            let (mv_high, pct_high) = CURVE[i - 1];
+            let (mv_low, pct_low) = CURVE[i];
+            let span_mv = (mv_high - mv_low) as u16;
+            let span_pct = (pct_high - pct_low) as u16;
+            // integer-only interpolation, rounding to nearest
+            let frac = ((mv - mv_low) as u16 * 100 + span_mv / 2) / span_mv;
+            return (pct_low as u16 + (span_pct * frac / 100)) as u8;
+        }
+    }
+    0
+}
+
+/// Decode a 0x1001 `getBatteryInfo` response into (millivolts, status_label).
+///
+/// Conservative format assumption: [voltage_msb, voltage_lsb, status_byte].
+/// This matches common HID++ 0x1001 implementations; verify against a real
+/// G-series device before trusting the exact byte order (log raw bytes at
+/// debug level in the caller if unsure).
+pub fn parse_voltage_battery(payload: &[u8]) -> Option<(u16, &'static str)> {
+    if payload.len() < 2 {
+        return None;
+    }
+    let mv = ((payload[0] as u16) << 8) | payload[1] as u16;
+    let status = if payload.len() >= 3 {
+        voltage_battery_status_label(payload[2])
+    } else {
+        "unknown"
+    };
+    Some((mv, status))
 }
 
 /// Charge-status label for the legacy battery feature's (0x1000) status byte.

@@ -32,9 +32,8 @@ pub fn get_paired_logitech_devices() -> (Vec<(String, String, bool)>, bool) {
                         let stderr = String::from_utf8_lossy(&output.stderr);
                         let stdout = String::from_utf8_lossy(&output.stdout);
 
-                        if stderr.contains("not available")
-                            || stderr.contains("No default controller")
-                            || stdout.contains("not available")
+                        if stderr.contains("No default controller")
+                            || stdout.contains("No default controller")
                         {
                             (devices, false)
                         } else {
@@ -126,14 +125,102 @@ pub fn is_device_connected(mac: &str) -> bool {
     connected.contains(&mac.to_uppercase())
 }
 
-pub fn unpair_device(mac: &str) {
+/// Remove a paired Bluetooth device from bluez.
+///
+/// Validates the MAC address format before calling bluetoothctl so we fail
+/// fast on corrupted identifiers (which would otherwise send garbage to
+/// bluez and silently "succeed" because bluetoothctl accepts any string as
+/// a device argument).
+pub fn unpair_device(mac: &str) -> bool {
+    // Normalize and validate MAC format before calling bluez. A malformed MAC
+    // means the caller passed garbage (e.g. a stale cache entry with a
+    // corrupted identifier); there is nothing to unpair.
+    let normalized = mac.to_uppercase();
+    if !is_valid_bt_mac(&normalized) {
+        log::warn!(
+            "[bluetooth] refusing to unpair invalid MAC address: {}",
+            mac
+        );
+        return false;
+    }
+
     #[cfg(target_os = "linux")]
     {
-        // Execute: bluetoothctl remove <mac> to unpair the device
-        let _ = std::process::Command::new("bluetoothctl")
-            .arg("remove")
-            .arg(mac)
+        // bluetoothctl 'remove' fails if the device is currently connected —
+        // bluez requires a 'disconnect' first. Interactive-mode bluetoothctl
+        // handles this internally, but the one-shot 'bluetoothctl remove MAC'
+        // subcommand does not, so we must disconnect explicitly before removing.
+        // Run both commands inside a single bluetoothctl session so the state
+        // changes are processed atomically by bluetoothd.
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+
+        let result = Command::new("bluetoothctl")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn();
+
+        match result {
+            Err(e) => {
+                log::warn!("[bluetooth] failed to spawn bluetoothctl for unpair {}: {}", mac, e);
+                false
+            }
+            Ok(mut child) => {
+                if let Some(mut stdin) = child.stdin.take() {
+                    // Disconnect first (ignored if already disconnected), then remove.
+                    // 'exit' closes the session so bluetoothctl processes both commands
+                    // and terminates — without it the child would hang waiting for more input.
+                    let _ = stdin.write_all(
+                        format!("disconnect {}; remove {}; exit
+", normalized, normalized).as_bytes(),
+                    );
+                }
+                match child.wait_with_output() {
+                    Err(e) => {
+                        log::warn!("[bluetooth] bluetoothctl unpair session failed for {}: {}", mac, e);
+                        false
+                    }
+                    Ok(out) => {
+                        let stderr = String::from_utf8_lossy(&out.stderr);
+                        // If stderr contains a fatal error (e.g. "No default controller"),
+                        // the unpair definitely did not succeed.
+                        if stderr.contains("No default controller") {
+                            log::warn!("[bluetooth] bluetoothctl unpair failed for {}: no default controller", mac);
+                            false
+                        } else if !out.status.success() {
+                            log::warn!(
+                                "[bluetooth] bluetoothctl unpair {} failed (exit {}): {}",
+                                mac,
+                                out.status,
+                                stderr
+                            );
+                            false
+                        } else {
+                            true
+                        }
+                    }
+                }
+            }
+        }
     }
-    let _ = mac;
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = normalized;
+        true
+    }
+}
+
+/// Returns true if `mac` looks like a valid Bluetooth MAC address
+/// (6 colon-separated hex octets, e.g. `AA:BB:CC:DD:EE:FF`).
+#[inline]
+pub fn is_valid_bt_mac(mac: &str) -> bool {
+    let mut parts = mac.split(':');
+    for _ in 0..6 {
+        match parts.next() {
+            Some(p) if p.len() == 2 && p.chars().all(|c| c.is_ascii_hexdigit()) => {}
+            _ => return false,
+        }
+    }
+    parts.next().is_none()
 }

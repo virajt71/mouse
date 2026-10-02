@@ -41,10 +41,23 @@ pub fn spawn_background_worker(
                     force_poll = true;
                 }
                 Ok(BackgroundTxCmd::Unpair(mac)) => {
-                    // Call bluetooth unpair and remove from local paired list immediately
-                    crate::bluetooth::unpair_device(&mac);
-                    paired_devices.retain(|(m, _, _)| m != &mac);
-                    crate::cache::save_device_cache(&paired_devices);
+                    // Call bluetooth unpair — only remove from local cache if it
+                    // actually succeeded at the bluez level.  If the remove failed
+                    // (e.g. device already gone, bluez not settled) we must NOT
+                    // delete the local entry or the cache, otherwise a successful
+                    // re-pair later will collide with the stale cache entry and
+                    // produce duplicate device cards in the GUI.
+                    if crate::bluetooth::unpair_device(&mac) {
+                        paired_devices.retain(|(m, _, _)| m != &mac);
+                        // Also prune any matching entry from the on-disk cache so a
+                        // restart cannot resurrect the just-unpaired device.
+                        crate::cache::save_device_cache(&paired_devices);
+                    } else {
+                        log::warn!(
+                            "[worker] bluetoothctl remove {} failed — keeping local entry",
+                            mac
+                        );
+                    }
                     force_poll = true;
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
@@ -83,23 +96,48 @@ pub fn spawn_background_worker(
                             .map(|(m, n, c)| (m.clone(), (n.clone(), *c)))
                             .collect();
 
-                    // Update existing cached devices
-                    for (mac, name, connected) in &mut paired_devices {
-                        if let Some((fresh_name, fresh_conn)) = fresh_map.get(mac) {
-                            if name != fresh_name {
-                                *name = fresh_name.clone();
+                    // Update existing cached devices and prune stale ones.
+                    //
+                    // Prune rule: if a cached device is absent from bluetoothctl's
+                    // "devices Paired" output AND is already marked disconnected,
+                    // remove it entirely.  A device that was *just* disconnected on
+                    // the previous poll might reappear on this poll if the OS-level
+                    // unpair hasn't landed yet — keeping it disconnected for one extra
+                    // poll cycle avoids deleting devices that are in the process of
+                    // being unpaired/re-paired.  Devices that are absent and already
+                    // disconnected have been gone for at least one full poll cycle and
+                    // are safe to prune.
+                    let mut i = 0;
+                    while i < paired_devices.len() {
+                        // Read fields by value so we do not hold an immutable borrow
+                        // across the mutable writes below — Rust's borrow checker
+                        // forbids mutating paired_devices[i] while &paired_devices[i]
+                        // is still live.
+                        let mac = paired_devices[i].0.clone();
+                        let name = paired_devices[i].1.clone();
+                        let connected = paired_devices[i].2;
+
+                        if let Some((fresh_name, fresh_conn)) = fresh_map.get(&mac) {
+                            if name != *fresh_name {
+                                paired_devices[i].1 = fresh_name.clone();
                                 changed = true;
                             }
-                            if *connected != *fresh_conn {
-                                *connected = *fresh_conn;
+                            if connected != *fresh_conn {
+                                paired_devices[i].2 = *fresh_conn;
                                 changed = true;
                             }
+                        } else if !connected {
+                            // Absent from fresh paired list AND already disconnected →
+                            // prune the stale entry (and the cache will be updated below).
+                            paired_devices.remove(i);
+                            changed = true;
+                            // do not increment i — next element shifts into this index
                         } else {
-                            // Device is in cache but not currently paired/present at OS level
-                            if *connected {
-                                *connected = false;
-                                changed = true;
-                            }
+                            // Absent from fresh list but still marked connected →
+                            // mark disconnected but keep for one more poll cycle.
+                            paired_devices[i].2 = false;
+                            changed = true;
+                            i += 1;
                         }
                     }
 

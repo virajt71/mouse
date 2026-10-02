@@ -5,7 +5,7 @@ pub mod protocol;
 use anyhow::{anyhow, Result};
 use hidapi::HidDevice;
 
-use self::protocol::{legacy_status_label, parse_unified_battery, LONG_ID, MY_SW, SHORT_ID};
+use self::protocol::{legacy_status_label, parse_unified_battery, parse_unified_battery_full, parse_voltage_battery, voltage_to_battery_percent, LONG_ID, MY_SW, SHORT_ID};
 
 pub enum HidppEvent {
     GestureDown,
@@ -159,6 +159,16 @@ impl HidppClient {
         if let Some(idx) = self.battery_idx {
             if let Ok(Some(resp)) = self.request(idx, 1, &[0; 3], 1000) {
                 if resp.len() >= 3 {
+                    if let Some((percentage, level, status)) = parse_unified_battery_full(&resp) {
+                        return Some(BatteryReading {
+                            percentage,
+                            status,
+                            level,
+                        });
+                    }
+                    // Fall back to the minimum viable decode if the full parse
+                    // somehow rejects the payload (should not happen for a
+                    // well-formed 0x1004 response, but defensive).
                     let (percentage, status) = parse_unified_battery(&resp);
                     return Some(BatteryReading {
                         percentage,
@@ -189,6 +199,22 @@ impl HidppClient {
             }
         }
 
+
+        // 3. BatteryVoltage (0x1001): getBatteryInfo → [voltage_msb, voltage_lsb, status]
+        //    Used by G-series wireless devices that expose voltage but not 0x1000/0x1004.
+        if let Some(idx) = self.battery_voltage_idx {
+            if let Ok(Some(resp)) = self.request(idx, 1, &[0; 3], 1000) {
+                if let Some((mv, status)) = parse_voltage_battery(&resp) {
+                    let pct = voltage_to_battery_percent(mv);
+                    return Some(BatteryReading {
+                        percentage: pct,
+                        status: status.to_string(),
+                        level: String::new(),
+                    });
+                }
+            }
+            log::warn!("[HID++] BatteryVoltage read failed, no battery available");
+        }
         None
     }
 
@@ -438,12 +464,23 @@ impl HidppClient {
                     && r_params.len() >= 3
                     && (r_fsw & 0x0F) != MY_SW
                 {
-                    let (percentage, status) = parse_unified_battery(r_params);
-                    events.push(HidppEvent::BatteryChanged(BatteryReading {
-                        percentage,
-                        status,
-                        level: String::new(),
-                    }));
+                    if let Some((percentage, level, status)) = parse_unified_battery_full(r_params) {
+                        events.push(HidppEvent::BatteryChanged(BatteryReading {
+                            percentage,
+                            status,
+                            level,
+                        }));
+                    } else {
+                        // Defensive: an event payload that fails the full parse is
+                        // still rendered as a bare percentage + status rather than
+                        // dropped (the update loop only hears presence/absence).
+                        let (percentage, status) = parse_unified_battery(r_params);
+                        events.push(HidppEvent::BatteryChanged(BatteryReading {
+                            percentage,
+                            status,
+                            level: String::new(),
+                        }));
+                    }
                 }
 
                 // HID++ CHANGE_HOST (0x1814) host switched notification

@@ -111,6 +111,33 @@ impl EngineClient {
         }
     }
 
+    /// Like `call_ok` but returns the error message to the caller instead of
+    /// swallowing it.  Used by `unpair_device` so the GUI can decide whether
+    /// to optimistically remove the device from the local list.
+    fn call_ok_err<F, Fut>(&self, f: F) -> Result<(), String>
+    where
+        F: FnOnce(MouserDaemonClient<Channel>) -> Fut,
+        Fut: std::future::Future<
+            Output = Result<
+                tonic::Response<crate::grpc::server::proto::StatusResponse>,
+                tonic::Status,
+            >,
+        >,
+    {
+        match self.call(f) {
+            Some(resp) if resp.ok => Ok(()),
+            Some(resp) => {
+                log::warn!("[EngineClient] daemon returned error: {}", resp.error_message);
+                Err(resp.error_message)
+            }
+            None => {
+                // call() returns None when the RPC cannot be sent at all
+                // (connection dropped, channel closed, etc.).
+                Err("engine client: RPC call failed".to_string())
+            }
+        }
+    }
+
     // ─── Config API (mirrors Engine) ─────────────────────────────────────────
 
     pub fn get_config(&self) -> Config {
@@ -316,9 +343,14 @@ impl EngineClient {
 
     // ─── Pairing ─────────────────────────────────────────────────────────────
 
-    pub fn unpair_device(&self, mac: &str) {
+    /// Unpair a Bluetooth device by MAC address.
+    ///
+    /// Returns `Ok` if the daemon successfully removed the device from bluez,
+    /// `Err` if the daemon rejected the request (invalid MAC, device not found,
+    /// bluez error) or if the RPC itself failed.
+    pub fn unpair_device(&self, mac: &str) -> Result<(), String> {
         let v = mac.to_string();
-        self.call_ok(|mut s| async move { s.unpair_device(StringValue { value: v }).await });
+        self.call_ok_err(|mut s| async move { s.unpair_device(StringValue { value: v }).await })
     }
 
     // ─── Background streaming subscriptions ──────────────────────────────────

@@ -441,7 +441,7 @@ impl Config {
             };
 
             let new_cfg = Config {
-                version: 13,
+                version: 14,
                 active_group: "default".to_string(),
                 active_app_profile,
                 profile_groups,
@@ -935,7 +935,7 @@ mod tests {
         let config = Config::load();
 
         // Verify version upgraded to 13
-        assert_eq!(config.version, 13);
+        assert_eq!(config.version, 14);
         // Verify active group is default
         assert_eq!(config.active_group, "default");
         // Verify active app profile mapped from default to global

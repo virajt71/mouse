@@ -332,7 +332,18 @@ impl MouserDaemon for MouserDaemonService {
         req: Request<StringValue>,
     ) -> Result<Response<StatusResponse>, Status> {
         let mac = req.into_inner().value;
-        crate::bluetooth::unpair_device(&mac);
+        if !mac.is_empty() && !crate::bluetooth::is_valid_bt_mac(&mac) {
+            return Err(Status::invalid_argument(format!(
+                "invalid Bluetooth MAC address: {}",
+                mac
+            )));
+        }
+        if !crate::bluetooth::unpair_device(&mac) {
+            return Err(Status::internal(format!(
+                "failed to unpair device {}: bluetoothctl remove did not succeed",
+                mac
+            )));
+        }
         Ok(Response::new(Self::ok()))
     }
 
